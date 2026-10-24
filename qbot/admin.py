@@ -109,6 +109,7 @@ def admin_router(settings: Settings) -> APIRouter:
     attempts: deque[float] = deque()
     ttl = 3600
     probe_lock = asyncio.Lock()
+    media_lock = asyncio.Lock()
     last_probe = 0.0
 
     def sign(token: str) -> str:
@@ -348,5 +349,28 @@ def admin_router(settings: Settings) -> APIRouter:
             return await db.call("save_contact", bot_id, record_id, None)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
+
+    @router.post("/api/admin/bots/{bot_id}/records/{record_id}/send-media", dependencies=[Depends(require_admin)])
+    async def send_media(bot_id: int, record_id: int, request: Request,
+                         request_id: UUID, kind: Literal["image", "audio"],
+                         filename: str = Query(..., min_length=1, max_length=150)) -> dict:
+        from qbot.media import MAX_MEDIA_BYTES, validate_media
+        if media_lock.locked():
+            raise HTTPException(429, "已有文件正在上传或发送，请稍后再试")
+        async with media_lock:
+            body = bytearray()
+            try:
+                async with asyncio.timeout(30):
+                    async for chunk in request.stream():
+                        if len(body) + len(chunk) > MAX_MEDIA_BYTES:
+                            raise HTTPException(413, "文件不能超过 3.5 MB")
+                        body.extend(chunk)
+            except TimeoutError:
+                raise HTTPException(408, "文件上传超时，请重新选择文件") from None
+            try:
+                media = validate_media(kind, filename, bytes(body))
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
+            return await request.app.state.proactive.send(bot_id, record_id, "", str(request_id), media=media)
 
     return router

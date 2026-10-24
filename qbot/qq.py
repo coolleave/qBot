@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import time
 from urllib.parse import quote, urlsplit
 
@@ -7,6 +8,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from qbot.config import Settings
+from qbot.media import MediaUpload
 
 
 def signing_key(secret: str) -> Ed25519PrivateKey:
@@ -152,6 +154,10 @@ class QQClient:
         payload = {"content": text, "msg_type": 0}
         if message_id is not None:
             payload.update(msg_id=message_id, msg_seq=1)
+        await self._send_payload(url, payload)
+
+    async def _send_payload(self, url: str, payload: dict) -> None:
+        message_id = payload.get("msg_id")
         for attempt in range(2):
             token = await self.access_token()
             try:
@@ -182,3 +188,29 @@ class QQClient:
             if data.get("code") not in (None, 0) or not data.get("id"):
                 raise QQAPIError("QQ 发送失败，请检查平台权限、内容限制及被动回复有效期")
             return
+
+    async def upload_media(self, source: str, target_id: str, media: MediaUpload) -> str:
+        """仅上传，srv_send_msg=false 确保此步骤不会发送消息。"""
+        resource = "groups" if source == "qq_group" else "users"
+        url = f"{self.settings.qq_api_base_url}/v2/{resource}/{quote(target_id, safe='')}/files"
+        token = await self.access_token()
+        try:
+            response = await self.client.post(url, headers={"Authorization": f"QQBot {token}"},
+                json={"file_type": 1 if media.kind == "image" else 3, "file_name": media.filename,
+                      "file_data": base64.b64encode(media.data).decode("ascii"), "srv_send_msg": False},
+                timeout=45)
+        except httpx.TransportError:
+            raise QQAPIError("QQ 媒体上传网络异常，尚未执行消息发送") from None
+        if response.is_error:
+            raise QQAPIError(f"QQ 媒体上传 HTTP {response.status_code}")
+        data = response_data(response)
+        info = data.get("file_info")
+        if data.get("code") not in (None, 0) or not isinstance(info, str) or not info:
+            raise QQAPIError("QQ 未确认媒体上传成功，请检查格式、大小与权限")
+        return info
+
+    async def send_media(self, source: str, target_id: str, file_info: str) -> None:
+        resource = "groups" if source == "qq_group" else "users"
+        url = f"{self.settings.qq_api_base_url}/v2/{resource}/{quote(target_id, safe='')}/messages"
+        # 富媒体的 content 按官方兼容要求填空格，不携带历史 msg_id 冒充回复。
+        await self._send_payload(url, {"msg_type": 7, "content": " ", "media": {"file_info": file_info}})

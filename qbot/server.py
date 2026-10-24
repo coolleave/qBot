@@ -232,7 +232,7 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
         if request.url.path.startswith(("/admin", "/api/admin")):
             response.headers["Cache-Control"] = "no-store"
             response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: blob:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
             response.headers["Referrer-Policy"] = "no-referrer"
         return response
 

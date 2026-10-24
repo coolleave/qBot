@@ -263,6 +263,19 @@ QQ 官方文档已注明主动推送能力自 2025-04-21 起停止提供，因�
 
 `GET /api/admin/user-bindings` 查询用户，`PUT /api/admin/bots/{bot_id}/user-bindings` 保存 contact_name、contact_qq、source、user_id、group_id；`DELETE /api/admin/bots/{bot_id}/records/{record_id}/user-binding` 解除名称绑定。沿用管理员鉴权、CSRF 校验及已有消息身份校验。本次未运行测试或浏览器验证。
 
+
+## 后台发送图片和语音
+
+「发送消息 → 选择接收人 → 编写消息」或聊天详情的发送入口，可选择文字、图片、语音。图片支持 PNG/JPG；按当前官方接口页，私聊语音支持 SILK，群聊语音支持 SILK/MP3/WAV。不包含文字转语音、录音或自动转码。图片可本地预览，MP3/WAV 可在浏览器支持时试听，SILK 仅显示文件名和大小。
+
+本地文件上限 3,500,000 字节（3.5 MB），为 Base64 后的官方 5M 直传限制预留空间。服务端限制读取体积和上传时长，检查扩展名与文件头，不接受任意本地路径或远程 URL，不新增 OSS、公网服务或依赖。先以 `srv_send_msg=false` 上传至相应 users/groups files 接口，再以 `msg_type=7` 和返回的 `media.file_info` 发送。文件信息即取即用，不跨机器人或会话类型缓存。上传成功不代表发送成功；上传阶段失败明确为未发送，发送超时标记送达未知，不自动重发。
+
+接口：`POST /api/admin/bots/{bot_id}/records/{record_id}/send-media?kind=image|audio&filename=文件名&request_id=UUID`，请求体为原始文件字节，沿用管理员登录及 CSRF 校验；一次只处理一个媒体请求。复用接收人权限、发送限流和聊天记录幂等，记录保存文件名、大小及 SHA256，不保存文件原文、Base64、file_info 或临时公开下载地址。历史记录仅提供文件摘要，不支持从历史重新下载；关闭发送窗口后如需重新发送，需重新选择文件。
+
+图片和语音发送仍受 QQ 平台主动发送权限约束，不利用旧消息 ID 冒充回复。升级仅需重启服务并刷新后台，无数据库迁移。本次未运行测试或浏览器验证，未实际上传或发送用户文件，平台联调待人工操作。
+
+官方接口：[私聊上传](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_users_user_openid_files.post.html)、[群聊上传](https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_files.post.html)。GitHub 旧文档关于不支持 file_data 的说明与当前官网不同，此实现参考官网直传参数。
+
 ### 模型类型
 
 模型供应商支持 `model_type`：`chat`（聊天）、`image`（图片生成）、`asr`（语音识别）、`tts`（语音合成）。接口类型 `api_type` 单独配置。升级先执行 `python -m alembic upgrade head`，`0008_model_types` 将已有模型设为 `chat`，再重启服务。

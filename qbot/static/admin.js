@@ -299,44 +299,99 @@ $("greeting-form").onsubmit = async event => {
   finally { submit.disabled = false; }
 };
 
-let sendTarget = null, sendPending = false;
+const MAX_MEDIA_BYTES = 3500000;
+let sendTarget = null, sendPending = false, sendPayload = null, mediaPreviewUrl = null;
 $("send-dialog").addEventListener("cancel", event => { if (sendPending) event.preventDefault(); });
+function clearMediaPreview() {
+  $("send-audio-preview").pause();
+  for (const id of ["send-image-preview", "send-audio-preview"]) { $(id).removeAttribute("src"); $(id).hidden = true; }
+  $("send-audio-preview").load();
+  if (mediaPreviewUrl) URL.revokeObjectURL(mediaPreviewUrl);
+  mediaPreviewUrl = null; $("send-file-info").textContent = "";
+}
+function updateSendKind() {
+  const form = $("send-form"), kind = form.elements.message_kind.value;
+  clearMediaPreview(); form.elements.media_file.value = "";
+  $("send-text-label").hidden = kind !== "text";
+  form.elements.content.required = kind === "text";
+  $("send-media-panel").hidden = kind === "text";
+  form.elements.media_file.required = kind !== "text";
+  const group = sendTarget?.source === "qq_group";
+  form.elements.media_file.accept = kind === "image" ? ".png,.jpg,.jpeg" : group ? ".silk,.mp3,.wav" : ".silk";
+  $("send-media-hint").textContent = kind === "image" ? "PNG/JPG，最大 3.5 MB。预览仅在本地进行。" :
+    `${group ? "群聊支持 SILK、MP3、WAV" : "私聊仅支持 SILK"}，最大 3.5 MB；不自动转码或生成语音。SILK 无法在浏览器直接试听。`;
+}
+function previewMedia() {
+  clearMediaPreview();
+  const form = $("send-form"), file = form.elements.media_file.files[0];
+  if (!file) return;
+  if (!file.size || file.size > MAX_MEDIA_BYTES) {
+    $("send-file-info").textContent = "请选择非空且不超过 3.5 MB 的文件"; form.elements.media_file.value = ""; return;
+  }
+  $("send-file-info").textContent = `${file.name} · ${(file.size / 1000000).toFixed(2)} MB`;
+  if (/\.silk$/i.test(file.name)) return;
+  mediaPreviewUrl = URL.createObjectURL(file);
+  const id = form.elements.message_kind.value === "image" ? "send-image-preview" : "send-audio-preview";
+  $(id).src = mediaPreviewUrl; $(id).hidden = false;
+}
+$("send-form").elements.message_kind.onchange = updateSendKind;
+$("send-form").elements.media_file.onchange = previewMedia;
+$("send-image-preview").onerror = () => { $("send-file-info").textContent = "图片无法预览，请检查文件格式。"; };
+$("send-audio-preview").onerror = () => {
+  if (mediaPreviewUrl) $("send-file-info").textContent = "此音频无法在当前浏览器试听，发送前仍会校验文件格式。";
+};
+$("send-dialog").addEventListener("close", () => { clearMediaPreview(); $("send-form").elements.media_file.value = ""; sendPayload = null; });
 function composeMessage(item) {
   if (!item || sendPending) return;
-  sendTarget = {botId:item.bot_id, recordId:item.id, requestId:crypto.randomUUID()};
-  $("send-form").reset(); $("send-form").elements.content.readOnly = false;
+  sendTarget = {botId:item.bot_id, recordId:item.id, source:item.source, requestId:crypto.randomUUID()};
+  sendPayload = null;
+  const form = $("send-form"); form.reset(); form.elements.content.readOnly = false;
+  form.elements.message_kind.disabled = false; form.elements.media_file.disabled = false;
+  updateSendKind();
   $("send-submit").disabled = false; $("send-submit").textContent = "立即发送";
   $("send-result").textContent = "";
   $("send-target").textContent = `${botLabel(item.bot_id)} → ${item.source === "qq_group" ? "整个群：" + item.group_id : "私聊用户：" + (item.contact_name || "未命名") + " · " + item.user_id}`;
   $("send-dialog").showModal();
 }
 const openSend = button("主动发送消息", () => composeMessage(detailRecord));
-openSend.id = "open-send"; openSend.hidden = true;
-$("detail-dialog").append(openSend);
+openSend.id = "open-send"; openSend.hidden = true; $("detail-dialog").append(openSend);
 $("send-form").onsubmit = async event => {
   event.preventDefault();
-  const target = sendTarget, input = event.currentTarget.elements.content;
-  if (!target || !input.value.trim()) return;
-  const submit = $("send-submit"); submit.disabled = true; input.readOnly = true;
+  const target = sendTarget, form = event.currentTarget;
+  if (!target || sendPending) return;
+  if (!sendPayload) {
+    const kind = form.elements.message_kind.value;
+    if (kind === "text") {
+      if (!form.elements.content.value.trim()) return;
+      sendPayload = {kind, content:form.elements.content.value.trim()};
+    } else {
+      const file = form.elements.media_file.files[0];
+      if (!file || !file.size || file.size > MAX_MEDIA_BYTES) { $("send-result").textContent = "请选择非空且不超过 3.5 MB 的文件"; return; }
+      const allowed = kind === "image" ? /\.(png|jpe?g)$/i : target.source === "qq_group" ? /\.(silk|mp3|wav)$/i : /\.silk$/i;
+      if (!allowed.test(file.name)) { $("send-result").textContent = "文件格式不适用于此消息类型或会话，请按上方说明选择。"; return; }
+      sendPayload = {kind, file};
+    }
+  }
+  const payload = sendPayload, submit = $("send-submit");
+  submit.disabled = true; form.elements.content.readOnly = true;
+  form.elements.message_kind.disabled = true; form.elements.media_file.disabled = true;
   sendPending = true;
-  const closeButtons = [...$("send-dialog").querySelectorAll("[data-close]")];
-  closeButtons.forEach(node => node.disabled = true);
-  $("send-result").textContent = "正在发送，请稍候…";
+  const closeButtons = [...$("send-dialog").querySelectorAll("[data-close]")]; closeButtons.forEach(node => node.disabled = true);
+  $("send-result").textContent = payload.kind === "text" ? "正在发送，请稍候…" : "正在上传文件并请求 QQ 发送，请稍候…";
   try {
-    const result = await api(`/bots/${target.botId}/records/${target.recordId}/send`, {
-      method:"POST", body:JSON.stringify({content:input.value.trim(), request_id:target.requestId})
+    const base = `/bots/${target.botId}/records/${target.recordId}`;
+    const result = payload.kind === "text" ? await api(base + "/send", {
+      method:"POST", body:JSON.stringify({content:payload.content, request_id:target.requestId})
+    }) : await api(base + "/send-media?" + new URLSearchParams({kind:payload.kind, filename:payload.file.name, request_id:target.requestId}), {
+      method:"POST", headers:{"Content-Type":"application/octet-stream"}, body:payload.file
     });
     $("send-result").textContent = `记录 #${result.record_id} · ${result.status === "replied" ? "QQ 已确认发送" : labels[result.status] || result.status}。${result.message || ""}${result.duplicate ? "此请求已记录，未重复发送。" : ""}`;
-    if (["pending", "processing", "delivery_unknown"].includes(result.status)) {
-      $("send-result").textContent += " 可能已送达或处理中，请先核对 QQ 和聊天记录，不要新建相同消息。";
-    }
+    if (["pending", "processing", "delivery_unknown"].includes(result.status)) $("send-result").textContent += " 可能已送达或处理中，请先核对 QQ 和聊天记录，不要新建相同消息。";
     void loadRecords().catch(e => toast(e.message));
   } catch(e) {
-    $("send-result").textContent = e.message + "。请求结果未确认；再次提交会沿用同一请求标识，避免重复发送。";
+    $("send-result").textContent = e.message + "。请求结果未确认；再次提交沿用同一请求标识和文件。若需更换内容，请关闭后重新打开。";
     submit.textContent = "重新提交同一请求"; submit.disabled = false;
-  } finally {
-    sendPending = false; closeButtons.forEach(node => node.disabled = false);
-  }
+  } finally { sendPending = false; closeButtons.forEach(node => node.disabled = false); }
 };
 
 let sendTargetsPage = 1, sendTargetsRequest = 0;
