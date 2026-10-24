@@ -203,6 +203,8 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
         from qbot.bots import BotManager
         manager = BotManager(settings, db, chat, qq)
         app.state.bots = manager
+        from qbot.proactive import ProactiveSender
+        app.state.proactive = ProactiveSender(manager, db, settings)
         from qbot.bot_profiles import BotProfiles
         app.state.bot_profiles = BotProfiles(settings, db)
         try:

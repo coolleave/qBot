@@ -38,7 +38,8 @@ class ChatService:
         self.lock = asyncio.Lock()
 
     async def reply(self, key: SessionKey, text: str, sender: Sender | None = None, *, model: Runnable | None = None,
-                    identity_context: str = "") -> str:
+                    identity_context: str = "",
+                    prepare_reply: Callable[[str], Awaitable[str]] | None = None) -> str:
         async with self.lock:
             now = time.monotonic()
             for expired in [k for k, v in self.sessions.items()
@@ -71,6 +72,8 @@ class ChatService:
                 answer = answer.strip()
                 if not answer:
                     raise ValueError("模型返回了空文本")
+                if prepare_reply:
+                    answer = await prepare_reply(answer)
                 if len(answer) > self.settings.max_reply_chars:
                     answer = answer[:self.settings.max_reply_chars - 8] + "\n（内容已截断）"
                 if sender:

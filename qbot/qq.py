@@ -140,14 +140,25 @@ class QQClient:
         url = f"{self.settings.qq_api_base_url}/v2/users/{quote(user_id, safe='')}/messages"
         await self._send_message(url, message_id, text)
 
-    async def _send_message(self, url: str, message_id: str, text: str) -> None:
+    async def send_proactive(self, source: str, target_id: str, text: str) -> None:
+        """主动发送不携带被动回复 msg_id，权限和额度由 QQ 平台判定。"""
+        if source not in ("qq_group", "qq_c2c"):
+            raise ValueError("仅支持 QQ 群聊或私聊")
+        resource = "groups" if source == "qq_group" else "users"
+        url = f"{self.settings.qq_api_base_url}/v2/{resource}/{quote(target_id, safe='')}/messages"
+        await self._send_message(url, None, text)
+
+    async def _send_message(self, url: str, message_id: str | None, text: str) -> None:
+        payload = {"content": text, "msg_type": 0}
+        if message_id is not None:
+            payload.update(msg_id=message_id, msg_seq=1)
         for attempt in range(2):
             token = await self.access_token()
             try:
                 response = await self.client.post(
                     url,
                     headers={"Authorization": f"QQBot {token}"},
-                    json={"content": text, "msg_type": 0, "msg_id": message_id, "msg_seq": 1},
+                    json=payload,
                     timeout=self.settings.qq_timeout_seconds,
                 )
             except httpx.TransportError:
@@ -156,9 +167,18 @@ class QQClient:
             if response.status_code == 401 and attempt == 0:
                 self.expires_at = 0
                 continue
+            if response.status_code >= 500 and message_id is None:
+                raise QQDeliveryUnknown("QQ 服务异常，主动消息送达状态未知")
             if response.is_error:
                 raise QQAPIError(f"QQ 发送 HTTP {response.status_code}")
-            data = response_data(response)
+            try:
+                data = response_data(response)
+            except QQAPIError:
+                if message_id is None:
+                    raise QQDeliveryUnknown("QQ 响应无法解析，主动消息送达状态未知") from None
+                raise
+            if message_id is None and data.get("code") in (None, 0) and not data.get("id"):
+                raise QQDeliveryUnknown("QQ 未返回消息标识，主动消息送达状态未知")
             if data.get("code") not in (None, 0) or not data.get("id"):
                 raise QQAPIError("QQ 发送失败，请检查平台权限、内容限制及被动回复有效期")
             return

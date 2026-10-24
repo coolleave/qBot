@@ -8,12 +8,14 @@ from datetime import datetime, timezone
 from importlib.resources import files
 from typing import Literal
 from urllib.parse import urlsplit
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from qbot.config import Settings
+from qbot.greetings import GreetingInput
 from qbot.security import verify_password
 from qbot.storage import Store
 
@@ -80,8 +82,23 @@ class FamilyBindingInput(BaseModel):
     qq_number_note: str = Field(default="", max_length=20, pattern=r"^[0-9]*$")
 
 
+class UserBindingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    contact_name: str = Field(min_length=1, max_length=100)
+    contact_qq: str = Field(default="", max_length=20, pattern=r"^[0-9]*$")
+    source: Literal["qq_c2c", "qq_group"]
+    user_id: str = Field(min_length=1, max_length=256, pattern=r"^[\x21-\x7e]+$")
+    group_id: str = Field(default="", max_length=191, pattern=r"^[\x21-\x7e]*$")
+
+
 class DefaultInput(BaseModel):
     provider_id: int | None = Field(default=None, gt=0)
+
+
+class ProactiveInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    content: str = Field(min_length=1, max_length=10000)
+    request_id: UUID
 
 
 def admin_router(settings: Settings) -> APIRouter:
@@ -280,6 +297,54 @@ def admin_router(settings: Settings) -> APIRouter:
     async def unbind_member(bot_id: int, record_id: int, db: Store = Depends(store)) -> dict:
         try:
             return await db.call("save_family_binding", bot_id, record_id, None)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.get("/api/admin/bots/{bot_id}/records/{record_id}/greetings", dependencies=[Depends(require_admin)])
+    async def get_greetings(bot_id: int, record_id: int, db: Store = Depends(store)) -> dict:
+        try:
+            return await db.call("greeting_settings", bot_id, record_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.put("/api/admin/bots/{bot_id}/records/{record_id}/greetings", dependencies=[Depends(require_admin)])
+    async def put_greetings(bot_id: int, record_id: int, data: GreetingInput, db: Store = Depends(store)) -> dict:
+        try:
+            await db.call("save_greeting_settings", bot_id, record_id, data.model_dump())
+        except ValueError:
+            raise HTTPException(400, "问候设置无效，请确认家庭绑定、时间段和星期") from None
+        return {"ok": True}
+
+    @router.get("/api/admin/bots/{bot_id}/send-targets", dependencies=[Depends(require_admin)])
+    async def send_targets(bot_id: int, source: Literal["qq_group", "qq_c2c"],
+                           page: int = Query(1, ge=1, le=100000), db: Store = Depends(store)) -> dict:
+        return await db.call("send_targets", bot_id, source, page)
+
+    @router.post("/api/admin/bots/{bot_id}/records/{record_id}/send", dependencies=[Depends(require_admin)])
+    async def send_proactive(bot_id: int, record_id: int, data: ProactiveInput, request: Request) -> dict:
+        return await request.app.state.proactive.send(bot_id, record_id, data.content, str(data.request_id))
+
+    @router.get("/api/admin/greeting-targets", dependencies=[Depends(require_admin)])
+    async def greeting_targets(bot_id: int | None = Query(None, gt=0),
+                               page: int = Query(1, ge=1, le=100000), db: Store = Depends(store)) -> dict:
+        return await db.call("greeting_targets", bot_id=bot_id, page=page)
+
+    @router.get("/api/admin/user-bindings", dependencies=[Depends(require_admin)])
+    async def user_bindings(bot_id: int | None = Query(None, gt=0), user_id: str = Query("", max_length=256),
+                            page: int = Query(1, ge=1, le=100000), db: Store = Depends(store)) -> dict:
+        return await db.call("list_user_bindings", bot_id=bot_id, user_id=user_id.strip(), page=page)
+
+    @router.put("/api/admin/bots/{bot_id}/user-bindings", dependencies=[Depends(require_admin)])
+    async def bind_user_id(bot_id: int, data: UserBindingInput, db: Store = Depends(store)) -> dict:
+        try:
+            return await db.call("bind_user_id", bot_id, data.model_dump())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.delete("/api/admin/bots/{bot_id}/records/{record_id}/user-binding", dependencies=[Depends(require_admin)])
+    async def unbind_contact(bot_id: int, record_id: int, db: Store = Depends(store)) -> dict:
+        try:
+            return await db.call("save_contact", bot_id, record_id, None)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
 

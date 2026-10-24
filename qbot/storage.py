@@ -37,7 +37,10 @@ class Store:
         self.cipher = Fernet(encryption_key.encode())
         metadata = MetaData()
         try:
-            metadata.reflect(engine, only=["model_providers", "app_settings", "conversations", "chat_records", "bots"])
+            metadata.reflect(engine, only=["model_providers", "app_settings", "conversations", "chat_records", "bots",
+                                           "interaction_greetings", "interaction_greeting_runs"])
+            self.greetings = metadata.tables["interaction_greetings"]
+            self.greeting_runs = metadata.tables["interaction_greeting_runs"]
             self.bots = metadata.tables["bots"]
             self.providers = metadata.tables["model_providers"]
             self.settings = metadata.tables["app_settings"]
@@ -107,6 +110,8 @@ class Store:
                 if bot_id is None:
                     values["created_at"] = utc_now()
                     return conn.execute(self.bots.insert().values(**values)).inserted_primary_key[0]
+                if old["app_id"] != values["app_id"]:
+                    conn.execute(self.greetings.update().where(self.greetings.c.bot_id == bot_id).values(enabled=False))
                 conn.execute(self.bots.update().where(self.bots.c.id == bot_id).values(**values))
                 return bot_id
         except IntegrityError:
@@ -289,10 +294,24 @@ class Store:
                 .order_by(r.c.received_at.desc(), r.c.id.desc()).offset((page - 1) * page_size).limit(page_size)).mappings()
             return {"items": [dict(row) for row in rows], "total": count, "page": page, "page_size": page_size}
 
+    def send_targets(self, bot_id: int, source: str, page: int = 1) -> dict:
+        """按实际投递范围去重；群内不同用户只显示一个群目标。"""
+        r, c = self.records, self.conversations
+        latest = select(func.max(r.c.id).label("record_id")).where(
+            r.c.bot_id == bot_id, r.c.source == source,
+        ).group_by(r.c.group_id).subquery()
+        with self.engine.connect() as conn:
+            total = conn.execute(select(func.count()).select_from(latest)).scalar_one()
+            rows = conn.execute(select(r.c.id, r.c.bot_id, r.c.source, r.c.group_id,
+                c.c.user_id, c.c.contact_name).select_from(
+                    latest.join(r, r.c.id == latest.c.record_id).join(c, c.c.id == r.c.conversation_id)
+                ).order_by(r.c.id.desc()).offset((page - 1) * 50).limit(50)).mappings()
+            return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": 50}
+
     def record_detail(self, record_id: int) -> dict | None:
         r, c = self.records, self.conversations
         with self.engine.connect() as conn:
-            row = conn.execute(select(r, c.c.user_id, c.c.member_name, c.c.family_role, c.c.qq_number_note).join(c, r.c.conversation_id == c.c.id)
+            row = conn.execute(select(r, c.c.user_id, c.c.member_name, c.c.family_role, c.c.qq_number_note, c.c.contact_name, c.c.contact_qq).join(c, r.c.conversation_id == c.c.id)
                                .where(r.c.id == record_id)).mappings().first()
             return dict(row) if row else None
 
@@ -332,3 +351,166 @@ class Store:
                     c.c.source.in_(("qq_group", "qq_c2c"))
                 )).mappings().first()
             return dict(row) if row and row["family_role"] else None
+
+    def greeting_settings(self, bot_id: int, record_id: int) -> dict:
+        from qbot.greetings import default_rules
+        record = self.record_detail(record_id)
+        if not record or record["bot_id"] != bot_id or record["source"] not in ("qq_c2c", "qq_group"):
+            raise ValueError("该机器人下不存在这条 QQ 消息")
+        g, runs = self.greetings, self.greeting_runs
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(g).where(g.c.bot_id == bot_id,
+                g.c.conversation_id == record["conversation_id"])).mappings().all()
+            rules = {r["slot"]: dict(slot=r["slot"], enabled=bool(r["enabled"]), start=r["start_time"],
+                end=r["end_time"], weekdays=[int(d) for d in r["weekdays"].split(",")], content=r["content"]) for r in rows}
+            history = conn.execute(select(runs.c.local_date, g.c.slot, runs.c.content,
+                runs.c.record_id, self.records.c.status, self.records.c.error_message)
+                .select_from(runs.join(g, runs.c.greeting_id == g.c.id)
+                    .join(self.records, runs.c.record_id == self.records.c.id))
+                .where(g.c.bot_id == bot_id, g.c.conversation_id == record["conversation_id"])
+                .order_by(runs.c.id.desc()).limit(20)).mappings().all()
+        return {"rules": [rules.get(r["slot"], r) for r in default_rules()],
+                "bound": bool(record["contact_name"]), "contact_name": record["contact_name"],
+                "history": [dict(r) for r in history]}
+
+    def save_greeting_settings(self, bot_id: int, record_id: int, values: dict) -> None:
+        from qbot.greetings import GreetingInput
+        data = GreetingInput.model_validate(values)
+        c, r, g = self.conversations, self.records, self.greetings
+        with self.engine.begin() as conn:
+            # 和绑定修改共用会话行锁，防止解除绑定时又被并发启用。
+            row = conn.execute(select(c).select_from(r.join(c, r.c.conversation_id == c.c.id)).where(
+                r.c.id == record_id, r.c.bot_id == bot_id, c.c.bot_id == bot_id
+            ).with_for_update()).mappings().first()
+            if not row or row["source"] not in ("qq_c2c", "qq_group"):
+                raise ValueError("该机器人下不存在这条 QQ 消息")
+            if any(rule.enabled for rule in data.rules) and not row["contact_name"]:
+                raise ValueError("请先在用户绑定中设置接收人名称，再启用问候")
+            for rule in data.rules:
+                scope = (g.c.bot_id == bot_id) & (g.c.conversation_id == row["id"]) & (g.c.slot == rule.slot)
+                fields = dict(enabled=rule.enabled, start_time=rule.start, end_time=rule.end,
+                              weekdays=",".join(map(str, rule.weekdays)), content=rule.content)
+                if conn.execute(select(g.c.id).where(scope)).first():
+                    conn.execute(g.update().where(scope).values(**fields))
+                else:
+                    conn.execute(g.insert().values(bot_id=bot_id, conversation_id=row["id"], slot=rule.slot, **fields))
+
+    def claim_greeting(self, bot_id: int, record_id: int) -> str:
+        """生成成功后、发送前领取；同一时段当天最多尝试一次，未知送达不重发。"""
+        from qbot.greetings import local_time
+        r, c, g, runs = self.records, self.conversations, self.greetings, self.greeting_runs
+        with self.engine.begin() as conn:
+            row = conn.execute(select(c, r.c.received_at).select_from(r.join(c, r.c.conversation_id == c.c.id))
+                .where(r.c.id == record_id, r.c.bot_id == bot_id, c.c.bot_id == bot_id)
+                .with_for_update()).mappings().first()
+            if not row or row["source"] not in ("qq_c2c", "qq_group") or not row["contact_name"]:
+                return ""
+            enabled = conn.execute(select(self.bots.c.enabled).where(self.bots.c.id == bot_id)).scalar_one()
+            if not enabled:
+                return ""
+            received, now = local_time(row["received_at"]), local_time(utc_now())
+            if received.date() != now.date():
+                return ""
+            rules = conn.execute(select(g).where(g.c.bot_id == bot_id,
+                g.c.conversation_id == row["id"], g.c.enabled == 1).order_by(g.c.id)).mappings().all()
+            for rule in rules:
+                if (received.isoweekday() not in [int(d) for d in rule["weekdays"].split(",")]
+                        or not rule["start_time"] <= received.strftime("%H:%M") < rule["end_time"]
+                        or not rule["start_time"] <= now.strftime("%H:%M") < rule["end_time"]):
+                    continue
+                if conn.execute(select(runs.c.id).where(runs.c.bot_id == bot_id,
+                    runs.c.greeting_id == rule["id"], runs.c.local_date == now.date())).first():
+                    continue
+                conn.execute(runs.insert().values(bot_id=bot_id, greeting_id=rule["id"],
+                    local_date=now.date(), record_id=record_id, content=rule["content"], created_at=utc_now()))
+                return rule["content"]
+            return ""
+
+    def greeting_targets(self, bot_id: int | None = None, page: int = 1, page_size: int = 20) -> dict:
+        """独立菜单列出已绑定或曾配置过问候的会话，沿用记录身份校验。"""
+        c, r, g = self.conversations, self.records, self.greetings
+        latest = select(r.c.bot_id, r.c.conversation_id, func.max(r.c.id).label("record_id"))
+        stats = select(g.c.bot_id, g.c.conversation_id, func.sum(g.c.enabled).label("enabled_count"))
+        if bot_id is not None:
+            latest = latest.where(r.c.bot_id == bot_id)
+            stats = stats.where(g.c.bot_id == bot_id)
+        latest = latest.group_by(r.c.bot_id, r.c.conversation_id).subquery()
+        stats = stats.group_by(g.c.bot_id, g.c.conversation_id).subquery()
+        joined = c.join(latest, (latest.c.conversation_id == c.c.id) & (latest.c.bot_id == c.c.bot_id)).outerjoin(
+            stats, (stats.c.conversation_id == c.c.id) & (stats.c.bot_id == c.c.bot_id))
+        filters = [c.c.source.in_(("qq_c2c", "qq_group")),
+                   c.c.contact_name.is_not(None) | stats.c.conversation_id.is_not(None)]
+        if bot_id is not None:
+            filters.append(c.c.bot_id == bot_id)
+        with self.engine.connect() as conn:
+            total = conn.execute(select(func.count()).select_from(joined).where(*filters)).scalar_one()
+            rows = conn.execute(select(latest.c.record_id.label("id"), c.c.bot_id, c.c.source,
+                c.c.group_id, c.c.user_id, c.c.contact_name,
+                func.coalesce(stats.c.enabled_count, 0).label("enabled_count"))
+                .select_from(joined).where(*filters).order_by(c.c.bot_id, c.c.id)
+                .offset((page - 1) * page_size).limit(page_size)).mappings().all()
+        return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": page_size}
+
+    def list_user_bindings(self, bot_id: int | None = None, user_id: str = "", page: int = 1) -> dict:
+        c, r = self.conversations, self.records
+        filters = [c.c.source.in_(("qq_c2c", "qq_group"))]
+        if bot_id is not None:
+            filters.append(c.c.bot_id == bot_id)
+        if user_id:
+            filters.append(c.c.user_id == user_id)
+        record_id = select(func.max(r.c.id)).where(r.c.bot_id == c.c.bot_id,
+            r.c.conversation_id == c.c.id).correlate(c).scalar_subquery()
+        with self.engine.connect() as conn:
+            total = conn.execute(select(func.count()).select_from(c).where(*filters)).scalar_one()
+            rows = conn.execute(select(c.c.bot_id, c.c.source, c.c.group_id, c.c.user_id,
+                c.c.contact_name, c.c.contact_qq, record_id.label("record_id"))
+                .where(*filters).order_by(c.c.last_active_at.desc(), c.c.id.desc())
+                .offset((page - 1) * 20).limit(20)).mappings().all()
+        return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": 20}
+
+    def bind_user_id(self, bot_id: int, values: dict) -> dict:
+        """手填 OpenID 只能匹配当前机器人的已知会话，不把数字 QQ 号当身份。"""
+        c, r = self.conversations, self.records
+        source, user_id, group_id = values["source"], values["user_id"], values.get("group_id", "")
+        if source not in ("qq_c2c", "qq_group"):
+            raise ValueError("仅支持 QQ 私聊或群聊身份")
+        if source == "qq_group" and not group_id:
+            raise ValueError("群聊绑定必须填写群 OpenID")
+        if source == "qq_c2c" and group_id:
+            raise ValueError("私聊绑定不需要群 OpenID")
+        filters = [c.c.bot_id == bot_id, c.c.source == source, c.c.user_id == user_id,
+                   r.c.bot_id == bot_id]
+        if source == "qq_group":
+            filters.append(c.c.group_id == group_id)
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(c.c.id, func.max(r.c.id).label("record_id"))
+                .select_from(c.join(r, r.c.conversation_id == c.c.id)).where(*filters)
+                .group_by(c.c.id).limit(2)).mappings().all()
+        if not rows:
+            raise ValueError("未找到匹配的用户消息，请确认机器人、来源和 OpenID，并让用户先发一条消息")
+        if len(rows) != 1:
+            raise ValueError("该身份对应多个会话，请从聊天记录详情绑定")
+        binding = {key: values[key] for key in ("contact_name", "contact_qq")}
+        return self.save_contact(bot_id, rows[0]["record_id"], binding)
+
+    def save_contact(self, bot_id: int, record_id: int, values: dict | None) -> dict:
+        """维护接收人通讯录，不修改模型的家庭身份。"""
+        c, r = self.conversations, self.records
+        with self.engine.begin() as conn:
+            row = conn.execute(select(c).select_from(r.join(c, r.c.conversation_id == c.c.id)).where(
+                r.c.id == record_id, r.c.bot_id == bot_id, c.c.bot_id == bot_id
+            ).with_for_update()).mappings().first()
+            if not row or row["source"] not in ("qq_c2c", "qq_group"):
+                raise ValueError("该机器人下不存在这条 QQ 消息")
+            name = values["contact_name"].strip() if values else None
+            note = values.get("contact_qq", "").strip() if values else None
+            if values and (not name or len(name) > 100 or any(ord(ch) < 32 for ch in name)):
+                raise ValueError("接收人名称需为 1 至 100 字符且不能包含控制字符")
+            if note and (len(note) > 20 or any(ch not in "0123456789" for ch in note)):
+                raise ValueError("QQ 备注只能是最多 20 位数字")
+            conn.execute(c.update().where(c.c.id == row["id"], c.c.bot_id == bot_id).values(
+                contact_name=name, contact_qq=note or None))
+            if not name:
+                conn.execute(self.greetings.update().where(self.greetings.c.bot_id == bot_id,
+                    self.greetings.c.conversation_id == row["id"]).values(enabled=False))
+            return {"contact_name": name, "contact_qq": note or None}
