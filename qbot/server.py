@@ -1,5 +1,7 @@
 import asyncio
 import json
+import hashlib
+from typing import Literal
 import logging
 import time
 from collections import deque
@@ -13,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, SecretStr, ValidationError
 
 from qbot.chat import ChatService
 from qbot.config import Settings
@@ -26,16 +28,44 @@ logger = logging.getLogger(__name__)
 
 
 class Author(BaseModel):
-    member_openid: str = Field(min_length=1, max_length=256)
+    member_openid: str = Field(min_length=1, max_length=256, pattern=r"^[\x21-\x7e]+$")
     bot: bool = False
 
 
 class GroupMessage(BaseModel):
-    id: str = Field(min_length=1, max_length=512)
-    group_openid: str = Field(min_length=1, max_length=256)
+    source: Literal["qq_group", "qq_c2c"] = "qq_group"
+    id: str = Field(min_length=1, max_length=512, pattern=r"^[\x21-\x7e]+$")
+    group_openid: str = Field(min_length=1, max_length=191, pattern=r"^[\x21-\x7e]+$")
     author: Author
     content: str = Field(default="", max_length=50000)
     timestamp: datetime
+
+
+class PrivateAuthor(BaseModel):
+    user_openid: str = Field(min_length=1, max_length=256, pattern=r"^[\x21-\x7e]+$")
+    bot: bool = False
+
+
+class PrivateMessage(BaseModel):
+    id: str = Field(min_length=1, max_length=512, pattern=r"^[\x21-\x7e]+$")
+    author: PrivateAuthor
+    content: str = Field(default="", max_length=50000)
+    timestamp: datetime
+
+
+def incoming_message(event_type: str, data: dict) -> GroupMessage:
+    if event_type == "C2C_MESSAGE_CREATE":
+        message = PrivateMessage.model_validate(data)
+        # 私聊没有群 ID，使用稳定的用户摘要作为存储范围，兼容旧版索引长度。
+        scope = "c2c:" + hashlib.sha256(message.author.user_openid.encode()).hexdigest()
+        return GroupMessage(source="qq_c2c", id=message.id, group_openid=scope,
+            author=Author(member_openid=message.author.user_openid, bot=message.author.bot),
+            content=message.content, timestamp=message.timestamp)
+    return GroupMessage.model_validate({**data, "source": "qq_group"})
+
+
+def message_scope(message: GroupMessage) -> str:
+    return message.source + ":" + message.group_openid
 
 
 @dataclass
@@ -48,7 +78,8 @@ class Job:
 class Dispatcher:
     """单进程有界 FIFO，先确认接收，再在后台生成和发送。"""
 
-    def __init__(self, settings: Settings, chat: ChatService, qq: QQClient, store: Store | None = None):
+    def __init__(self, settings: Settings, chat: ChatService, qq: QQClient, store: Store | None = None, bot_id: int = 1):
+        self.bot_id = bot_id
         self.settings, self.chat, self.qq = settings, chat, qq
         self.queue: asyncio.Queue[Job] = asyncio.Queue(settings.queue_max_size)
         self.seen: dict[tuple[str, str], float] = {}
@@ -59,7 +90,7 @@ class Dispatcher:
 
     def enqueue(self, message: GroupMessage, record_id: int | None = None, *, check_only: bool = False) -> bool:
         now = time.monotonic()
-        key = (message.group_openid, message.id)
+        key = (message_scope(message), message.id)
         self.seen = {k: v for k, v in self.seen.items() if now - v < 600}
         if key in self.seen or key in self.pending:
             return False
@@ -70,7 +101,7 @@ class Dispatcher:
             return False
         while self.requests and now - self.requests[0][0] >= 60:
             self.requests.popleft()
-        session_key = (message.group_openid, message.author.member_openid)
+        session_key = (message_scope(message), message.author.member_openid)
         if (len(self.requests) >= self.settings.global_rate_limit_per_minute
                 or sum(k == session_key for _, k in self.requests)
                 >= self.settings.rate_limit_per_minute):
@@ -90,10 +121,11 @@ class Dispatcher:
                 return
             record_id = None
             if self.store:
-                record_id, created = await self.store.call("receive", "qq_group", message.group_openid,
-                    message.author.member_openid, message.id, message.content, message.timestamp)
+                record_id, created = await self.store.call("receive", message.source, message.group_openid,
+                    message.author.member_openid, message.id, message.content, message.timestamp, bot_id=self.bot_id)
                 if not created:
                     return
+            logger.info("收到 QQ 消息，机器人：%s，来源：%s", self.bot_id, message.source)
             if not self.enqueue(message, record_id) and self.store and record_id:
                 await self.store.call("update_record", record_id, status="expired",
                                       error_message="消息在入库期间超过处理时限")
@@ -107,12 +139,15 @@ class Dispatcher:
         while True:
             job = await self.queue.get()
             message = job.message
-            key = (message.group_openid, message.id)
+            key = (message_scope(message), message.id)
             try:
                 async def send(text: str) -> None:
                     try:
                         async with asyncio.timeout(25):
-                            await self.qq.send_group(message.group_openid, message.id, text)
+                            if message.source == "qq_c2c":
+                                await self.qq.send_private(message.author.member_openid, message.id, text)
+                            else:
+                                await self.qq.send_group(message.group_openid, message.id, text)
                     except TimeoutError:
                         raise QQDeliveryUnknown("QQ 发送总时限已到，送达状态未知") from None
 
@@ -129,7 +164,7 @@ class Dispatcher:
 
                 try:
                     kwargs = {"record_id": job.record_id} if self.store else {}
-                    await self.chat.reply((message.group_openid, message.author.member_openid),
+                    await self.chat.reply((message_scope(message), message.author.member_openid),
                                           message.content, send, **kwargs)
                 except (QQAPIError, StorageError):
                     raise
@@ -165,24 +200,18 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
                 engine.dispose()
                 raise
         app.state.store = db
-        async with httpx.AsyncClient() as client:
-            active_chat = chat or (RecordedChat(settings, db) if db else ChatService(settings, create_model(settings)))
-            dispatcher = Dispatcher(settings, active_chat, qq or QQClient(settings, client), db)
-            app.state.dispatcher = dispatcher
-            worker = asyncio.create_task(dispatcher.run())
-            try:
-                yield
-            finally:
-                # 退出时最多等 10 秒，内存队列不提供崩溃恢复保证。
-                try:
-                    await asyncio.wait_for(dispatcher.queue.join(), timeout=10)
-                except TimeoutError:
-                    logger.warning("关闭时仍有未完成消息，内存队列将丢失")
-                worker.cancel()
-                with suppress(asyncio.CancelledError):
-                    await worker
-                if engine:
-                    await asyncio.to_thread(engine.dispose)
+        from qbot.bots import BotManager
+        manager = BotManager(settings, db, chat, qq)
+        app.state.bots = manager
+        from qbot.bot_profiles import BotProfiles
+        app.state.bot_profiles = BotProfiles(settings, db)
+        try:
+            await manager.start_all()
+            yield
+        finally:
+            await manager.close()
+            if engine:
+                await asyncio.to_thread(engine.dispose)
 
     app = FastAPI(title="qBot", lifespan=lifespan, docs_url=None, redoc_url=None)
 
@@ -201,7 +230,7 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
         if request.url.path.startswith(("/admin", "/api/admin")):
             response.headers["Cache-Control"] = "no-store"
             response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
             response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
@@ -215,8 +244,15 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
         return {"status": "ok", "version": "0.1.0"}
 
     @app.post("/qq/webhook")
-    async def webhook(request: Request) -> dict:
-        if not settings.qq_app_id or not settings.qq_app_secret.get_secret_value():
+    @app.post("/qq/webhook/{bot_id}")
+    async def webhook(request: Request, bot_id: int = 1) -> dict:
+        runtime = app.state.bots.runtimes.get(bot_id)
+        if runtime is None or not runtime.accepting:
+            raise HTTPException(503, "机器人不存在或未启动")
+        qq_settings = runtime.settings
+        if qq_settings.qq_transport != "webhook":
+            raise HTTPException(409, "当前使用 WebSocket，请勿同时推送 Webhook")
+        if not qq_settings.qq_app_id or not qq_settings.qq_app_secret.get_secret_value():
             raise HTTPException(503, "QQ 凭证尚未配置")
         body = bytearray()
         async for chunk in request.stream():
@@ -224,12 +260,12 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
             if len(body) > 65536:
                 raise HTTPException(413, "请求体过大")
         raw = bytes(body)
-        secret = settings.qq_app_secret.get_secret_value()
+        secret = qq_settings.qq_app_secret.get_secret_value()
         if not verify_signature(secret, request.headers.get("X-Signature-Timestamp", ""),
                                 request.headers.get("X-Signature-Ed25519", ""), raw):
             raise HTTPException(401, "签名无效或已过期")
         app_id = request.headers.get("X-Bot-Appid")
-        if app_id is not None and app_id != settings.qq_app_id:
+        if app_id is not None and app_id != qq_settings.qq_app_id:
             raise HTTPException(403, "AppID 不匹配")
         try:
             payload = json.loads(raw)
@@ -242,9 +278,9 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
                     raise ValueError
                 signature = signing_key(secret).sign((timestamp + token).encode("utf-8")).hex()
                 return {"plain_token": token, "signature": signature}
-            if payload.get("op") == 0 and payload.get("t") == "GROUP_AT_MESSAGE_CREATE":
-                message = GroupMessage.model_validate(payload["d"])
-                await app.state.dispatcher.accept(message)
+            if payload.get("op") == 0 and payload.get("t") in ("GROUP_AT_MESSAGE_CREATE", "C2C_MESSAGE_CREATE"):
+                message = incoming_message(payload["t"], payload["d"])
+                await app.state.bots.accept(bot_id, runtime, message)
         except (ValueError, KeyError, TypeError, ValidationError):
             raise HTTPException(400, "事件格式无效") from None
         return {"op": 12}

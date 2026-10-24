@@ -1,0 +1,417 @@
+{
+  "model_providers": {
+    "columns": {
+      "id": {
+        "type": "BIGINT UNSIGNED",
+        "nullable": false,
+        "default": null,
+        "collation": null,
+        "auto_increment": true
+      },
+      "name": {
+        "type": "VARCHAR(100)",
+        "nullable": false,
+        "default": null,
+        "collation": "utf8mb4_unicode_ci",
+        "auto_increment": false
+      },
+      "api_type": {
+        "type": "VARCHAR(32)",
+        "nullable": false,
+        "default": null,
+        "collation": "ascii_bin",
+        "auto_increment": false
+      },
+      "base_url": {
+        "type": "VARCHAR(2048)",
+        "nullable": false,
+        "default": null,
+        "collation": "utf8mb4_unicode_ci",
+        "auto_increment": false
+      },
+      "model_name": {
+        "type": "VARCHAR(200)",
+        "nullable": false,
+        "default": null,
+        "collation": "utf8mb4_unicode_ci",
+        "auto_increment": false
+      },
+      "api_key_encrypted": {
+        "type": "TEXT",
+        "nullable": true,
+        "default": null,
+        "collation": "utf8mb4_unicode_ci",
+        "auto_increment": false
+      },
+      "enabled": {
+        "type": "TINYINT UNSIGNED",
+        "nullable": false,
+        "default": "0",
+        "collation": null,
+        "auto_increment": false
+      },
+      "created_at": {
+        "type": "DATETIME(6)",
+        "nullable": false,
+        "default": "CURRENT_TIMESTAMP(6)",
+        "collation": null,
+        "auto_increment": false
+      },
+      "updated_at": {
+        "type": "DATETIME(6)",
+        "nullable": false,
+        "default": "CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)",
+        "collation": null,
+        "auto_increment": false
+      }
+    },
+    "primary_key": [
+      "id"
+    ],
+    "indexes": {
+      "uq_model_providers_name": {
+        "columns": [
+          "name"
+        ],
+        "unique": true
+      }
+    },
+    "foreign_keys": {}
+  },
+  "app_settings": {
+    "columns": {
+      "id": {
+        "type": "TINYINT UNSIGNED",
+        "nullable": false,
+        "default": null,
+        "collation": null,
+        "auto_increment": false
+      },
+      "default_provider_id": {
+        "type": "BIGINT UNSIGNED",
+        "nullable": true,
+        "default": null,
+        "collation": null,
+        "auto_increment": false
+      },
+      "updated_at": {
+        "type": "DATETIME(6)",
+        "nullable": false,
+        "default": "CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)",
+        "collation": null,
+        "auto_increment": false
+      }
+    },
+    "primary_key": [
+      "id"
+    ],
+    "indexes": {
+      "idx_settings_provider": {
+        "columns": [
+          "default_provider_id"
+        ],
+        "unique": false
+      }
+    },
+    "foreign_keys": {
+      "fk_settings_provider": {
+        "constrained_columns": [
+          "default_provider_id"
+        ],
+        "referred_table": "model_providers",
+        "referred_columns": [
+          "id"
+        ]
+      }
+    }
+  },
+  "conversations": {
+    "columns": {
+      "id": {
+        "type": "BIGINT UNSIGNED",
+        "nullable": false,
+        "default": null,
+        "collation": null,
+        "auto_increment": true
+      },
+      "source": {
+        "type": "VARCHAR(16)",
+        "nullable": false,
+        "default": null,
+        "collation": "ascii_bin",
+        "auto_increment": false
+      },
+      "group_id": {
+        "type": "VARCHAR(191)",
+        "nullable": false,
+        "default": null,
+        "collation": "ascii_bin",
+        "auto_increment": false
+      },
+      "user_id": {
+        "type": "VARCHAR(256)",
+        "nullable": false,
+        "default": null,
+        "collation": "ascii_bin",
+        "auto_increment": false
+      },
+      "created_at": {
+        "type": "DATETIME(6)",
+        "nullable": false,
+        "default": "CURRENT_TIMESTAMP(6)",
+        "collation": null,
+        "auto_increment": false
+      },
+      "last_active_at": {
+        "type": "DATETIME(6)",
+        "nullable": false,
+        "default": "CURRENT_TIMESTAMP(6)",
+        "collation": null,
+        "auto_increment": false
+      }
+    },
+    "primary_key": [
+      "id"
+    ],
+    "indexes": {
+      "uq_conversation_identity": {
+        "columns": [
+          "source",
+          "group_id",
+          "user_id"
+        ],
+        "unique": true
+      },
+      "uq_conversation_scope": {
+        "columns": [
+          "id",
+          "source",
+          "group_id"
+        ],
+        "unique": true
+      },
+      "idx_conversation_user": {
+        "columns": [
+          "source",
+          "user_id",
+          "last_active_at"
+        ],
+        "unique": false
+      },
+      "idx_conversation_activity": {
+        "columns": [
+          "last_active_at",
+          "id"
+        ],
+        "unique": false
+      }
+    },
+    "foreign_keys": {}
+  },
+  "chat_records": {
+    "columns": {
+      "id": {
+        "type": "BIGINT UNSIGNED",
+        "nullable": false,
+        "default": null,
+        "collation": null,
+        "auto_increment": true
+      },
+      "conversation_id": {
+        "type": "BIGINT UNSIGNED",
+        "nullable": false,
+        "default": null,
+        "collation": null,
+        "auto_increment": false
+      },
+      "source": {
+        "type": "VARCHAR(16)",
+        "nullable": false,
+        "default": null,
+        "collation": "ascii_bin",
+        "auto_increment": false
+      },
+      "group_id": {
+        "type": "VARCHAR(191)",
+        "nullable": false,
+        "default": null,
+        "collation": "ascii_bin",
+        "auto_increment": false
+      },
+      "external_message_id": {
+        "type": "VARCHAR(512)",
+        "nullable": false,
+        "default": null,
+        "collation": "ascii_bin",
+        "auto_increment": false
+      },
+      "record_type": {
+        "type": "VARCHAR(16)",
+        "nullable": false,
+        "default": "'chat'",
+        "collation": "ascii_bin",
+        "auto_increment": false
+      },
+      "question": {
+        "type": "MEDIUMTEXT",
+        "nullable": false,
+        "default": null,
+        "collation": "utf8mb4_unicode_ci",
+        "auto_increment": false
+      },
+      "answer": {
+        "type": "MEDIUMTEXT",
+        "nullable": true,
+        "default": null,
+        "collation": "utf8mb4_unicode_ci",
+        "auto_increment": false
+      },
+      "status": {
+        "type": "VARCHAR(24)",
+        "nullable": false,
+        "default": "'pending'",
+        "collation": "ascii_bin",
+        "auto_increment": false
+      },
+      "error_message": {
+        "type": "VARCHAR(1000)",
+        "nullable": true,
+        "default": null,
+        "collation": "utf8mb4_unicode_ci",
+        "auto_increment": false
+      },
+      "provider_id": {
+        "type": "BIGINT UNSIGNED",
+        "nullable": true,
+        "default": null,
+        "collation": null,
+        "auto_increment": false
+      },
+      "provider_name_snapshot": {
+        "type": "VARCHAR(100)",
+        "nullable": true,
+        "default": null,
+        "collation": "utf8mb4_unicode_ci",
+        "auto_increment": false
+      },
+      "model_name_snapshot": {
+        "type": "VARCHAR(200)",
+        "nullable": true,
+        "default": null,
+        "collation": "utf8mb4_unicode_ci",
+        "auto_increment": false
+      },
+      "message_sent_at": {
+        "type": "DATETIME(6)",
+        "nullable": true,
+        "default": null,
+        "collation": null,
+        "auto_increment": false
+      },
+      "received_at": {
+        "type": "DATETIME(6)",
+        "nullable": false,
+        "default": "CURRENT_TIMESTAMP(6)",
+        "collation": null,
+        "auto_increment": false
+      },
+      "completed_at": {
+        "type": "DATETIME(6)",
+        "nullable": true,
+        "default": null,
+        "collation": null,
+        "auto_increment": false
+      },
+      "updated_at": {
+        "type": "DATETIME(6)",
+        "nullable": false,
+        "default": "CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)",
+        "collation": null,
+        "auto_increment": false
+      }
+    },
+    "primary_key": [
+      "id"
+    ],
+    "indexes": {
+      "uq_chat_external_message": {
+        "columns": [
+          "source",
+          "group_id",
+          "external_message_id"
+        ],
+        "unique": true
+      },
+      "idx_chat_conversation_time": {
+        "columns": [
+          "conversation_id",
+          "received_at",
+          "id"
+        ],
+        "unique": false
+      },
+      "idx_chat_conversation_scope": {
+        "columns": [
+          "conversation_id",
+          "source",
+          "group_id"
+        ],
+        "unique": false
+      },
+      "idx_chat_received": {
+        "columns": [
+          "received_at",
+          "id"
+        ],
+        "unique": false
+      },
+      "idx_chat_status_time": {
+        "columns": [
+          "status",
+          "received_at",
+          "id"
+        ],
+        "unique": false
+      },
+      "idx_chat_group_time": {
+        "columns": [
+          "source",
+          "group_id",
+          "received_at",
+          "id"
+        ],
+        "unique": false
+      },
+      "idx_chat_provider": {
+        "columns": [
+          "provider_id"
+        ],
+        "unique": false
+      }
+    },
+    "foreign_keys": {
+      "fk_chat_conversation": {
+        "constrained_columns": [
+          "conversation_id",
+          "source",
+          "group_id"
+        ],
+        "referred_table": "conversations",
+        "referred_columns": [
+          "id",
+          "source",
+          "group_id"
+        ]
+      },
+      "fk_chat_provider": {
+        "constrained_columns": [
+          "provider_id"
+        ],
+        "referred_table": "model_providers",
+        "referred_columns": [
+          "id"
+        ]
+      }
+    }
+  }
+}

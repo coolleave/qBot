@@ -11,7 +11,7 @@ from qbot.config import Settings
 from qbot.model import create_model
 
 
-async def local_chat(settings: Settings) -> None:
+async def local_chat(settings: Settings, bot_id: int = 1) -> None:
     engine = None
     if settings.admin_enabled:
         from qbot.storage import Store, mysql_engine
@@ -19,7 +19,8 @@ async def local_chat(settings: Settings) -> None:
         settings.require_admin()
         engine = mysql_engine(settings)
         store = await asyncio.to_thread(Store, engine, settings.provider_encryption_key.get_secret_value())
-        chat = RecordedChat(settings, store)
+        bot = await store.call("bot_config", bot_id)
+        chat = RecordedChat(settings, store, bot_id, bot.get("system_prompt"))
     else:
         chat = ChatService(settings, create_model(settings))
     try:
@@ -47,6 +48,7 @@ async def chat_loop(chat) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="qBot：LangChain + DeepSeek")
     parser.add_argument("mode", choices=["chat", "serve", "hash-password", "generate-secrets"], help="聊天、服务或本地配置辅助工具")
+    parser.add_argument("--bot-id", type=int, default=1, help="本地聊天使用的机器人 ID")
     args = parser.parse_args()
     if args.mode == "generate-secrets":
         from cryptography.fernet import Fernet
@@ -73,7 +75,7 @@ def main() -> None:
         else:
             settings.require_credentials(qq=args.mode == "serve")
         if args.mode == "chat":
-            asyncio.run(local_chat(settings))
+            asyncio.run(local_chat(settings, args.bot_id))
         else:
             from qbot.server import create_app
 

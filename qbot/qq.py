@@ -1,6 +1,6 @@
 import asyncio
 import time
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 from cryptography.exceptions import InvalidSignature
@@ -93,8 +93,54 @@ class QQClient:
                     await asyncio.sleep(0.5)
             raise QQAPIError("QQ token 获取失败")
 
+    async def profile(self) -> dict:
+        """只读取官方资料，不修改 QQ 机器人的昵称或头像。"""
+        for attempt in range(2):
+            token = await self.access_token()
+            try:
+                response = await self.client.get(
+                    self.settings.qq_api_base_url + "/users/@me",
+                    headers={"Authorization": f"QQBot {token}"},
+                    timeout=self.settings.qq_timeout_seconds,
+                )
+            except httpx.TransportError:
+                raise QQAPIError("QQ 资料请求网络异常") from None
+            if response.status_code == 401 and attempt == 0:
+                self.expires_at = 0
+                continue
+            if response.is_error:
+                raise QQAPIError("QQ 资料获取失败，请检查凭证和平台权限")
+            data = response_data(response)
+            if data.get("code") not in (None, 0) or not data.get("id"):
+                raise QQAPIError("QQ 资料响应无效")
+            avatar = data.get("avatar")
+            if not isinstance(avatar, str):
+                avatar = ""
+            try:
+                url = urlsplit(avatar)
+                # QQ 官方资料可能返回 HTTP 头像，仅对官方头像域名升级 HTTPS。
+                host = (url.hostname or "").lower()
+                if (url.scheme == "http" and (host == "qlogo.cn" or host.endswith(".qlogo.cn"))
+                        and url.port in (None, 80) and not url.username and not url.password):
+                    avatar = url._replace(scheme="https", netloc=host).geturl()
+                    url = urlsplit(avatar)
+                if url.scheme != "https" or not url.hostname or url.username or url.password:
+                    avatar = ""
+            except ValueError:
+                avatar = ""
+            return {"id": str(data["id"]), "username": str(data.get("username") or ""),
+                    "avatar": avatar}
+        raise QQAPIError("QQ 资料鉴权失败")
+
     async def send_group(self, group_id: str, message_id: str, text: str) -> None:
         url = f"{self.settings.qq_api_base_url}/v2/groups/{quote(group_id, safe='')}/messages"
+        await self._send_message(url, message_id, text)
+
+    async def send_private(self, user_id: str, message_id: str, text: str) -> None:
+        url = f"{self.settings.qq_api_base_url}/v2/users/{quote(user_id, safe='')}/messages"
+        await self._send_message(url, message_id, text)
+
+    async def _send_message(self, url: str, message_id: str, text: str) -> None:
         for attempt in range(2):
             token = await self.access_token()
             try:

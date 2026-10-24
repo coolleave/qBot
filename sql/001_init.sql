@@ -1,4 +1,4 @@
--- qBot 初始表结构，要求 MySQL 8.0.16+（使用 CHECK 约束），推荐 MySQL 8.4。
+-- qBot 初始表结构，兼容 MySQL 5.6.5+；不依赖 CHECK，业务约束由应用校验。
 -- 请先在客户端选中你新建的项目数据库，再执行整个文件。
 -- 不创建数据库，不创建账号，不删除数据，不修改已有表结构。
 -- IF NOT EXISTS 仅便于重复初始化，不代替后续版本迁移。
@@ -19,12 +19,7 @@ CREATE TABLE IF NOT EXISTS model_providers (
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
         ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间 UTC',
     PRIMARY KEY (id),
-    UNIQUE KEY uq_model_providers_name (name),
-    CONSTRAINT ck_provider_api_type CHECK (api_type IN ('deepseek', 'openai_compatible')),
-    CONSTRAINT ck_provider_enabled CHECK (enabled IN (0, 1)),
-    CONSTRAINT ck_provider_key CHECK (
-        enabled = 0 OR (api_key_encrypted IS NOT NULL AND CHAR_LENGTH(api_key_encrypted) > 0)
-    )
+    UNIQUE KEY uq_model_providers_name (name)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='模型供应商配置；加密主密钥保存在环境变量中';
 
@@ -35,7 +30,6 @@ CREATE TABLE IF NOT EXISTS app_settings (
         ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间 UTC',
     PRIMARY KEY (id),
     KEY idx_settings_provider (default_provider_id),
-    CONSTRAINT ck_app_settings_singleton CHECK (id = 1),
     CONSTRAINT fk_settings_provider FOREIGN KEY (default_provider_id)
         REFERENCES model_providers (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -45,7 +39,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '会话 ID',
     source VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL
         COMMENT 'qq_group 或 local',
-    group_id VARCHAR(256) CHARACTER SET ascii COLLATE ascii_bin NOT NULL
+    group_id VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL
         COMMENT 'QQ 群 OpenID；本地聊天固定为 local',
     user_id VARCHAR(256) CHARACTER SET ascii COLLATE ascii_bin NOT NULL
         COMMENT 'QQ 成员 OpenID；本地聊天使用独立用户标识',
@@ -55,9 +49,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     UNIQUE KEY uq_conversation_identity (source, group_id, user_id),
     UNIQUE KEY uq_conversation_scope (id, source, group_id),
     KEY idx_conversation_user (source, user_id, last_active_at),
-    KEY idx_conversation_activity (last_active_at, id),
-    CONSTRAINT ck_conversation_source CHECK (source IN ('qq_group', 'local')),
-    CONSTRAINT ck_conversation_identity CHECK (CHAR_LENGTH(group_id) > 0 AND CHAR_LENGTH(user_id) > 0)
+    KEY idx_conversation_activity (last_active_at, id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='按来源、群和用户隔离；历史记录与运行时上下文分离';
 
@@ -65,7 +57,7 @@ CREATE TABLE IF NOT EXISTS chat_records (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '聊天记录 ID',
     conversation_id BIGINT UNSIGNED NOT NULL COMMENT '所属会话',
     source VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '与所属会话来源一致',
-    group_id VARCHAR(256) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '与所属会话群标识一致',
+    group_id VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '与所属会话群标识一致',
     external_message_id VARCHAR(512) CHARACTER SET ascii COLLATE ascii_bin NOT NULL
         COMMENT 'QQ 消息 ID；本地消息由应用生成 UUID；区分大小写',
     record_type VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'chat'
@@ -94,13 +86,7 @@ CREATE TABLE IF NOT EXISTS chat_records (
     CONSTRAINT fk_chat_conversation FOREIGN KEY (conversation_id, source, group_id)
         REFERENCES conversations (id, source, group_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
     CONSTRAINT fk_chat_provider FOREIGN KEY (provider_id)
-        REFERENCES model_providers (id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT ck_chat_message_id CHECK (CHAR_LENGTH(external_message_id) > 0),
-    CONSTRAINT ck_chat_record_type CHECK (record_type IN ('chat', 'reset')),
-    CONSTRAINT ck_chat_status CHECK (status IN (
-        'pending', 'processing', 'replied', 'model_failed',
-        'send_failed', 'delivery_unknown', 'expired', 'rejected'
-    ))
+        REFERENCES model_providers (id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='聊天记录与处理结果；reset 不删除历史，不自动恢复上下文';
 

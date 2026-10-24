@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -15,6 +17,7 @@ class Settings(BaseSettings):
     model_max_retries: int = Field(1, ge=0, le=2)
     model_max_tokens: int = Field(1024, ge=1, le=8192)
     chat_timeout_seconds: float = Field(90, gt=0, le=120)
+    qq_transport: Literal["websocket", "webhook"] = "websocket"
     qq_app_id: str = ""
     qq_app_secret: SecretStr = SecretStr("")
     qq_api_base_url: str = "https://api.bot.qq.com"
@@ -30,7 +33,7 @@ class Settings(BaseSettings):
     rate_limit_per_minute: int = Field(6, ge=1, le=60)
     global_rate_limit_per_minute: int = Field(30, ge=1, le=600)
     queue_max_size: int = Field(32, ge=1, le=100)
-    admin_enabled: bool = False
+    admin_enabled: bool = True
     mysql_host: str = "127.0.0.1"
     mysql_port: int = Field(3306, ge=1, le=65535)
     mysql_database: str = "qbot"

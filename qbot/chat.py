@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from importlib.resources import files
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
@@ -20,14 +20,16 @@ Sender = Callable[[str], Awaitable[None]]
 class Session:
     messages: list[BaseMessage] = field(default_factory=list)
     touched: float = field(default_factory=time.monotonic)
+    identity_context: str = ""
 
 
 class ChatService:
-    def __init__(self, settings: Settings, model: Runnable | None):
+    def __init__(self, settings: Settings, model: Runnable | None, system_prompt: str | None = None):
         self.settings = settings
-        prompt_text = files("qbot").joinpath("prompts/system.txt").read_text("utf-8")
+        prompt_text = system_prompt or files("qbot").joinpath("prompts/system.txt").read_text("utf-8")
         prompt = ChatPromptTemplate.from_messages([
-            ("system", prompt_text), MessagesPlaceholder("history"), ("human", "{input}"),
+            SystemMessage(content=prompt_text), MessagesPlaceholder("identity", optional=True),
+            MessagesPlaceholder("history"), ("human", "{input}"),
         ])
         self.prompt = prompt
         self.chain = prompt | model | StrOutputParser() if model is not None else None
@@ -35,7 +37,8 @@ class ChatService:
         # v0.1 使用单个处理通道；锁覆盖生成和发送，保证回复与历史顺序一致。
         self.lock = asyncio.Lock()
 
-    async def reply(self, key: SessionKey, text: str, sender: Sender | None = None, *, model: Runnable | None = None) -> str:
+    async def reply(self, key: SessionKey, text: str, sender: Sender | None = None, *, model: Runnable | None = None,
+                    identity_context: str = "") -> str:
         async with self.lock:
             now = time.monotonic()
             for expired in [k for k, v in self.sessions.items()
@@ -43,6 +46,10 @@ class ChatService:
                 del self.sessions[expired]
             text = text.strip()
             session = self.sessions.get(key)
+            # 绑定变更后丢弃旧身份下的上下文，避免继续沿用以前的家庭称呼。
+            if session and session.identity_context != identity_context:
+                self.sessions.pop(key, None)
+                session = None
             if text == "/reset":
                 answer = "当前会话已清空。"
                 if sender:
@@ -59,7 +66,8 @@ class ChatService:
                 if chain is None:
                     raise ValueError("尚未配置模型")
                 async with asyncio.timeout(self.settings.chat_timeout_seconds):
-                    answer = await chain.ainvoke({"history": history, "input": text})
+                    answer = await chain.ainvoke({"history": history, "input": text,
+                        "identity": [SystemMessage(content=identity_context)] if identity_context else []})
                 answer = answer.strip()
                 if not answer:
                     raise ValueError("模型返回了空文本")
@@ -71,7 +79,7 @@ class ChatService:
                 if session is None:
                     if len(self.sessions) >= self.settings.session_max_count:
                         self.sessions.popitem(last=False)
-                    session = Session()
+                    session = Session(identity_context=identity_context)
                     self.sessions[key] = session
                 session.messages = (history + [HumanMessage(text), AIMessage(answer)])[
                     -2 * self.settings.session_max_turns:

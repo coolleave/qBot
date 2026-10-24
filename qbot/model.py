@@ -20,6 +20,8 @@ def create_model(settings: Settings) -> ChatDeepSeek:
 
 def provider_model(settings: Settings, provider: dict | None):
     if provider is None:
+        if settings.admin_enabled:
+            raise ValueError("请在后台添加、启用并选择默认模型供应商")
         return create_model(settings)
     common = dict(model=provider["model_name"], api_key=provider["api_key"],
                   timeout=settings.model_timeout_seconds, max_retries=settings.model_max_retries,
