@@ -262,3 +262,9 @@ QQ 官方文档已注明主动推送能力自 2025-04-21 起停止提供，因�
 新增迁移 `0007_recipient_names`，将接收人名称/QQ备注保存到独立字段。升级时从原有姓名初始化显示名称，之后与家庭角色独立维护。原聊天详情中的家庭绑定继续用于模型称呼；新的用户绑定只影响接收人列表。修改接收人名称不改变身份及问候次数；解除接收人绑定会停用该会话问候。定时任务仍为首次互动问候，不改变触发方式。
 
 `GET /api/admin/user-bindings` 查询用户，`PUT /api/admin/bots/{bot_id}/user-bindings` 保存 contact_name、contact_qq、source、user_id、group_id；`DELETE /api/admin/bots/{bot_id}/records/{record_id}/user-binding` 解除名称绑定。沿用管理员鉴权、CSRF 校验及已有消息身份校验。本次未运行测试或浏览器验证。
+
+### 模型类型
+
+模型供应商支持 `model_type`：`chat`（聊天）、`image`（图片生成）、`asr`（语音识别）、`tts`（语音合成）。接口类型 `api_type` 单独配置。升级先执行 `python -m alembic upgrade head`，`0008_model_types` 将已有模型设为 `chat`，再重启服务。
+
+机器人绑定、全局默认和连接测试仅支持 `chat`；已绑定或作为默认的模型，须先解除引用才能改为其他类型。图片生成、ASR、TTS 当前仅支持保存配置，尚未接入生成、识别或合成调用，不影响现有图片/音频文件发送。

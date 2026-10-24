@@ -70,9 +70,9 @@ async function loadProviders() {
   for (const item of providers) {
     const card = element("article", undefined, "provider-card"), top = element("div", undefined, "top");
     top.append(element("h2", item.name), element("span", item.id === defaultProvider ? "默认使用" : item.enabled ? "已启用" : "已停用", "badge " + (item.enabled ? "replied" : "")));
-    card.append(top, element("p", `${item.api_type === "deepseek" ? "DeepSeek" : "兼容接口"} · ${item.model_name}`), element("p", item.base_url, "muted"), element("p", "API Key  " + item.api_key_mask, "muted"));
+    card.append(top, element("p", `${({chat:"chat · 聊天",image:"图片生成",asr:"asr · 语音识别",tts:"tts · 语音合成"})[item.model_type]} · ${item.api_type === "deepseek" ? "DeepSeek" : "兼容接口"} · ${item.model_name}`), element("p", item.base_url, "muted"), element("p", "API Key  " + item.api_key_mask, "muted"));
     const actions = element("div", undefined, "actions"); actions.append(button("编辑配置", () => editProvider(item)));
-    if(item.enabled && item.id !== defaultProvider) actions.append(button("设为默认", async () => { await api("/default-provider", {method:"PUT",body:JSON.stringify({provider_id:item.id})}); await loadProviders(); toast("默认供应商已更新"); }));
+    if(item.model_type === "chat" && item.enabled && item.id !== defaultProvider) actions.append(button("设为默认", async () => { await api("/default-provider", {method:"PUT",body:JSON.stringify({provider_id:item.id})}); await loadProviders(); toast("默认供应商已更新"); }));
     const outcome = element("p", "", "muted"); outcome.setAttribute("role", "status");
     const probe = button("测试连接", async () => {
       outcome.textContent = "正在发送“你好”，请稍候…";
@@ -81,15 +81,16 @@ async function loadProviders() {
         outcome.textContent = `${result.success ? "成功" : "失败"} · 耗时 ${result.latency_ms} ms · ${result.message}${result.reply ? " · 回复：" + result.reply : ""}`;
       } catch(e) { outcome.textContent = "检查失败：" + e.message; }
     });
-    probe.disabled = !item.has_api_key;
+    probe.disabled = !item.has_api_key || item.model_type !== "chat";
+    if (item.model_type !== "chat") outcome.textContent = "已保存模型配置，暂未接入调用及连接测试。";
     actions.append(probe);
     card.append(actions, outcome); $("providers-list").append(card);
   }
 }
 function editProvider(item) {
   const form = $("provider-form"); form.reset(); $("provider-error").textContent = "";
-  const defaults = item || {id:"",name:"",api_type:"deepseek",base_url:"https://api.deepseek.com",model_name:"deepseek-flash",enabled:false};
-  for(const key of ["id","name","api_type","base_url","model_name"]) form.elements[key].value = defaults[key];
+  const defaults = item || {id:"",name:"",model_type:"chat",api_type:"deepseek",base_url:"https://api.deepseek.com",model_name:"deepseek-flash",enabled:false};
+  for(const key of ["id","name","model_type","api_type","base_url","model_name"]) form.elements[key].value = defaults[key];
   form.elements.enabled.checked = Boolean(defaults.enabled); form.elements.api_key.value = "";
   $("provider-title").textContent = item ? "编辑供应商" : "添加供应商"; $("provider-dialog").showModal();
 }
@@ -202,7 +203,7 @@ async function editBot(item) {
   const form = $("bot-form"); form.reset(); $("bot-error").textContent = "";
   $("bot-provider").replaceChildren(new Option("跟随全局默认供应商", ""));
   for(const provider of data.items) {
-    if(provider.enabled || provider.id === item?.provider_id) {
+    if(provider.model_type === "chat" && (provider.enabled || provider.id === item?.provider_id)) {
       $("bot-provider").add(new Option(provider.name + (provider.enabled ? "" : "（已停用）"), provider.id));
     }
   }

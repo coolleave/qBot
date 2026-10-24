@@ -100,6 +100,8 @@ class Store:
                     provider = conn.execute(select(self.providers).where(self.providers.c.id == values["provider_id"])).mappings().first()
                     if not provider or not provider["enabled"] or not provider["api_key_encrypted"]:
                         raise ValueError("请选择已启用且已配置密钥的供应商")
+                    if provider["model_type"] != "chat":
+                        raise ValueError("机器人只能绑定 chat 类型模型")
                 if values["enabled"] and values.get("provider_id") is None:
                     default = conn.execute(select(self.settings.c.default_provider_id).where(self.settings.c.id == 1)).scalar_one()
                     if default is None:
@@ -147,6 +149,8 @@ class Store:
             row = conn.execute(select(self.providers).where(self.providers.c.id == provider_id)).mappings().first()
         if row is None:
             raise ValueError("供应商不存在")
+        if row["model_type"] != "chat":
+            raise ValueError("当前连接测试仅支持 chat 类型模型")
         result = dict(row)
         encrypted = result.pop("api_key_encrypted")
         if not encrypted:
@@ -160,6 +164,9 @@ class Store:
     def save_provider(self, values: dict, provider_id: int | None = None) -> int:
         values = dict(values)
         key = values.pop("api_key", "")
+        values.setdefault("model_type", "chat")
+        if values["model_type"] not in ("chat", "image", "asr", "tts"):
+            raise ValueError("无效的模型类型")
         try:
             with self.engine.begin() as conn:
                 # 所有默认项和启停修改先锁同一设置行，避免并发停用默认项。
@@ -172,9 +179,12 @@ class Store:
                 encrypted = self.cipher.encrypt(key.encode()).decode() if key else (old["api_key_encrypted"] if old else None)
                 if values["enabled"] and not encrypted:
                     raise ValueError("启用供应商前必须配置 API Key")
+                if provider_id == default_id and default_id is not None and values["model_type"] != "chat":
+                    raise ValueError("请先切换默认聊天供应商，再修改模型类型")
                 if provider_id == default_id and default_id is not None and not values["enabled"]:
                     raise ValueError("请先切换默认供应商，再停用该供应商")
-                if provider_id is not None and not values["enabled"]:
+                # 已绑定机器人的模型必须保持可用的聊天类型。
+                if provider_id is not None and (not values["enabled"] or values["model_type"] != "chat"):
                     bound = conn.execute(select(self.bots.c.id).where(self.bots.c.provider_id == provider_id).limit(1)).first()
                     if bound:
                         raise ValueError("该供应商已绑定机器人，请先调整机器人配置")
@@ -199,6 +209,8 @@ class Store:
                 provider = conn.execute(select(self.providers).where(self.providers.c.id == provider_id)).mappings().first()
                 if not provider or not provider["enabled"] or not provider["api_key_encrypted"]:
                     raise ValueError("只能选择已启用且已配置密钥的供应商")
+                if provider["model_type"] != "chat":
+                    raise ValueError("默认聊天供应商必须是 chat 类型")
             conn.execute(self.settings.update().where(self.settings.c.id == 1).values(
                 default_provider_id=provider_id, updated_at=utc_now()))
 
@@ -214,6 +226,8 @@ class Store:
             row = conn.execute(select(self.providers).where(self.providers.c.id == provider_id)).mappings().first()
             if not row or not row["enabled"] or not row["api_key_encrypted"]:
                 raise ValueError("默认供应商无效，请在后台修复配置")
+            if row["model_type"] != "chat":
+                raise ValueError("聊天供应商必须是 chat 类型，请在后台修复配置")
             result = dict(row)
             try:
                 result["api_key"] = self.cipher.decrypt(result.pop("api_key_encrypted").encode()).decode()

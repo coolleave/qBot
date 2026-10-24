@@ -23,6 +23,8 @@ def provider_model(settings: Settings, provider: dict | None):
         if settings.admin_enabled:
             raise ValueError("请在后台添加、启用并选择默认模型供应商")
         return create_model(settings)
+    if provider.get("model_type", "chat") != "chat":
+        raise ValueError("聊天只能使用 chat 类型模型")
     common = dict(model=provider["model_name"], api_key=provider["api_key"],
                   timeout=settings.model_timeout_seconds, max_retries=settings.model_max_retries,
                   max_tokens=settings.model_max_tokens)

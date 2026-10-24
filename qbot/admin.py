@@ -28,6 +28,7 @@ class Login(BaseModel):
 class ProviderInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=100)
+    model_type: Literal["chat", "image", "asr", "tts"] = "chat"
     api_type: Literal["deepseek", "openai_compatible"]
     base_url: str = Field(max_length=2048)
     model_name: str = Field(min_length=1, max_length=200)
