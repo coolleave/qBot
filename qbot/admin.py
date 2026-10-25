@@ -113,8 +113,6 @@ class SpeechInput(BaseModel):
 
 def admin_router(settings: Settings) -> APIRouter:
     router = APIRouter()
-    # 单进程内存登录会话，退出即撤销，重启全部失效。
-    sessions: dict[str, tuple[float, str]] = {}
     attempts: deque[float] = deque()
     ttl = 3600
     probe_lock = asyncio.Lock()
@@ -124,10 +122,11 @@ def admin_router(settings: Settings) -> APIRouter:
     def sign(token: str) -> str:
         return hmac.new(settings.admin_session_secret.get_secret_value().encode(), token.encode(), hashlib.sha256).hexdigest()
 
-    def cleanup() -> None:
-        now = time.monotonic()
-        for token in [key for key, value in sessions.items() if value[0] <= now]:
-            del sessions[token]
+    # 将会话绑定到当前账号配置，修改账号、密码或签名密钥后旧登录失效。
+    auth_version = sign(settings.admin_username + "\0" + settings.admin_password_hash.get_secret_value())
+
+    def token_hash(token: str) -> str:
+        return hashlib.sha256(token.encode()).hexdigest()
 
     def browser_write(request: Request) -> None:
         # 跨站表单无法发送该自定义头；本服务不开放跨域授权。
@@ -137,17 +136,19 @@ def admin_router(settings: Settings) -> APIRouter:
         if origin and origin != str(request.base_url).rstrip("/"):
             raise HTTPException(403, "跨站请求已拒绝")
 
-    def require_admin(request: Request) -> str:
-        cleanup()
+    async def require_admin(request: Request) -> str:
         value = request.cookies.get("qbot_admin", "")
         token, _, signature = value.partition(".")
-        session = sessions.get(token)
-        if not session or not hmac.compare_digest(sign(token), signature):
+        if len(token) != 43 or len(signature) != 64 or not hmac.compare_digest(sign(token), signature):
+            raise HTTPException(401, "请先登录")
+        csrf = await request.app.state.store.call("admin_session_csrf", token_hash(token), auth_version)
+        if csrf is None:
             raise HTTPException(401, "请先登录")
         if request.method not in ("GET", "HEAD"):
             browser_write(request)
-            if not hmac.compare_digest(request.headers.get("X-CSRF-Token", ""), session[1]):
+            if not hmac.compare_digest(request.headers.get("X-CSRF-Token", ""), csrf):
                 raise HTTPException(403, "会话校验失败，请刷新后重试")
+        request.state.admin_csrf = csrf
         return token
 
     def store(request: Request) -> Store:
@@ -170,18 +171,15 @@ def admin_router(settings: Settings) -> APIRouter:
                                         settings.admin_password_hash.get_secret_value())
         if not valid or not hmac.compare_digest(data.username.encode(), settings.admin_username.encode()):
             raise HTTPException(401, "账号或密码错误")
-        cleanup()
-        if len(sessions) >= 100:
-            sessions.pop(next(iter(sessions)))
         token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-        sessions[token] = (time.monotonic() + ttl, csrf)
+        await request.app.state.store.call("create_admin_session", token_hash(token), csrf, auth_version, ttl)
         response.set_cookie("qbot_admin", token + "." + sign(token), max_age=ttl,
                             httponly=True, secure=settings.admin_cookie_secure, samesite="strict", path="/")
         return {"csrf_token": csrf, "username": settings.admin_username}
 
     @router.get("/api/admin/session")
     async def session(request: Request, token: str = Depends(require_admin)) -> dict:
-        return {"csrf_token": sessions[token][1], "username": settings.admin_username,
+        return {"csrf_token": request.state.admin_csrf, "username": settings.admin_username,
                 "qq_configured": bool(request.app.state.bots.runtimes)}
 
     @router.get("/api/admin/bots", dependencies=[Depends(require_admin)])
@@ -226,8 +224,8 @@ def admin_router(settings: Settings) -> APIRouter:
             raise HTTPException(400, str(exc)) from None
 
     @router.post("/api/admin/logout")
-    async def logout(response: Response, token: str = Depends(require_admin)) -> dict:
-        sessions.pop(token, None)
+    async def logout(request: Request, response: Response, token: str = Depends(require_admin)) -> dict:
+        await request.app.state.store.call("delete_admin_session", token_hash(token))
         response.delete_cookie("qbot_admin", path="/")
         return {"ok": True}
 

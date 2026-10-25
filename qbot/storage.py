@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -40,7 +40,9 @@ class Store:
         metadata = MetaData()
         try:
             metadata.reflect(engine, only=["model_providers", "app_settings", "conversations", "chat_records", "bots",
-                                           "interaction_greetings", "interaction_greeting_runs", "bot_user_identities"])
+                                           "interaction_greetings", "interaction_greeting_runs", "bot_user_identities",
+                                           "admin_sessions"])
+            self.admin_sessions = metadata.tables["admin_sessions"]
             self.identities = metadata.tables["bot_user_identities"]
             self.greetings = metadata.tables["interaction_greetings"]
             self.greeting_runs = metadata.tables["interaction_greeting_runs"]
@@ -63,6 +65,34 @@ class Store:
             return await asyncio.to_thread(getattr(self, method), *args, **kwargs)
         except SQLAlchemyError:
             raise StorageError("数据库操作失败，请检查连接及表结构") from None
+
+    def create_admin_session(self, token_hash: str, csrf: str, auth_version: str, ttl: int) -> None:
+        """持久化登录；只存 Token 摘要，串行清理并限制最多 100 个会话。"""
+        table = self.admin_sessions
+        with self.engine.begin() as conn:
+            conn.execute(select(self.settings.c.id).where(self.settings.c.id == 1).with_for_update()).one()
+            now = utc_now()
+            conn.execute(table.delete().where(
+                (table.c.expires_at <= now) | (table.c.auth_version != auth_version)))
+            existing = conn.execute(select(table.c.token_hash).order_by(
+                table.c.created_at, table.c.token_hash)).scalars().all()
+            if len(existing) >= 100:
+                conn.execute(table.delete().where(table.c.token_hash.in_(existing[:len(existing) - 99])))
+            conn.execute(table.insert().values(token_hash=token_hash, csrf_token=csrf,
+                                               auth_version=auth_version, created_at=now,
+                                               expires_at=now + timedelta(seconds=ttl)))
+
+    def admin_session_csrf(self, token_hash: str, auth_version: str) -> str | None:
+        """使用 UTC 绝对时间校验有效期，进程重启不会延长或清空会话。"""
+        table = self.admin_sessions
+        with self.engine.connect() as conn:
+            return conn.execute(select(table.c.csrf_token).where(
+                table.c.token_hash == token_hash, table.c.auth_version == auth_version,
+                table.c.expires_at > utc_now())).scalar_one_or_none()
+
+    def delete_admin_session(self, token_hash: str) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(self.admin_sessions.delete().where(self.admin_sessions.c.token_hash == token_hash))
 
     def list_bots(self) -> list[dict]:
         with self.engine.connect() as conn:
