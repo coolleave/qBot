@@ -66,3 +66,6 @@ zstandard==0.25.0
 alembic==1.20.1
 Mako==1.4.3
 MarkupSafe==3.0.4
+
+# SILK codec wheel installed on Python 3.13 / Windows; conversion not yet tested
+silk-python==0.2.8

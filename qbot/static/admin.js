@@ -18,6 +18,20 @@ async function api(path, options = {}) {
   if (!response.ok) { if (response.status === 401 && path !== "/login") loggedOut(); throw new Error(data.detail || "请求失败"); }
   return data;
 }
+async function generateSpeech(providerId, text, voice = "Bunny") {
+  if (!providerId || !text.trim()) throw new Error("请选择 TTS 模型并输入文本");
+  const response = await fetch(`/api/admin/providers/${providerId}/speech`, {
+    method:"POST", credentials:"same-origin",
+    headers:{"Content-Type":"application/json", "X-QBot-Admin":"1", "X-CSRF-Token":csrf},
+    body:JSON.stringify({text:text.trim(), voice:voice.trim()})
+  });
+  if (!response.ok) {
+    if (response.status === 401) loggedOut();
+    if (response.status === 404) throw new Error("当前后端未找到语音合成接口。请确认访问的是本项目服务，完成数据库迁移后重启 Python 服务，再刷新后台；仅刷新页面不会加载新接口。");
+    const data = await response.json(); throw new Error(data.detail || "语音合成失败");
+  }
+  return new File([await response.blob()], "tts.wav", {type:"audio/wav"});
+}
 async function enter() {
   const state = await api("/session"); csrf = state.csrf_token;
   $("username").textContent = state.username; $("login-screen").hidden = true; $("workspace").hidden = false;
@@ -66,6 +80,7 @@ async function showDetail(id) {
 async function loadProviders() {
   const data = await api("/providers"); providers = data.items; defaultProvider = data.default_provider_id;
   $("default-label").textContent = providers.find(p => p.id === defaultProvider)?.name || "尚未选择，请添加并启用默认供应商";
+  $("providers-list").querySelectorAll("audio").forEach(player => { player.pause(); if (player.dataset.url) URL.revokeObjectURL(player.dataset.url); });
   $("providers-list").replaceChildren(); $("providers-empty").hidden = providers.length > 0;
   for (const item of providers) {
     const card = element("article", undefined, "provider-card"), top = element("div", undefined, "top");
@@ -81,8 +96,28 @@ async function loadProviders() {
         outcome.textContent = `${result.success ? "成功" : "失败"} · 耗时 ${result.latency_ms} ms · ${result.message}${result.reply ? " · 回复：" + result.reply : ""}`;
       } catch(e) { outcome.textContent = "检查失败：" + e.message; }
     });
-    probe.disabled = !item.has_api_key || item.model_type !== "chat";
-    if (item.model_type !== "chat") outcome.textContent = "已保存模型配置，暂未接入调用及连接测试。";
+    probe.disabled = !item.has_api_key || !["chat", "tts"].includes(item.model_type);
+    if (item.model_type === "tts") {
+      const text = element("textarea"), voice = element("input"), player = element("audio");
+      text.maxLength = 500; text.value = "你好，这是语音合成效果测试。"; text.setAttribute("aria-label", "试听文本");
+      voice.value = "Bunny"; voice.setAttribute("aria-label", "音色名称"); voice.setAttribute("list", "tts-voices");
+      player.controls = true; player.hidden = true;
+      card.append(element("p", "音色默认 Bunny（萌小姬），可选 Bella、Mochi、Momo 等，或填写官方音色 ID。测试会调用付费接口。Flash 模型不能通过填写描述自定义声音。", "muted"), text, voice, player);
+      probe.onclick = async () => {
+        probe.disabled = true; player.pause(); player.hidden = true;
+        if (player.dataset.url) { URL.revokeObjectURL(player.dataset.url); delete player.dataset.url; }
+        player.removeAttribute("src"); player.load();
+        outcome.textContent = "正在合成语音…";
+        const started = performance.now();
+        try {
+          const file = await generateSpeech(item.id, text.value, voice.value);
+          if (!card.isConnected) return;
+          player.src = URL.createObjectURL(file); player.dataset.url = player.src; player.hidden = false;
+          outcome.textContent = `合成成功 · 耗时 ${Math.round(performance.now() - started)} ms · 点击播放器试听`;
+        } catch(e) { outcome.textContent = "合成失败：" + e.message; }
+        finally { probe.disabled = false; }
+      };
+    } else if (item.model_type !== "chat") outcome.textContent = "已保存模型配置，暂未接入调用及连接测试。";
     actions.append(probe);
     card.append(actions, outcome); $("providers-list").append(card);
   }
@@ -250,11 +285,14 @@ async function saveBinding(remove = false) {
 $("binding-form").onsubmit = event => { event.preventDefault(); void saveBinding(); };
 $("unbind-member").onclick = () => saveBinding(true);
 
-let greetingTarget = null;
+let greetingTarget = null, greetingItem = null, greetingDirty = false, greetingRunning = false;
+$("greeting-dialog").addEventListener("cancel", event => { if (greetingRunning) event.preventDefault(); });
 async function openGreetings(item) {
   if (!item) return;
   const data = await api(`/bots/${item.bot_id}/records/${item.id}/greetings`);
   greetingTarget = {botId:item.bot_id, recordId:item.id};
+  greetingItem = item; greetingDirty = false;
+  $("greeting-run-result").textContent = "";
   const form = $("greeting-form"); form.reset();
   $("greeting-error").textContent = "";
   $("greeting-target").textContent = `${botLabel(item.bot_id)} · ${data.contact_name || "未命名（请先在用户绑定中设置）"} · ${item.source === "qq_group" ? "群 " + item.group_id : "QQ 私聊"} · 用户 ${item.user_id}`;
@@ -269,18 +307,36 @@ async function openGreetings(item) {
   $("greeting-history").replaceChildren();
   for (const run of data.history) {
     const state = ["pending", "processing"].includes(run.status) ? "处理中或中断后未确认，不自动重发" : (labels[run.status] || run.status);
-    $("greeting-history").append(element("p", `${run.local_date} · ${run.slot === "morning" ? "早间" : "晚间"} · ${state} · 对话 #${run.record_id}`), element("pre", run.content));
+    $("greeting-history").append(element("p", `${run.local_date} · ${run.slot === "morning" ? "早间" : "晚间"} · ${state} · 对话 #${run.record_id}`), element("pre", run.content), element("p", run.error_message || "", "error"));
   }
   if (!data.history.length) $("greeting-history").append(element("p", "暂无记录", "muted"));
   $("greeting-dialog").showModal();
 }
 $("greeting-form").oninput = () => {
+  greetingDirty = true;
   for (const slot of ["morning", "evening"]) $(slot + "-preview").textContent = $("greeting-form").elements[slot + "_content"].value;
+};
+for (const slot of ["morning", "evening"]) $(slot + "-run").onclick = async () => {
+  if (!greetingTarget || greetingRunning) return;
+  if (greetingDirty) { $("greeting-error").textContent = "请先保存修改后的任务，再执行一次。"; return; }
+  const target = greetingTarget, item = greetingItem;
+  const controls = [...$("greeting-dialog").querySelectorAll("button, input, textarea")];
+  greetingRunning = true; controls.forEach(node => node.disabled = true);
+  $("greeting-error").textContent = ""; $("greeting-run-result").textContent = "正在执行，请稍候…";
+  try {
+    const result = await api(`/bots/${target.botId}/records/${target.recordId}/greetings/${slot}/run`, {method:"POST"});
+    const message = `记录 #${result.record_id} · ${result.status === "replied" ? "QQ 已确认发送" : labels[result.status] || result.status}。${result.message || ""}${result.duplicate ? " 今天已执行，未重复发送。" : ""}`;
+    $("greeting-run-result").textContent = message;
+    try { await openGreetings(item); } catch(e) { $("greeting-error").textContent = "记录刷新失败：" + e.message; }
+    $("greeting-run-result").textContent = message;
+  } catch(e) {
+    $("greeting-run-result").textContent = e.message + "。如请求结果未确认，可再次点击查询；今天已领取的任务不会重复发送。";
+  } finally { greetingRunning = false; controls.forEach(node => node.disabled = false); }
 };
 $("greeting-form").onsubmit = async event => {
   event.preventDefault();
   const form = event.currentTarget, target = greetingTarget, submit = form.querySelector('[type="submit"]');
-  if (!target) return;
+  if (!target || greetingRunning) return;
   const rules = ["morning", "evening"].map(slot => ({slot,
     enabled:form.elements[slot + "_enabled"].checked,
     start:form.elements[slot + "_start"].value, end:form.elements[slot + "_end"].value,
@@ -288,19 +344,19 @@ $("greeting-form").onsubmit = async event => {
     weekdays:[...form.querySelectorAll(`[name="${slot}_days"]:checked`)].map(node => Number(node.value))
   }));
   if (rules.some(r => !r.weekdays.length || r.start >= r.end)) {
-    $("greeting-error").textContent = "每个时段至少选择一天，结束时间须晚于开始时间，暂不支持跨午夜。"; return;
+    $("greeting-error").textContent = "每条任务至少选择一天，最晚执行时间须晚于发送时间，暂不支持跨午夜。"; return;
   }
   submit.disabled = true; $("greeting-error").textContent = "";
   try {
     await api(`/bots/${target.botId}/records/${target.recordId}/greetings`, {method:"PUT", body:JSON.stringify({rules})});
-    $("greeting-dialog").close(); toast("问候设置已保存，下一次符合条件的互动生效");
+    $("greeting-dialog").close(); toast("定时任务已保存，将在设置的时间主动发送");
     void loadGreetingTargets();
   } catch(e) { $("greeting-error").textContent = e.message; }
   finally { submit.disabled = false; }
 };
 
 const MAX_MEDIA_BYTES = 3500000;
-let sendTarget = null, sendPending = false, sendPayload = null, mediaPreviewUrl = null;
+let sendTarget = null, sendPending = false, sendPayload = null, mediaPreviewUrl = null, generatedSpeech = null;
 $("send-dialog").addEventListener("cancel", event => { if (sendPending) event.preventDefault(); });
 function clearMediaPreview() {
   $("send-audio-preview").pause();
@@ -311,17 +367,22 @@ function clearMediaPreview() {
 }
 function updateSendKind() {
   const form = $("send-form"), kind = form.elements.message_kind.value;
-  clearMediaPreview(); form.elements.media_file.value = "";
+  clearMediaPreview(); generatedSpeech = null; form.elements.media_file.value = "";
+  $("send-tts-result").textContent = "";
+  $("send-tts-panel").hidden = kind !== "audio";
   $("send-text-label").hidden = kind !== "text";
   form.elements.content.required = kind === "text";
   $("send-media-panel").hidden = kind === "text";
   form.elements.media_file.required = kind !== "text";
   const group = sendTarget?.source === "qq_group";
-  form.elements.media_file.accept = kind === "image" ? ".png,.jpg,.jpeg" : group ? ".silk,.mp3,.wav" : ".silk";
+  form.elements.media_file.accept = kind === "image" ? ".png,.jpg,.jpeg" : group ? ".silk,.mp3,.wav" : ".silk,.wav";
   $("send-media-hint").textContent = kind === "image" ? "PNG/JPG，最大 3.5 MB。预览仅在本地进行。" :
-    `${group ? "群聊支持 SILK、MP3、WAV" : "私聊仅支持 SILK"}，最大 3.5 MB；不自动转码或生成语音。SILK 无法在浏览器直接试听。`;
+    `${group ? "群聊支持 SILK、MP3、WAV，可生成 TTS 后发送" : "私聊支持 SILK，单声道 16 位 PCM WAV（8/12/16/24 kHz）会自动转为 SILK；TTS 可直接生成后发送"}，最大 3.5 MB。SILK 无法在浏览器直接试听。`;
 }
 function previewMedia() {
+  generatedSpeech = null;
+  $("send-tts-result").textContent = "";
+  $("send-form").elements.media_file.required = true;
   clearMediaPreview();
   const form = $("send-form"), file = form.elements.media_file.files[0];
   if (!file) return;
@@ -336,16 +397,50 @@ function previewMedia() {
 }
 $("send-form").elements.message_kind.onchange = updateSendKind;
 $("send-form").elements.media_file.onchange = previewMedia;
+for (const id of ["send-tts-provider", "send-tts-text", "send-tts-voice"]) $(id).oninput = () => {
+  if (sendPending || sendPayload || !generatedSpeech) return;
+  generatedSpeech = null; clearMediaPreview();
+  $("send-form").elements.media_file.required = true;
+  $("send-tts-result").textContent = "合成设置已修改，请重新生成语音。";
+};
+$("send-tts-generate").onclick = async () => {
+  if (sendPending || sendPayload) return;
+  const form = $("send-form"), target = sendTarget;
+  generatedSpeech = null; clearMediaPreview(); form.elements.media_file.value = "";
+  form.elements.media_file.required = true;
+  sendPending = true;
+  const controls = [...$("send-dialog").querySelectorAll("button, input, select, textarea")];
+  const states = controls.map(node => node.disabled); controls.forEach(node => node.disabled = true);
+  $("send-tts-result").textContent = "正在生成语音…";
+  try {
+    const file = await generateSpeech($("send-tts-provider").value, $("send-tts-text").value, $("send-tts-voice").value);
+    if (target !== sendTarget || !$("send-dialog").open) return;
+    mediaPreviewUrl = URL.createObjectURL(file);
+    $("send-audio-preview").src = mediaPreviewUrl; $("send-audio-preview").hidden = false;
+    $("send-file-info").textContent = `${file.name} · ${(file.size / 1000000).toFixed(2)} MB`;
+    generatedSpeech = file; form.elements.media_file.required = false;
+    $("send-tts-result").textContent = "生成成功，可试听后点击立即发送。" +
+      (target.source === "qq_c2c" ? "私聊发送时自动转成 SILK。" : "") + "修改文本或音色后需重新生成。";
+  } catch(e) { $("send-tts-result").textContent = e.message; }
+  finally { sendPending = false; controls.forEach((node, index) => node.disabled = states[index]); }
+};
 $("send-image-preview").onerror = () => { $("send-file-info").textContent = "图片无法预览，请检查文件格式。"; };
 $("send-audio-preview").onerror = () => {
   if (mediaPreviewUrl) $("send-file-info").textContent = "此音频无法在当前浏览器试听，发送前仍会校验文件格式。";
 };
-$("send-dialog").addEventListener("close", () => { clearMediaPreview(); $("send-form").elements.media_file.value = ""; sendPayload = null; });
+$("send-dialog").addEventListener("close", () => { clearMediaPreview(); generatedSpeech = null; $("send-form").elements.media_file.value = ""; sendPayload = null; });
 function composeMessage(item) {
   if (!item || sendPending) return;
   sendTarget = {botId:item.bot_id, recordId:item.id, source:item.source, requestId:crypto.randomUUID()};
   sendPayload = null;
   const form = $("send-form"); form.reset(); form.elements.content.readOnly = false;
+  $("send-tts-provider").replaceChildren();
+  for (const provider of providers.filter(p => p.model_type === "tts" && p.enabled && p.has_api_key)) {
+    const option = element("option", provider.name + " · " + provider.model_name); option.value = provider.id;
+    $("send-tts-provider").append(option);
+  }
+  $("send-tts-generate").disabled = false;
+  $("send-tts-result").textContent = "";
   form.elements.message_kind.disabled = false; form.elements.media_file.disabled = false;
   updateSendKind();
   $("send-submit").disabled = false; $("send-submit").textContent = "立即发送";
@@ -365,9 +460,9 @@ $("send-form").onsubmit = async event => {
       if (!form.elements.content.value.trim()) return;
       sendPayload = {kind, content:form.elements.content.value.trim()};
     } else {
-      const file = form.elements.media_file.files[0];
+      const file = generatedSpeech || form.elements.media_file.files[0];
       if (!file || !file.size || file.size > MAX_MEDIA_BYTES) { $("send-result").textContent = "请选择非空且不超过 3.5 MB 的文件"; return; }
-      const allowed = kind === "image" ? /\.(png|jpe?g)$/i : target.source === "qq_group" ? /\.(silk|mp3|wav)$/i : /\.silk$/i;
+      const allowed = kind === "image" ? /\.(png|jpe?g)$/i : target.source === "qq_group" ? /\.(silk|mp3|wav)$/i : /\.(silk|wav)$/i;
       if (!allowed.test(file.name)) { $("send-result").textContent = "文件格式不适用于此消息类型或会话，请按上方说明选择。"; return; }
       sendPayload = {kind, file};
     }
@@ -376,8 +471,11 @@ $("send-form").onsubmit = async event => {
   submit.disabled = true; form.elements.content.readOnly = true;
   form.elements.message_kind.disabled = true; form.elements.media_file.disabled = true;
   sendPending = true;
+  $("send-tts-generate").disabled = true;
   const closeButtons = [...$("send-dialog").querySelectorAll("[data-close]")]; closeButtons.forEach(node => node.disabled = true);
-  $("send-result").textContent = payload.kind === "text" ? "正在发送，请稍候…" : "正在上传文件并请求 QQ 发送，请稍候…";
+  $("send-result").textContent = payload.kind === "text" ? "正在发送，请稍候…" :
+    target.source === "qq_c2c" && /\.wav$/i.test(payload.file.name)
+      ? "正在转为 SILK、上传并请求 QQ 发送，请稍候…" : "正在上传文件并请求 QQ 发送，请稍候…";
   try {
     const base = `/bots/${target.botId}/records/${target.recordId}`;
     const result = payload.kind === "text" ? await api(base + "/send", {

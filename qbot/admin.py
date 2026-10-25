@@ -102,6 +102,12 @@ class ProactiveInput(BaseModel):
     request_id: UUID
 
 
+class SpeechInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    text: str = Field(min_length=1, max_length=500)
+    voice: str = Field(default="Bunny", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_ -]+$")
+
+
 def admin_router(settings: Settings) -> APIRouter:
     router = APIRouter()
     # 单进程内存登录会话，退出即撤销，重启全部失效。
@@ -254,7 +260,24 @@ def admin_router(settings: Settings) -> APIRouter:
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from None
             from qbot.provider_probe import probe_provider
+            if provider["model_type"] != "chat":
+                raise HTTPException(400, "TTS 请使用文本试听接口 /speech，提交 text 和 voice")
             return await probe_provider(settings, provider)
+
+    @router.post("/api/admin/providers/{provider_id}/speech", dependencies=[Depends(require_admin)])
+    async def provider_speech(provider_id: int, data: SpeechInput, db: Store = Depends(store)) -> Response:
+        nonlocal last_probe
+        if probe_lock.locked() or time.monotonic() - last_probe < 10:
+            raise HTTPException(429, "检查或合成正在进行，或操作过于频繁，请稍后再试")
+        async with probe_lock:
+            last_probe = time.monotonic()
+            try:
+                provider = await db.call("provider_for_probe", provider_id)
+                from qbot.tts import synthesize
+                audio = await synthesize(provider, data.text, data.voice)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
+            return Response(audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
     @router.put("/api/admin/default-provider", dependencies=[Depends(require_admin)])
     async def default(data: DefaultInput, db: Store = Depends(store)) -> dict:
@@ -314,8 +337,17 @@ def admin_router(settings: Settings) -> APIRouter:
         try:
             await db.call("save_greeting_settings", bot_id, record_id, data.model_dump())
         except ValueError:
-            raise HTTPException(400, "问候设置无效，请确认家庭绑定、时间段和星期") from None
+            raise HTTPException(400, "任务设置无效，请确认接收人名称绑定、时间段和星期") from None
         return {"ok": True}
+
+    @router.post("/api/admin/bots/{bot_id}/records/{record_id}/greetings/{slot}/run", dependencies=[Depends(require_admin)])
+    async def run_greeting(bot_id: int, record_id: int, slot: Literal["morning", "evening"],
+                           request: Request, db: Store = Depends(store)) -> dict:
+        try:
+            rule_id = await db.call("greeting_for_execution", bot_id, record_id, slot)
+            return await request.app.state.proactive.send_scheduled(rule_id, manual=True)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
 
     @router.get("/api/admin/bots/{bot_id}/send-targets", dependencies=[Depends(require_admin)])
     async def send_targets(bot_id: int, source: Literal["qq_group", "qq_c2c"],

@@ -207,10 +207,17 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
         app.state.proactive = ProactiveSender(manager, db, settings)
         from qbot.bot_profiles import BotProfiles
         app.state.bot_profiles = BotProfiles(settings, db)
+        scheduler = None
         try:
             await manager.start_all()
+            if settings.admin_enabled:
+                scheduler = asyncio.create_task(app.state.proactive.run_schedules(), name="scheduled-messages")
             yield
         finally:
+            if scheduler is not None:
+                scheduler.cancel()
+                with suppress(asyncio.CancelledError):
+                    await scheduler
             await manager.close()
             if engine:
                 await asyncio.to_thread(engine.dispose)

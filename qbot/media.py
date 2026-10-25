@@ -25,7 +25,7 @@ class MediaUpload:
 
     def check_source(self, source: str) -> None:
         if source == "qq_c2c" and self.kind == "audio" and self.extension != ".silk":
-            raise ValueError("QQ 私聊语音目前按官方文档仅支持 SILK；MP3/WAV 仅用于群聊，暂不自动转码")
+            raise ValueError("QQ 私聊需发送 SILK；支持的 PCM WAV 会在发送前自动转码，MP3 仅用于群聊")
 
 
 def validate_media(kind: str, filename: str, data: bytes) -> MediaUpload:

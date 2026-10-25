@@ -1,4 +1,4 @@
-"""首次互动问候配置；北京时间按固定 UTC+8 计算，无需额外时区依赖。"""
+"""定时主动发送配置；北京时间按固定 UTC+8 计算，无需额外时区依赖。"""
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -19,7 +19,7 @@ class GreetingRule(BaseModel):
     @model_validator(mode="after")
     def validate_rule(self):
         if self.start >= self.end:
-            raise ValueError("结束时间必须晚于开始时间，暂不支持跨午夜")
+            raise ValueError("最晚执行时间必须晚于发送时间，暂不支持跨午夜")
         if len(set(self.weekdays)) != len(self.weekdays) or any(d not in range(1, 8) for d in self.weekdays):
             raise ValueError("星期必须为不重复的 1 至 7")
         self.weekdays.sort()
