@@ -41,13 +41,29 @@ async function enter() {
   await Promise.all([loadRecords(), loadProviders(), loadBots()]);
 }
 function date(value) { return value ? new Date(/[Zz]|[+-]\d\d:\d\d$/.test(value) ? value : value + "Z").toLocaleString() : "—"; }
+function tokenNumber(value) { return value == null ? "未知" : Number(value).toLocaleString(); }
+function tokenText(item) { return [item.input_tokens, item.output_tokens, item.total_tokens].map(tokenNumber).join(" / "); }
 function element(tag, text, className) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; }
 function button(text, action) { const node = element("button", text, "row-action"); node.type = "button"; node.onclick = async () => { node.disabled = true; try { await action(); } catch(e) { toast(e.message); } finally { node.disabled = false; } }; return node; }
 async function loadRecords() {
   const request = ++recordsRequest, params = new URLSearchParams({page:String(currentPage),page_size:"20"});
   for (const [name,value] of new FormData($("filter-form"))) if(value) params.set(name, ["start","end"].includes(name) ? new Date(value).toISOString() : value.trim());
   $("record-count").textContent = "正在加载…";
-  const data = await api("/records?" + params); if(request !== recordsRequest) return;
+  $("token-summary").textContent = "正在加载…";
+  let data;
+  try { data = await api("/records?" + params); }
+  catch (error) {
+    if (request === recordsRequest) {
+      $("token-summary").textContent = "统计加载失败，请刷新重试";
+      $("record-count").textContent = "加载失败";
+    }
+    throw error;
+  }
+  if(request !== recordsRequest) return;
+  const usage = data.token_usage;
+  $("token-summary").textContent = usage
+    ? `已知输入 ${tokenNumber(usage.input_tokens)} · 已知输出 ${tokenNumber(usage.output_tokens)} · 已知总计 ${tokenNumber(usage.total_tokens)} token · ${usage.known_records} / ${usage.records} 条记录有总用量`
+    : "当前服务尚未提供 Token 统计，请升级后端";
   $("records-body").replaceChildren(); $("records-empty").hidden = data.items.length > 0;
   $("record-count").textContent = `共 ${data.total} 条`; $("page-info").textContent = `第 ${data.page} / ${Math.max(1, Math.ceil(data.total / data.page_size))} 页`;
   $("prev-page").disabled = currentPage <= 1; $("next-page").disabled = currentPage * data.page_size >= data.total;
@@ -55,6 +71,7 @@ async function loadRecords() {
     const row = element("tr"), timeCell = element("td", date(item.received_at)); const botName = element("small", botLabel(item.bot_id)); botName.dataset.botLabel = item.bot_id; timeCell.append(botName); timeCell.append(element("small", ({qq_group:"QQ 群聊",qq_c2c:"QQ 私聊",local:"本地聊天"}[item.source] || item.source))); row.append(timeCell);
     const identity = element("td", item.source === "qq_c2c" ? "私聊" : item.group_id); identity.append(element("small", item.user_id)); row.append(identity, element("td", item.question), element("td", item.model_name_snapshot || "—"));
     const status = element("td"); status.append(element("span", labels[item.status] || item.status, "badge " + item.status)); row.append(status);
+    row.insertBefore(element("td", tokenText(item)), status);
     const action = element("td"); action.append(button("查看 →", () => showDetail(item.id))); row.append(action); $("records-body").append(row);
   }
 }
@@ -62,6 +79,7 @@ let detailRecord = null;
 function renderDetailMeta(item) {
   const source = {qq_group:"QQ 群聊", qq_c2c:"QQ 私聊", local:"本地聊天"}[item.source] || item.source;
   $("detail-meta").textContent = `${botLabel(item.bot_id)} · ${source} · ${date(item.received_at)} · ${labels[item.status] || item.status} · ${item.provider_name_snapshot || "未调用模型"} / ${item.model_name_snapshot || "—"}${item.source === "qq_group" ? " · 群 " + item.group_id : ""} · 用户 ${item.user_id}`;
+  $("detail-meta").append(document.createTextNode(` · 聊天 Token（输入 / 输出 / 总计）：${tokenText(item)}`));
 }
 async function showDetail(id) {
   const item = await api("/records/" + id);

@@ -11,6 +11,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
 
 from qbot.config import Settings
+from qbot.token_usage import extract_token_usage
 
 SessionKey = tuple[str, str]
 Sender = Callable[[str], Awaitable[None]]
@@ -41,6 +42,7 @@ class ChatService:
     async def reply(self, key: SessionKey, text: str, sender: Sender | None = None, *, model: Runnable | None = None,
                     identity_context: str = "", visual_context: str = "",
                     metrics: dict | None = None,
+                    save_usage: Callable[[dict[str, int]], Awaitable[None]] | None = None,
                     prepare_reply: Callable[[str], Awaitable[str]] | None = None) -> str:
         async with self.lock:
             now = time.monotonic()
@@ -76,11 +78,13 @@ class ChatService:
                     started = time.monotonic()
                     if model is not None:
                         output = await (self.prompt | model).ainvoke(inputs)
+                        usage = extract_token_usage(output)
+                        # 在文本解析和 QQ 发送前保存，空回复或发送失败仍可能产生用量。
+                        if save_usage is not None:
+                            await save_usage(usage)
                         answer = StrOutputParser().invoke(output)
                         if metrics is not None:
-                            usage = getattr(output, "usage_metadata", None) or {}
-                            metrics["chat_usage"] = {k: v for k, v in usage.items()
-                                if k in ("input_tokens", "output_tokens", "total_tokens") and type(v) in (int, float)}
+                            metrics["chat_usage"] = usage
                     else:
                         answer = await chain.ainvoke(inputs)
                     if metrics is not None:

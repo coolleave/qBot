@@ -63,6 +63,11 @@ class RecordedChat:
                     await sender(value)
                 delivered = True
 
+            async def save_usage(usage: dict[str, int]) -> None:
+                await self.store.call("update_record", record_id, **{
+                    name: usage.get(name) for name in ("input_tokens", "output_tokens", "total_tokens")
+                })
+
             identity = await self.store.call("family_identity", self.bot_id, record_id)
             identity_context = (
                 "当前发送者身份仅以本条系统信息为准，优先于历史聊天和角色设定中的猜测。"
@@ -74,7 +79,7 @@ class RecordedChat:
             )
             answer = await self.chat.reply(key, text, deliver, model=model,
                                            identity_context=identity_context, visual_context=visual_context,
-                                           metrics=diagnostics)
+                                           metrics=diagnostics, save_usage=save_usage)
             status = "replied" if text.strip() and len(text.strip()) <= self.settings.max_input_chars else "rejected"
             await self.store.call("update_record", record_id, status=status)
             return answer

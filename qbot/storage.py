@@ -51,6 +51,8 @@ class Store:
             self.settings = metadata.tables["app_settings"]
             self.conversations = metadata.tables["conversations"]
             self.records = metadata.tables["chat_records"]
+            if any(name not in self.records.c for name in ("input_tokens", "output_tokens", "total_tokens")):
+                raise StorageError("Token 统计表结构尚未升级，请先执行 python -m alembic upgrade head")
             if ("multimodal" not in self.bots.c or "supports_images" not in self.providers.c
                     or "media_details" not in self.records.c):
                 raise StorageError("多模态表结构尚未升级，请先执行 python -m alembic upgrade head")
@@ -382,12 +384,21 @@ class Store:
         if end:
             filters.append(r.c.received_at <= end)
         columns = [r.c.id, r.c.bot_id, r.c.source, r.c.group_id, c.c.user_id, r.c.status, r.c.received_at,
+                   r.c.input_tokens, r.c.output_tokens, r.c.total_tokens,
                    r.c.model_name_snapshot, func.substr(r.c.question, 1, 120).label("question")]
         with self.engine.connect() as conn:
-            count = conn.execute(select(func.count()).select_from(joined).where(*filters)).scalar_one()
+            # 与列表共用筛选条件，汇总全部匹配记录，不受分页或发送状态限制。
+            aggregate = conn.execute(select(
+                func.count().label("records"),
+                *(func.sum(r.c[name]).label(name) for name in ("input_tokens", "output_tokens", "total_tokens")),
+                func.count(r.c.total_tokens).label("known_records"),
+            ).select_from(joined).where(*filters)).mappings().one()
+            usage = {name: int(value) if value is not None else None for name, value in aggregate.items()}
+            count = usage["records"]
             rows = conn.execute(select(*columns).select_from(joined).where(*filters)
                 .order_by(r.c.received_at.desc(), r.c.id.desc()).offset((page - 1) * page_size).limit(page_size)).mappings()
-            return {"items": [dict(row) for row in rows], "total": count, "page": page, "page_size": page_size}
+            return {"items": [dict(row) for row in rows], "total": count, "page": page,
+                    "page_size": page_size, "token_usage": usage}
 
     def send_targets(self, bot_id: int, source: str, page: int = 1) -> dict:
         """按实际投递范围去重；群内不同用户只显示一个群目标。"""
