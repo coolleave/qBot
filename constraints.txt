@@ -69,3 +69,7 @@ MarkupSafe==3.0.4
 
 # SILK codec wheel installed on Python 3.13 / Windows; conversion not yet tested
 silk-python==0.2.8
+
+# Multimodal decoder versions installed locally; integration not yet tested
+Pillow==12.3.0
+miniaudio==1.71

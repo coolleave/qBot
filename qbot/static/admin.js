@@ -66,6 +66,7 @@ function renderDetailMeta(item) {
 async function showDetail(id) {
   const item = await api("/records/" + id);
   detailRecord = item;
+  $("detail-media").textContent = item.media_details ? JSON.stringify(item.media_details, null, 2) : "无附件处理记录";
   const form = $("binding-form"); form.reset();
   form.hidden = !["qq_group", "qq_c2c"].includes(item.source);
   $("open-send").hidden = form.hidden;
@@ -118,15 +119,75 @@ async function loadProviders() {
         finally { probe.disabled = false; }
       };
     } else if (item.model_type !== "chat") outcome.textContent = "已保存模型配置，暂未接入调用及连接测试。";
+    if (item.model_type === "asr" || (item.model_type === "chat" && item.supports_images)) {
+      const kind = item.model_type === "asr" ? "audio" : "image", upload = element("input");
+      upload.type = "file"; upload.accept = kind === "audio" ? ".wav,.mp3,.flac,.ogg,.silk" : ".png,.jpg,.jpeg,.webp,.gif";
+      upload.setAttribute("aria-label", kind === "audio" ? "短语音文件" : "图片或表情包");
+      card.append(upload, element("p", "文件最多8 MB；短语音最多60秒。点击试用会调用付费模型。" + (item.model_name.includes("filetrans") ? "音频会上传至百炼临时存储，48小时后自动删除，仅供开发试用。" : ""), "muted"));
+      const inspect = button(kind === "audio" ? "转写语音" : "理解图片 / 表情包", async () => {
+        const file = upload.files[0];
+        if (!file || file.size > 8000000) throw new Error("请选择不超过8 MB的文件");
+        outcome.textContent = item.model_name.includes("filetrans") ? "正在上传并等待异步转写，最长约80秒…" : "正在处理…";
+        try {
+          const result = await api(`/providers/${item.id}/inspect-media?kind=${kind}`, {method:"POST", headers:{"Content-Type":"application/octet-stream"}, body:file});
+          outcome.textContent = `${result.success ? "成功" : "失败"} · ${result.latency_ms} ms · ${result.reply || result.message}`;
+        } catch(e) { outcome.textContent = "处理失败：" + e.message; }
+      });
+      inspect.disabled = !item.has_api_key; actions.append(inspect);
+      if (kind === "audio") { probe.hidden = true; outcome.textContent = "选择短语音后点击转写。"; }
+    }
     actions.append(probe);
     card.append(actions, outcome); $("providers-list").append(card);
   }
 }
+// 预设仅填写表单，不创建数据库记录或替换已有供应商。
+function providerPreset(item) {
+  try {
+    const host = new URL(item.base_url).hostname;
+    if (host === "api.deepseek.com") return "deepseek";
+    if (["dashscope.aliyuncs.com", "dashscope-intl.aliyuncs.com"].includes(host) || host.endsWith(".maas.aliyuncs.com")) return "qwen";
+  } catch { /* 编辑时保留无法归类的自定义地址。 */ }
+  return "custom";
+}
+function showProviderPreset() {
+  const form = $("provider-form"), preset = $("provider-preset").value;
+  const kind = form.elements.model_type.value;
+  $("provider-preset-hint").textContent = preset === "qwen"
+    ? (kind === "asr" ? "千问 ASR 默认 Filetrans：先上传 WAV，再异步转写。临时文件保留48小时，仅供开发试用；正式部署请使用自有 OSS。" : "千问默认北京地域；切换类型会重新填写推荐模型和地址。其他地域可手动修改，API Key 须匹配地域。")
+    : preset === "deepseek" ? "DeepSeek 预设用于聊天，默认 deepseek-flash。填写自己的 API Key 后保存。" : "自行填写 HTTPS 地址、模型和接口。自定义不会自动适配未知的 ASR / TTS 协议。";
+  const names = preset === "qwen" ? ({chat:["qwen3.8-flash", "qwen3-vl-plus"], asr:["qwen-audio-3.0-asr-flash-filetrans", "qwen-audio-3.1-asr-flash-filetrans", "qwen-audio-3.0-asr-flash", "qwen-audio-3.1-asr-flash"], tts:["qwen3-tts-flash-realtime"]}[kind] || []) : preset === "deepseek" ? ["deepseek-flash", "deepseek-v4-pro"] : [];
+  $("provider-model-suggestions").replaceChildren(...names.map(name => new Option(name, name)));
+}
+function applyProviderPreset() {
+  const form = $("provider-form"), preset = $("provider-preset").value;
+  if (preset === "custom") { showProviderPreset(); return; }
+  if (preset === "deepseek") form.elements.model_type.value = "chat";
+  const kind = form.elements.model_type.value;
+  if (kind === "image") { $("provider-preset").value = "custom"; showProviderPreset(); return; }
+  const base = preset === "deepseek" ? "https://api.deepseek.com" : "https://dashscope.aliyuncs.com" + (kind === "chat" ? "/compatible-mode/v1" : "");
+  try {
+    if (form.elements.base_url.value && new URL(form.elements.base_url.value).origin !== new URL(base).origin) form.elements.api_key.value = "";
+  } catch { form.elements.api_key.value = ""; }
+  form.elements.api_type.value = preset === "deepseek" ? "deepseek" : "openai_compatible";
+  form.elements.base_url.value = base;
+  form.elements.model_name.value = preset === "deepseek" ? "deepseek-flash" : {chat:"qwen3.8-flash", asr:"qwen-audio-3.0-asr-flash-filetrans", tts:"qwen3-tts-flash-realtime"}[kind];
+  form.elements.supports_images.checked = preset === "qwen" && kind === "chat";
+  if (!form.elements.name.value.trim()) form.elements.name.value = (preset === "qwen" ? "千问" : "DeepSeek") + " " + kind;
+  showProviderPreset();
+}
+$("provider-preset").onchange = applyProviderPreset;
+$("provider-form").elements.model_type.onchange = () => {
+  if ($("provider-preset").value === "deepseek" && $("provider-form").elements.model_type.value !== "chat") $("provider-preset").value = "custom";
+  applyProviderPreset();
+};
 function editProvider(item) {
   const form = $("provider-form"); form.reset(); $("provider-error").textContent = "";
+  $("provider-preset").value = item ? providerPreset(item) : "deepseek";
   const defaults = item || {id:"",name:"",model_type:"chat",api_type:"deepseek",base_url:"https://api.deepseek.com",model_name:"deepseek-flash",enabled:false};
   for(const key of ["id","name","model_type","api_type","base_url","model_name"]) form.elements[key].value = defaults[key];
+  form.elements.supports_images.checked = Boolean(defaults.supports_images);
   form.elements.enabled.checked = Boolean(defaults.enabled); form.elements.api_key.value = "";
+  showProviderPreset();
   $("provider-title").textContent = item ? "编辑供应商" : "添加供应商"; $("provider-dialog").showModal();
 }
 $("login-form").onsubmit = async event => {event.preventDefault(); const form = event.currentTarget, submit = form.querySelector("button"); submit.disabled = true; $("login-error").textContent = ""; try {await api("/login", {method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(form)))}); form.elements.password.value = ""; await enter();} catch(e) {$("login-error").textContent = e.message; toast(e.message);} finally {submit.disabled = false;}};
@@ -144,7 +205,7 @@ document.querySelectorAll("[data-close]").forEach(node => node.onclick = () => $
 $("provider-dialog").addEventListener("close", () => $("provider-form").elements.api_key.value = "");
 $("new-provider").onclick = () => editProvider(null);
 $("environment-default").onclick = async () => {try {await api("/default-provider", {method:"PUT",body:JSON.stringify({provider_id:null})}); await loadProviders(); toast("已取消默认供应商，选择新默认项后才能聊天");} catch(e) {toast(e.message);}};
-$("provider-form").onsubmit = async event => {event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id; data.enabled = form.elements.enabled.checked; submit.disabled = true; $("provider-error").textContent = ""; try {await api("/providers" + (id ? "/" + id : ""), {method:id ? "PUT" : "POST",body:JSON.stringify(data)}); $("provider-dialog").close(); await loadProviders(); toast("配置已保存，下次模型请求生效");} catch(e) {$("provider-error").textContent = e.message;} finally {submit.disabled = false;}};
+$("provider-form").onsubmit = async event => {event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id; data.enabled = form.elements.enabled.checked; data.supports_images = form.elements.supports_images.checked; submit.disabled = true; $("provider-error").textContent = ""; try {await api("/providers" + (id ? "/" + id : ""), {method:id ? "PUT" : "POST",body:JSON.stringify(data)}); $("provider-dialog").close(); await loadProviders(); toast("配置已保存，下次模型请求生效");} catch(e) {$("provider-error").textContent = e.message;} finally {submit.disabled = false;}};
 $("filter-form").onsubmit = event => {event.preventDefault();currentPage = 1;loadRecords().catch(e => toast(e.message));};
 $("reset-filters").onclick = () => {$("filter-form").reset();currentPage = 1;loadRecords().catch(e => toast(e.message));};
 $("refresh-records").onclick = () => loadRecords().catch(e => toast(e.message));
@@ -242,6 +303,18 @@ async function editBot(item) {
       $("bot-provider").add(new Option(provider.name + (provider.enabled ? "" : "（已停用）"), provider.id));
     }
   }
+  const mm = item?.multimodal || {};
+  for (const key of ["images", "gifs", "asr"]) form.elements["mm_" + key].checked = Boolean(mm[key]);
+  for (const kind of ["vision", "asr", "tts"]) {
+    const key = kind + "_provider_id", select = form.elements["mm_" + key];
+    select.replaceChildren(new Option(kind === "vision" ? "请选择独立视觉理解模型" : "请选择", ""));
+    for (const provider of data.items.filter(p => (p.enabled || p.id === mm[key]) && (kind === "vision" ? p.model_type === "chat" && p.supports_images && p.api_type === "openai_compatible" : p.model_type === kind))) {
+      select.add(new Option(provider.name, provider.id));
+    }
+    select.value = mm[key] || "";
+  }
+  form.elements.mm_voice.value = mm.voice || "Bunny";
+  for (const key of ["private_reply", "group_reply"]) form.elements["mm_" + key].value = mm[key] || "text";
   const values = item || {id:"", name:"", app_id:"", transport:"websocket", provider_id:null, system_prompt:"", enabled:false};
   for(const key of ["id", "name", "app_id", "transport", "provider_id", "system_prompt"]) form.elements[key].value = values[key] ?? "";
   form.elements.enabled.checked = Boolean(values.enabled);
@@ -251,6 +324,12 @@ async function editBot(item) {
 $("bot-form").onsubmit = async event => {
   event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]');
   const data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id;
+  data.multimodal = {};
+  for (const key of ["images", "gifs", "asr", "vision_provider_id", "asr_provider_id", "tts_provider_id", "voice", "private_reply", "group_reply"]) {
+    const field = form.elements["mm_" + key];
+    data.multimodal[key] = field.type === "checkbox" ? field.checked : key.endsWith("_id") ? (field.value ? Number(field.value) : null) : field.value;
+    delete data["mm_" + key];
+  }
   data.enabled = form.elements.enabled.checked; data.provider_id = data.provider_id ? Number(data.provider_id) : null;
   submit.disabled = true; $("bot-error").textContent = "";
   try {

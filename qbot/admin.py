@@ -18,6 +18,7 @@ from qbot.config import Settings
 from qbot.greetings import GreetingInput
 from qbot.security import verify_password
 from qbot.storage import Store
+from qbot.multimodal_config import MultimodalConfig
 
 
 class Login(BaseModel):
@@ -29,6 +30,7 @@ class ProviderInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=100)
     model_type: Literal["chat", "image", "asr", "tts"] = "chat"
+    supports_images: bool = False
     api_type: Literal["deepseek", "openai_compatible"]
     base_url: str = Field(max_length=2048)
     model_name: str = Field(min_length=1, max_length=200)
@@ -74,6 +76,7 @@ class BotInput(QQInput):
     provider_id: int | None = Field(default=None, gt=0)
     system_prompt: str = Field(default="", max_length=8000)
     enabled: bool = False
+    multimodal: MultimodalConfig = Field(default_factory=MultimodalConfig)
 
 
 class FamilyBindingInput(BaseModel):
@@ -278,6 +281,52 @@ def admin_router(settings: Settings) -> APIRouter:
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from None
             return Response(audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+    @router.post("/api/admin/providers/{provider_id}/inspect-media", dependencies=[Depends(require_admin)])
+    async def inspect_media(provider_id: int, request: Request, kind: Literal["image", "audio"],
+                            db: Store = Depends(store)) -> dict:
+        nonlocal last_probe
+        if probe_lock.locked() or time.monotonic() - last_probe < 10:
+            raise HTTPException(429, "检查正在进行或操作过于频繁，请稍后再试")
+        from qbot.multimodal import MAX_FILE, MEDIA_SLOTS, decode_media, transcribe
+        import json
+        async with probe_lock:
+            last_probe = time.monotonic()
+            started = time.monotonic()
+            try:
+                async with asyncio.timeout(80), MEDIA_SLOTS:
+                    provider = await db.call("provider_for_probe", provider_id)
+                    if kind == "image" and (provider["model_type"] != "chat" or not provider.get("supports_images")
+                                             or provider["api_type"] != "openai_compatible"):
+                        raise ValueError("请选择支持图片输入的聊天模型")
+                    if kind == "audio" and provider["model_type"] != "asr":
+                        raise ValueError("请选择 ASR 模型")
+                    body = bytearray()
+                    async for chunk in request.stream():
+                        if len(body) + len(chunk) > MAX_FILE:
+                            raise ValueError("文件不能超过8 MB")
+                        body.extend(chunk)
+                    if kind == "audio":
+                        wav = await decode_media(bytes(body), "audio")
+                        details = {}
+                        reply, usage = await transcribe(provider, wav, details)
+                        return {"success": True, "reply": reply, "usage": usage, "details": details,
+                                "latency_ms": round((time.monotonic() - started) * 1000)}
+                    decoded = json.loads(await decode_media(bytes(body), "gif"))
+                    content = [{"type": "text", "text": "请描述图片或表情包的内容。" + decoded["notice"]}]
+                    for frame in decoded["frames"]:
+                        content.extend([{"type": "text", "text": f"相对时间{frame['time_ms']}ms"},
+                            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + frame["data"]}}])
+                    from qbot.vision import describe_images
+                    details = {}
+                    summary = await describe_images(settings, provider, "请描述图片或表情包的内容。", content, details,
+                                                    slot_acquired=True)
+                    return {"success": True, "reply": summary, "usage": details.get("usage", {}),
+                            "latency_ms": round((time.monotonic() - started) * 1000)}
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
+            except Exception:
+                raise HTTPException(502, "媒体处理失败或超时，请检查文件、模型配置和网络") from None
 
     @router.put("/api/admin/default-provider", dependencies=[Depends(require_admin)])
     async def default(data: DefaultInput, db: Store = Depends(store)) -> dict:

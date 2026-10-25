@@ -173,18 +173,16 @@ class QQClient:
             if response.status_code == 401 and attempt == 0:
                 self.expires_at = 0
                 continue
-            if response.status_code >= 500 and message_id is None:
-                raise QQDeliveryUnknown("QQ 服务异常，主动消息送达状态未知")
+            if response.status_code >= 500:
+                raise QQDeliveryUnknown("QQ 服务异常，消息送达状态未知")
             if response.is_error:
                 raise QQAPIError(f"QQ 发送 HTTP {response.status_code}")
             try:
                 data = response_data(response)
             except QQAPIError:
-                if message_id is None:
-                    raise QQDeliveryUnknown("QQ 响应无法解析，主动消息送达状态未知") from None
-                raise
-            if message_id is None and data.get("code") in (None, 0) and not data.get("id"):
-                raise QQDeliveryUnknown("QQ 未返回消息标识，主动消息送达状态未知")
+                raise QQDeliveryUnknown("QQ 响应无法解析，送达状态未知") from None
+            if data.get("code") in (None, 0) and not data.get("id"):
+                raise QQDeliveryUnknown("QQ 未返回消息标识，消息送达状态未知")
             if data.get("code") not in (None, 0) or not data.get("id"):
                 raise QQAPIError("QQ 发送失败，请检查平台权限、内容限制及被动回复有效期")
             return
@@ -209,8 +207,11 @@ class QQClient:
             raise QQAPIError("QQ 未确认媒体上传成功，请检查格式、大小与权限")
         return info
 
-    async def send_media(self, source: str, target_id: str, file_info: str) -> None:
+    async def send_media(self, source: str, target_id: str, file_info: str, message_id: str | None = None) -> None:
         resource = "groups" if source == "qq_group" else "users"
         url = f"{self.settings.qq_api_base_url}/v2/{resource}/{quote(target_id, safe='')}/messages"
-        # 富媒体的 content 按官方兼容要求填空格，不携带历史 msg_id 冒充回复。
-        await self._send_payload(url, {"msg_type": 7, "content": " ", "media": {"file_info": file_info}})
+        # 富媒体 content 填空格；被动回复仅携带当前事件 ID，主动发送不携带。
+        payload = {"msg_type": 7, "content": " ", "media": {"file_info": file_info}}
+        if message_id is not None:
+            payload.update(msg_id=message_id, msg_seq=1)
+        await self._send_payload(url, payload)

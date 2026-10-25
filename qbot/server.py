@@ -23,6 +23,7 @@ from qbot.model import create_model
 from qbot.qq import QQAPIError, QQDeliveryUnknown, QQClient, signing_key, verify_signature
 from qbot.storage import Store, StorageError, mysql_engine
 from qbot.recording import RecordedChat
+from qbot.multimodal import Attachment, normalize_faces, prepare_message
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class GroupMessage(BaseModel):
     author: Author
     content: str = Field(default="", max_length=50000)
     timestamp: datetime
+    attachments: list[Attachment] = Field(default_factory=list, max_length=20)
 
 
 class PrivateAuthor(BaseModel):
@@ -51,6 +53,7 @@ class PrivateMessage(BaseModel):
     author: PrivateAuthor
     content: str = Field(default="", max_length=50000)
     timestamp: datetime
+    attachments: list[Attachment] = Field(default_factory=list, max_length=20)
 
 
 def incoming_message(event_type: str, data: dict) -> GroupMessage:
@@ -60,7 +63,7 @@ def incoming_message(event_type: str, data: dict) -> GroupMessage:
         scope = "c2c:" + hashlib.sha256(message.author.user_openid.encode()).hexdigest()
         return GroupMessage(source="qq_c2c", id=message.id, group_openid=scope,
             author=Author(member_openid=message.author.user_openid, bot=message.author.bot),
-            content=message.content, timestamp=message.timestamp)
+            content=message.content, timestamp=message.timestamp, attachments=message.attachments)
     return GroupMessage.model_validate({**data, "source": "qq_group"})
 
 
@@ -122,7 +125,9 @@ class Dispatcher:
             record_id = None
             if self.store:
                 record_id, created = await self.store.call("receive", message.source, message.group_openid,
-                    message.author.member_openid, message.id, message.content, message.timestamp, bot_id=self.bot_id)
+                    message.author.member_openid, message.id,
+                    normalize_faces(message.content) + (f"\n【附件 {len(message.attachments)} 个】" if message.attachments else ""),
+                    message.timestamp, bot_id=self.bot_id)
                 if not created:
                     return
             logger.info("收到 QQ 消息，机器人：%s，来源：%s", self.bot_id, message.source)
@@ -140,8 +145,12 @@ class Dispatcher:
             job = await self.queue.get()
             message = job.message
             key = (message_scope(message), message.id)
+            sending = False
+            diagnostics = {"attachments": [], "reply_kind": "text"}
             try:
                 async def send(text: str) -> None:
+                    nonlocal sending
+                    sending = True
                     try:
                         async with asyncio.timeout(25):
                             if message.source == "qq_c2c":
@@ -163,21 +172,105 @@ class Dispatcher:
                     continue
 
                 try:
-                    kwargs = {"record_id": job.record_id} if self.store else {}
-                    await self.chat.reply((message_scope(message), message.author.member_openid),
-                                          message.content, send, **kwargs)
+                    deadline = min(job.received_at + 120, time.monotonic() + max(0, 270 - age))
+                    async with asyncio.timeout_at(deadline):
+                        if self.store and isinstance(self.chat, RecordedChat):
+                            config = await self.store.call("multimodal_config", self.bot_id)
+                            control = message.content.strip() == "/reset" or len(message.content.strip()) > self.settings.max_input_chars
+                            prepared = await prepare_message(message.content, [] if control else message.attachments,
+                                                             config, self.store, self.bot_id)
+                            diagnostics.update(prepared["details"])
+                            await self.store.call("update_record", job.record_id,
+                                media_details=json.dumps(diagnostics, ensure_ascii=False))
+                            if not prepared["usable"] and message.attachments:
+                                error = ("未能识别附件。" + "；".join(diagnostics["warnings"]))[:self.settings.max_reply_chars]
+                                await self.store.call("update_record", job.record_id, answer=error, status="processing")
+                                await send(error[:self.settings.max_reply_chars])
+                                await self.store.call("update_record", job.record_id, status="rejected", error_message=error[:1000])
+                                continue
+
+                            async def respond(value: str) -> None:
+                                nonlocal sending
+                                from qbot.auto_voice import voice_file, wants_voice
+                                if diagnostics.get("warnings"):
+                                    notice = "\n（部分附件未完整识别：" + "；".join(diagnostics["warnings"]) + "）"
+                                    notice = notice[:min(500, self.settings.max_reply_chars)]
+                                    value = value[:max(0, self.settings.max_reply_chars - len(notice))] + notice
+                                    await self.store.call("update_record", job.record_id, answer=value)
+                                remaining = deadline - time.monotonic()
+                                if (not control and not diagnostics.get("warnings") and remaining >= 80
+                                        and wants_voice(value, config, message.source, prepared["voice_input"])):
+                                    target = message.author.member_openid if message.source == "qq_c2c" else message.group_openid
+                                    try:
+                                        # 只包围尚未发送的准备阶段；媒体发送开始后绝不回退。
+                                        async with asyncio.timeout(min(65, remaining - 15)):
+                                            info = await voice_file(value, config, self.store, message.source, self.qq, target, diagnostics)
+                                    except Exception:
+                                        diagnostics.setdefault("fallback_reason", "语音准备超时或不可用")
+                                        notice = "\n（语音暂不可用，已改用文字）"
+                                        fallback = value[:max(0, self.settings.max_reply_chars - len(notice))] + notice
+                                        await self.store.call("update_record", job.record_id, answer=fallback)
+                                        await send(fallback)
+                                        return
+                                    diagnostics["reply_kind"] = "audio"
+                                    sending = True
+                                    try:
+                                        async with asyncio.timeout(10):
+                                            await self.qq.send_media(message.source, target, info, message.id)
+                                    except TimeoutError:
+                                        raise QQDeliveryUnknown("语音回复超时，送达未知") from None
+                                else:
+                                    if wants_voice(value, config, message.source, prepared["voice_input"]) and remaining < 80:
+                                        diagnostics["fallback_reason"] = "剩余回复时间不足，改用文字"
+                                    await send(value)
+
+                            await self.chat.reply((message_scope(message), message.author.member_openid),
+                                prepared["text"], respond, record_id=job.record_id, image_blocks=prepared["blocks"],
+                                vision_provider_id=config["vision_provider_id"], diagnostics=diagnostics)
+                        else:
+                            await self.chat.reply((message_scope(message), message.author.member_openid),
+                                                  message.content, send)
                 except (QQAPIError, StorageError):
                     raise
                 except Exception as exc:
                     # 第三方异常可能包含用户输入或密钥，只记录异常类型。
                     logger.warning("模型调用失败：%s", type(exc).__name__)
-                    await send("模型服务暂时不可用或请求超时，请稍后重试。")
+                    if self.store and job.record_id:
+                        await self.store.call("update_record", job.record_id,
+                            status="delivery_unknown" if sending else "model_failed",
+                            error_message="请求超时或处理失败" + ("，送达未知" if sending else ""))
+                    if not sending:
+                        async with asyncio.timeout(max(0.01, min(10, 270 - (datetime.now(timezone.utc) - message.timestamp).total_seconds()))):
+                            from qbot.vision import VisionError
+                            await send(str(exc) if isinstance(exc, VisionError) else "模型服务暂时不可用或请求超时，请稍后重试。")
             except Exception as exc:
                 logger.error("消息处理或发送失败：%s", type(exc).__name__)
+                if self.store and job.record_id:
+                    try:
+                        await self.store.call("update_record", job.record_id,
+                            status="delivery_unknown" if sending and isinstance(exc, (QQDeliveryUnknown, TimeoutError)) else "send_failed",
+                            error_message="处理或发送失败，请核对 QQ 和服务日志")
+                    except StorageError:
+                        logger.error("发送状态保存失败")
+            except asyncio.CancelledError:
+                if self.store and job.record_id:
+                    try:
+                        await self.store.call("update_record", job.record_id,
+                            status="delivery_unknown" if sending else "model_failed",
+                            error_message="机器人停止，消息处理被中断" + ("，送达未知" if sending else ""))
+                    except StorageError:
+                        logger.error("中断状态保存失败")
+                raise
             finally:
                 self.pending.discard(key)
                 self.seen[key] = time.monotonic()
                 self.queue.task_done()
+                if self.store and job.record_id:
+                    try:
+                        await self.store.call("update_record", job.record_id,
+                            media_details=json.dumps(diagnostics, ensure_ascii=False))
+                    except StorageError:
+                        logger.error("多模态处理详情保存失败")
 
 
 def create_app(settings: Settings | None = None, *, chat: ChatService | None = None,

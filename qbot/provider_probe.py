@@ -12,7 +12,7 @@ from qbot.model import provider_model
 logger = logging.getLogger(__name__)
 
 
-async def probe_provider(settings: Settings, provider: dict) -> dict:
+async def probe_provider(settings: Settings, provider: dict, content: str | list = "你好") -> dict:
     # 禁用自动重试，耗时表示完整模型调用时间（非首 token 延迟）。
     config = settings.model_copy(update={"model_max_retries": 0,
         "model_timeout_seconds": 20, "model_max_tokens": 64})
@@ -22,7 +22,7 @@ async def probe_provider(settings: Settings, provider: dict) -> dict:
     try:
         async with asyncio.timeout(25):
             model = provider_model(config, provider)
-            response = await model.ainvoke([HumanMessage(content="你好")], config={"callbacks": []})
+            response = await model.ainvoke([HumanMessage(content=content)], config={"callbacks": []})
             content = response.content
             reply = content if isinstance(content, str) else "".join(
                 part.get("text", "") for part in content

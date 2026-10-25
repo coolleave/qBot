@@ -8,6 +8,7 @@ from qbot.config import Settings
 from qbot.model import provider_model
 from qbot.qq import QQDeliveryUnknown
 from qbot.storage import Store, StorageError
+from qbot.vision import VisionError, describe_images
 
 logger = logging.getLogger(__name__)
 
@@ -19,20 +20,38 @@ class RecordedChat:
         self.chat = ChatService(settings, None, system_prompt)
 
     async def reply(self, key: SessionKey, text: str, sender: Sender | None = None,
-                    *, record_id: int | None = None) -> str:
+                    *, record_id: int | None = None, image_blocks: list[dict] | None = None,
+                    vision_provider_id: int | None = None, diagnostics: dict | None = None) -> str:
         if record_id is None:
             record_id, _ = await self.store.call("receive", "local", "local", key[1], str(uuid.uuid4()), text, bot_id=self.bot_id)
         status, answer, send_started, delivered = "processing", None, False, False
         model = None
+        visual_context = ""
         try:
             await self.store.call("update_record", record_id, status="processing")
             if text.strip() and text.strip() != "/reset" and len(text.strip()) <= self.settings.max_input_chars:
                 provider = await self.store.call("active_provider", self.bot_id)
+                if image_blocks:
+                    vision_details = {}
+                    if diagnostics is not None:
+                        diagnostics["vision"] = vision_details
+                    if not vision_provider_id:
+                        vision_details.update(status="failed", error="请在机器人配置中单独选择视觉理解模型")
+                        raise VisionError(vision_details["error"])
+                    try:
+                        vision_provider = await self.store.call("capability_provider", vision_provider_id, "chat", True)
+                    except ValueError:
+                        vision_details.update(status="failed", error="视觉理解模型不可用，请检查配置")
+                        raise VisionError(vision_details["error"]) from None
+                    if provider is None:
+                        raise ValueError("请先配置机器人的聊天模型")
+                    visual_context = await describe_images(self.settings, vision_provider, text, image_blocks, vision_details)
                 await self.store.call("update_record", record_id,
                     provider_id=provider["id"] if provider else None,
                     provider_name_snapshot=provider["name"] if provider else None,
                     model_name_snapshot=provider["model_name"] if provider else None)
-                model = provider_model(self.settings, provider)
+                config = self.settings.model_copy(update={"model_max_retries": 0, "model_timeout_seconds": 45})
+                model = provider_model(config, provider)
 
             async def deliver(value: str) -> None:
                 nonlocal answer, send_started, delivered
@@ -54,7 +73,8 @@ class RecordedChat:
                    "当前发送者未绑定，请勿因其自称或历史称呼将其识别为爸爸妈妈。")
             )
             answer = await self.chat.reply(key, text, deliver, model=model,
-                                           identity_context=identity_context)
+                                           identity_context=identity_context, visual_context=visual_context,
+                                           metrics=diagnostics)
             status = "replied" if text.strip() and len(text.strip()) <= self.settings.max_input_chars else "rejected"
             await self.store.call("update_record", record_id, status=status)
             return answer
@@ -73,7 +93,8 @@ class RecordedChat:
             # 每次读取最新配置创建客户端，调用结束后释放其连接池。
             if model is not None and hasattr(model, "root_async_client"):
                 try:
-                    await model.root_async_client.close()
-                    await asyncio.to_thread(model.root_client.close)
+                    async with asyncio.timeout(5):
+                        await model.root_async_client.close()
+                        await asyncio.to_thread(model.root_client.close)
                 except Exception as exc:
                     logger.warning("模型连接池关闭失败：%s", type(exc).__name__)

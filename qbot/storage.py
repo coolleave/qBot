@@ -1,5 +1,7 @@
 import asyncio
+import json
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy import MetaData, create_engine, func, select
@@ -47,6 +49,9 @@ class Store:
             self.settings = metadata.tables["app_settings"]
             self.conversations = metadata.tables["conversations"]
             self.records = metadata.tables["chat_records"]
+            if ("multimodal" not in self.bots.c or "supports_images" not in self.providers.c
+                    or "media_details" not in self.records.c):
+                raise StorageError("多模态表结构尚未升级，请先执行 python -m alembic upgrade head")
             with engine.connect() as conn:
                 if conn.execute(select(self.settings.c.id).where(self.settings.c.id == 1)).first() is None:
                     raise StorageError("请先执行 python -m alembic upgrade head 初始化配置行")
@@ -65,6 +70,7 @@ class Store:
             items = []
             for row in rows:
                 item = dict(row)
+                item["multimodal"] = json.loads(item["multimodal"] or "{}")
                 encrypted = item.pop("app_secret_encrypted")
                 item.update(has_secret=bool(encrypted), secret_mask="••••••••" if encrypted else "未配置")
                 items.append(item)
@@ -76,6 +82,7 @@ class Store:
         if row is None:
             raise ValueError("机器人不存在")
         item = dict(row)
+        item["multimodal"] = json.loads(item["multimodal"] or "{}")
         encrypted = item.pop("app_secret_encrypted")
         try:
             item["app_secret"] = self.cipher.decrypt(encrypted.encode()).decode() if encrypted else ""
@@ -107,6 +114,20 @@ class Store:
                     default = conn.execute(select(self.settings.c.default_provider_id).where(self.settings.c.id == 1)).scalar_one()
                     if default is None:
                         raise ValueError("启用前请选择供应商或设置全局默认供应商")
+                from qbot.multimodal_config import MultimodalConfig
+                mm = MultimodalConfig.model_validate(values.get("multimodal", {})).model_dump()
+                if mm["images"] and not mm["vision_provider_id"]:
+                    raise ValueError("开启图片理解需单独选择视觉理解模型")
+                for field, kind in (("vision_provider_id", "chat"), ("asr_provider_id", "asr"), ("tts_provider_id", "tts")):
+                    pid = mm[field]
+                    if pid is None:
+                        continue
+                    selected = conn.execute(select(self.providers).where(self.providers.c.id == pid)).mappings().first()
+                    if not selected or not selected["enabled"] or not selected["api_key_encrypted"] or selected["model_type"] != kind:
+                        raise ValueError("多模态供应商类型不匹配或未启用")
+                    if field == "vision_provider_id" and (not selected["supports_images"] or selected["api_type"] != "openai_compatible"):
+                        raise ValueError("视觉供应商需要支持图片输入的兼容聊天接口")
+                values["multimodal"] = json.dumps(mm, ensure_ascii=False)
                 if secret:
                     values["app_secret_encrypted"] = self.cipher.encrypt(secret.encode()).decode()
                 values["updated_at"] = utc_now()
@@ -150,8 +171,8 @@ class Store:
             row = conn.execute(select(self.providers).where(self.providers.c.id == provider_id)).mappings().first()
         if row is None:
             raise ValueError("供应商不存在")
-        if row["model_type"] not in ("chat", "tts"):
-            raise ValueError("当前连接测试仅支持 chat 和 tts 类型模型")
+        if row["model_type"] not in ("chat", "tts", "asr"):
+            raise ValueError("该类型未接入调用")
         result = dict(row)
         encrypted = result.pop("api_key_encrypted")
         if not encrypted:
@@ -161,6 +182,20 @@ class Store:
         except InvalidToken:
             raise ValueError("密钥解密失败，请检查加密主密钥") from None
         return result
+
+    def multimodal_config(self, bot_id: int) -> dict:
+        from qbot.multimodal_config import MultimodalConfig
+        with self.engine.connect() as conn:
+            value = conn.execute(select(self.bots.c.multimodal).where(self.bots.c.id == bot_id)).scalar_one()
+        return MultimodalConfig.model_validate(json.loads(value or "{}")).model_dump()
+
+    def capability_provider(self, provider_id: int, kind: str, vision: bool = False) -> dict:
+        provider = self.provider_for_probe(provider_id)
+        if not provider["enabled"] or provider["model_type"] != kind:
+            raise ValueError("供应商未启用或用途不匹配")
+        if vision and (not provider["supports_images"] or provider["api_type"] != "openai_compatible"):
+            raise ValueError("供应商不支持图片输入")
+        return provider
 
     def save_provider(self, values: dict, provider_id: int | None = None) -> int:
         values = dict(values)
@@ -177,6 +212,9 @@ class Store:
                     old = conn.execute(select(self.providers).where(self.providers.c.id == provider_id)).mappings().first()
                     if old is None:
                         raise ValueError("供应商不存在")
+                if (old and not key and old["api_key_encrypted"]
+                        and urlsplit(old["base_url"]).netloc != urlsplit(values["base_url"]).netloc):
+                    raise ValueError("更换供应商服务域名时请重新填写 API Key，不能沿用原供应商密钥")
                 encrypted = self.cipher.encrypt(key.encode()).decode() if key else (old["api_key_encrypted"] if old else None)
                 if values["enabled"] and not encrypted:
                     raise ValueError("启用供应商前必须配置 API Key")
@@ -189,6 +227,17 @@ class Store:
                     bound = conn.execute(select(self.bots.c.id).where(self.bots.c.provider_id == provider_id).limit(1)).first()
                     if bound:
                         raise ValueError("该供应商已绑定机器人，请先调整机器人配置")
+                if values.get("supports_images") and (values["model_type"] != "chat" or values["api_type"] != "openai_compatible"):
+                    raise ValueError("图片输入能力仅用于兼容接口的 chat 模型")
+                if provider_id is not None:
+                    for bot in conn.execute(select(self.bots)).mappings():
+                        mm = json.loads(bot["multimodal"] or "{}")
+                        for field, kind in (("vision_provider_id", "chat"), ("asr_provider_id", "asr"), ("tts_provider_id", "tts")):
+                            bound_id = mm.get(field)
+                            if bound_id == provider_id and (not values["enabled"] or values["model_type"] != kind
+                                    or (field == "vision_provider_id" and (not values.get("supports_images")
+                                        or values["api_type"] != "openai_compatible"))):
+                                raise ValueError("供应商已被多模态配置引用，请先调整机器人配置")
                 values.update(api_key_encrypted=encrypted, updated_at=utc_now())
                 if provider_id is None:
                     values["created_at"] = utc_now()
@@ -201,6 +250,7 @@ class Store:
     def set_default(self, provider_id: int | None) -> None:
         with self.engine.begin() as conn:
             conn.execute(select(self.settings.c.id).with_for_update()).scalar_one()
+            provider = None
             if provider_id is None:
                 following = conn.execute(select(self.bots.c.id).where(
                     (self.bots.c.provider_id.is_(None)) & (self.bots.c.enabled == 1)).limit(1)).first()
@@ -332,7 +382,11 @@ class Store:
                     (i.c.bot_id == c.c.bot_id) & (i.c.user_id == c.c.user_id)
                     & c.c.source.in_(("qq_group", "qq_c2c"))))
                 .where(r.c.id == record_id)).mappings().first()
-            return dict(row) if row else None
+            if not row:
+                return None
+            result = dict(row)
+            result["media_details"] = json.loads(result["media_details"] or "{}")
+            return result
 
     def save_family_binding(self, bot_id: int, record_id: int, values: dict | None) -> dict:
         """仅从已有 QQ 记录取身份，客户端不能指定或替换 OpenID。"""
