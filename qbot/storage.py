@@ -451,6 +451,37 @@ class Store:
             return {"bot_id": bot_id, "source": row["source"], "group_id": row["group_id"],
                     "user_id": row["user_id"], **binding}
 
+    def list_identity_bindings(self, bot_id: int | None = None, user_id: str = "", page: int = 1) -> dict:
+        """按机器人和 OpenID 合并群聊、私聊，展示已知用户及其统一身份。"""
+        c, r, i = self.conversations, self.records, self.identities
+        filters = [c.c.source.in_(("qq_group", "qq_c2c"))]
+        if bot_id is not None:
+            filters.append(c.c.bot_id == bot_id)
+        if user_id:
+            filters.append(c.c.user_id == user_id)
+        users = select(c.c.bot_id, c.c.user_id, func.max(r.c.id).label("record_id")).select_from(
+            c.join(r, (r.c.conversation_id == c.c.id) & (r.c.bot_id == c.c.bot_id))
+        ).where(*filters).group_by(c.c.bot_id, c.c.user_id).subquery()
+        joined = users.outerjoin(i, (i.c.bot_id == users.c.bot_id) & (i.c.user_id == users.c.user_id))
+        with self.engine.connect() as conn:
+            total = conn.execute(select(func.count()).select_from(users)).scalar_one()
+            rows = conn.execute(select(users, i.c.member_name, i.c.family_role, i.c.qq_number_note)
+                .select_from(joined).order_by(users.c.record_id.desc())
+                .offset((page - 1) * 20).limit(20)).mappings().all()
+        return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": 20}
+
+    def bind_identity_id(self, bot_id: int, values: dict) -> dict:
+        """从已接收的 QQ 消息确认 OpenID，复用身份校验与写入锁。"""
+        c, r = self.conversations, self.records
+        with self.engine.connect() as conn:
+            record_id = conn.execute(select(func.max(r.c.id)).select_from(
+                c.join(r, (r.c.conversation_id == c.c.id) & (r.c.bot_id == c.c.bot_id))
+            ).where(c.c.bot_id == bot_id, c.c.user_id == values["user_id"],
+                    c.c.source.in_(("qq_group", "qq_c2c")))).scalar_one()
+        if record_id is None:
+            raise ValueError("该机器人下未找到此 OpenID 的 QQ 消息，请让用户先发一条消息")
+        return self.save_family_binding(bot_id, record_id, values)
+
     def family_identity(self, bot_id: int, record_id: int) -> dict | None:
         record = self.record_detail(record_id)
         if (not record or record["bot_id"] != bot_id or record["source"] not in ("qq_group", "qq_c2c")

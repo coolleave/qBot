@@ -86,6 +86,10 @@ class FamilyBindingInput(BaseModel):
     qq_number_note: str = Field(default="", max_length=20, pattern=r"^[0-9]*$")
 
 
+class IdentityBindingInput(FamilyBindingInput):
+    user_id: str = Field(min_length=1, max_length=256, pattern=r"^[\x21-\x7e]+$")
+
+
 class UserBindingInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     contact_name: str = Field(min_length=1, max_length=100)
@@ -356,6 +360,20 @@ def admin_router(settings: Settings) -> APIRouter:
         if result is None:
             raise HTTPException(404, "记录不存在")
         return result
+
+    @router.get("/api/admin/identity-bindings", dependencies=[Depends(require_admin)])
+    async def identity_bindings(bot_id: int | None = Query(None, gt=0),
+                                user_id: str = Query("", max_length=256),
+                                page: int = Query(1, ge=1, le=100000),
+                                db: Store = Depends(store)) -> dict:
+        return await db.call("list_identity_bindings", bot_id, user_id.strip(), page)
+
+    @router.put("/api/admin/bots/{bot_id}/identity-bindings", dependencies=[Depends(require_admin)])
+    async def bind_identity(bot_id: int, data: IdentityBindingInput, db: Store = Depends(store)) -> dict:
+        try:
+            return await db.call("bind_identity_id", bot_id, data.model_dump())
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
 
     @router.put("/api/admin/bots/{bot_id}/records/{record_id}/binding", dependencies=[Depends(require_admin)])
     async def bind_member(bot_id: int, record_id: int, data: FamilyBindingInput,

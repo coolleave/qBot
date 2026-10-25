@@ -195,8 +195,9 @@ $("logout").onclick = async () => {try {await api("/logout", {method:"POST"}); l
 document.querySelectorAll("[data-page]").forEach(node => node.onclick = () => {
   const page = node.dataset.page;
   document.querySelectorAll("[data-page]").forEach(n => n.classList.toggle("active", n === node));
-  for (const name of ["records", "providers", "bots", "messages", "greetings", "bindings"]) $(name + "-page").hidden = page !== name;
-  $("page-name").textContent = {records:"聊天记录",providers:"模型供应商",bots:"机器人管理",messages:"发送消息",greetings:"定时任务",bindings:"用户绑定"}[page];
+  for (const name of ["records", "providers", "bots", "messages", "greetings", "bindings", "identities"]) $(name + "-page").hidden = page !== name;
+  $("page-name").textContent = {records:"聊天记录",providers:"模型供应商",bots:"机器人管理",messages:"发送消息",greetings:"定时任务",bindings:"用户绑定",identities:"身份绑定"}[page];
+  if (page === "identities") void loadIdentityBindings();
   if (page === "bindings") void loadUserBindings();
   if (page === "greetings") void loadGreetingTargets();
   if (page === "messages") void loadSendTargets().catch(e => toast(e.message));
@@ -216,9 +217,9 @@ enter().catch(e => {if(!$("workspace").hidden) toast(e.message);});
 async function loadBots() {
   const data = await api("/bots");
   $("bots-list").replaceChildren();
-  for (const id of ["binding-bot-filter", "binding-bot"]) {
+  for (const id of ["binding-bot-filter", "binding-bot", "identity-bot-filter", "identity-bot"]) {
     const select = $(id), selected = select.value;
-    select.replaceChildren(new Option(id === "binding-bot" ? "请选择机器人" : "全部机器人", ""));
+    select.replaceChildren(new Option(["binding-bot", "identity-bot"].includes(id) ? "请选择机器人" : "全部机器人", ""));
     for (const bot of data.items) {
       const option = new Option(botNames.has(bot.id) ? botLabel(bot.id) : `${bot.name} #${bot.id}`, bot.id);
       option.dataset.botLabel = bot.id; select.add(option);
@@ -640,6 +641,63 @@ $("greeting-bot").onchange = () => { greetingTargetsPage = 1; void loadGreetingT
 $("refresh-greeting-targets").onclick = () => { greetingTargetsPage = 1; void loadGreetingTargets(); };
 $("greeting-target-prev").onclick = () => { greetingTargetsPage--; void loadGreetingTargets(); };
 $("greeting-target-next").onclick = () => { greetingTargetsPage++; void loadGreetingTargets(); };
+
+let identitiesPage = 1, identitiesRequest = 0;
+async function loadIdentityBindings() {
+  const request = ++identitiesRequest, params = new URLSearchParams({page:String(identitiesPage)});
+  if ($("identity-bot-filter").value) params.set("bot_id", $("identity-bot-filter").value);
+  if ($("identity-user-filter").value.trim()) params.set("user_id", $("identity-user-filter").value.trim());
+  $("identities-body").replaceChildren(); $("identities-empty").hidden = false;
+  $("identities-empty").textContent = "正在加载…";
+  $("identity-count").textContent = ""; $("identity-page").textContent = "";
+  $("identity-prev").disabled = true; $("identity-next").disabled = true;
+  try {
+    const data = await api("/identity-bindings?" + params);
+    if (request !== identitiesRequest) return;
+    $("identity-count").textContent = `共 ${data.total} 个用户（同一机器人内按 OpenID 合并）`;
+    $("identity-page").textContent = `第 ${data.page} / ${Math.max(1, Math.ceil(data.total / data.page_size))} 页`;
+    $("identity-prev").disabled = data.page <= 1;
+    $("identity-next").disabled = data.page * data.page_size >= data.total;
+    $("identities-empty").hidden = data.items.length > 0;
+    $("identities-empty").textContent = "没有匹配的用户，请先让用户私聊此机器人或在群里 @机器人。";
+    for (const item of data.items) {
+      const row = element("tr"), bot = element("td", botLabel(item.bot_id)); bot.dataset.botLabel = item.bot_id;
+      const actions = element("td"); actions.append(button(item.family_role ? "编辑身份" : "绑定身份", () => editIdentityBinding(item)));
+      if (item.family_role) actions.append(button("解除身份", async () => {
+        if (!confirm(`解除 ${botLabel(item.bot_id)} 下 ${item.member_name} 的身份？所有同 OpenID 群聊和私聊都会生效。`)) return;
+        await api(`/bots/${item.bot_id}/records/${item.record_id}/binding`, {method:"DELETE"});
+        toast("身份已解除，下次对话生效"); await loadIdentityBindings();
+      }));
+      row.append(bot, element("td", item.user_id), element("td", item.member_name || "未绑定"),
+        element("td", ({father:"爸爸",mother:"妈妈",friend:"朋友"})[item.family_role] || "—"),
+        element("td", item.qq_number_note || "—"), actions);
+      $("identities-body").append(row);
+    }
+  } catch(e) { if (request === identitiesRequest) $("identities-empty").textContent = "加载失败：" + e.message; }
+}
+function editIdentityBinding(item = null) {
+  const form = $("identity-form"); form.reset(); $("identity-error").textContent = "";
+  const values = item || {bot_id:$("identity-bot-filter").value, user_id:$("identity-user-filter").value.trim(), family_role:"friend"};
+  for (const key of ["bot_id", "user_id", "member_name", "family_role", "qq_number_note"]) form.elements[key].value = values[key] || (key === "family_role" ? "friend" : "");
+  form.elements.bot_id.disabled = Boolean(item); form.elements.user_id.readOnly = Boolean(item);
+  $("identity-dialog").showModal();
+}
+$("new-identity-binding").onclick = () => editIdentityBinding();
+$("identity-filter").onsubmit = event => { event.preventDefault(); identitiesPage = 1; void loadIdentityBindings(); };
+$("identity-bot-filter").onchange = () => { identitiesPage = 1; void loadIdentityBindings(); };
+$("identity-prev").onclick = () => { identitiesPage--; void loadIdentityBindings(); };
+$("identity-next").onclick = () => { identitiesPage++; void loadIdentityBindings(); };
+$("identity-form").onsubmit = async event => {
+  event.preventDefault();
+  const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), values = Object.fromEntries(new FormData(form));
+  const botId = form.elements.bot_id.value; delete values.bot_id;
+  submit.disabled = true; $("identity-error").textContent = "";
+  try {
+    await api(`/bots/${botId}/identity-bindings`, {method:"PUT", body:JSON.stringify(values)});
+    $("identity-dialog").close(); toast("身份已保存，所有同 OpenID 会话下次对话生效"); await loadIdentityBindings();
+  } catch(e) { $("identity-error").textContent = e.message; }
+  finally { submit.disabled = false; }
+};
 
 let userBindingsPage = 1, userBindingsRequest = 0;
 async function loadUserBindings() {
