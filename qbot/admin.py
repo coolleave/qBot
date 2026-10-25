@@ -122,6 +122,8 @@ def admin_router(settings: Settings) -> APIRouter:
     probe_lock = asyncio.Lock()
     media_lock = asyncio.Lock()
     last_probe = 0.0
+    greeting_generation_lock = asyncio.Lock()
+    last_greeting_generation = 0.0
 
     def sign(token: str) -> str:
         return hmac.new(settings.admin_session_secret.get_secret_value().encode(), token.encode(), hashlib.sha256).hexdigest()
@@ -404,6 +406,37 @@ def admin_router(settings: Settings) -> APIRouter:
         except ValueError:
             raise HTTPException(400, "任务设置无效，请确认接收人名称绑定、时间段和星期") from None
         return {"ok": True}
+
+    @router.post("/api/admin/bots/{bot_id}/records/{record_id}/greetings/{slot}/generate", dependencies=[Depends(require_admin)])
+    async def generate_greeting_draft(bot_id: int, record_id: int, slot: Literal["morning", "evening"],
+                                      db: Store = Depends(store)) -> dict:
+        from qbot.greeting_generation import generate_greeting
+
+        nonlocal last_greeting_generation
+        if greeting_generation_lock.locked() or time.monotonic() - last_greeting_generation < 10:
+            raise HTTPException(429, "生成正在进行或操作过于频繁，请稍后再试")
+        async with greeting_generation_lock:
+            last_greeting_generation = time.monotonic()
+            record = await db.call("record_detail", record_id)
+            if not record or record["bot_id"] != bot_id or record["source"] not in ("qq_c2c", "qq_group"):
+                raise HTTPException(400, "该机器人下不存在这条 QQ 消息")
+            bots = await db.call("list_bots")
+            bot = next((item for item in bots if item["id"] == bot_id), None)
+            if bot is None:
+                raise HTTPException(404, "机器人不存在")
+            try:
+                provider = await db.call("active_provider", bot_id)
+                if provider is None:
+                    raise ValueError("请先为机器人选择聊天模型或配置默认供应商")
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
+            try:
+                content = await generate_greeting(settings, provider, bot.get("system_prompt") or "", record, slot)
+            except TimeoutError:
+                raise HTTPException(504, "生成超时，请稍后重试；原文案未修改") from None
+            except Exception:
+                raise HTTPException(502, "生成失败或返回文案不符合 1 至 200 字要求，请检查模型配置、额度或重试；原文案未修改") from None
+            return {"content": content}
 
     @router.post("/api/admin/bots/{bot_id}/records/{record_id}/greetings/{slot}/run", dependencies=[Depends(require_admin)])
     async def run_greeting(bot_id: int, record_id: int, slot: Literal["morning", "evening"],

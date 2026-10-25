@@ -366,6 +366,30 @@ $("binding-form").onsubmit = event => { event.preventDefault(); void saveBinding
 $("unbind-member").onclick = () => saveBinding(true);
 
 let greetingTarget = null, greetingItem = null, greetingDirty = false, greetingRunning = false;
+$("greeting-target").after(element("p", "生成文案会调用此机器人配置的聊天模型，可能产生费用。按最新保存的人设生成，替换当前时段的草稿；确认后请保存设置。", "muted"));
+for (const slot of ["morning", "evening"]) {
+  const generate = button("按人设生成文案", async () => {
+    const form = $("greeting-form");
+    if (!greetingTarget || greetingRunning || form.querySelector('[type="submit"]').disabled) return;
+    const target = greetingTarget;
+    const controls = [...$("greeting-dialog").querySelectorAll("button, input, textarea")];
+    greetingRunning = true; controls.forEach(node => node.disabled = true);
+    $("greeting-error").textContent = "";
+    $("greeting-run-result").textContent = "正在按机器人人设生成文案…";
+    try {
+      const result = await api(`/bots/${target.botId}/records/${target.recordId}/greetings/${slot}/generate`, {method:"POST"});
+      if (greetingTarget !== target || !$("greeting-dialog").open) return;
+      form.elements[slot + "_content"].value = result.content;
+      $(slot + "-preview").textContent = result.content;
+      greetingDirty = true;
+      $("greeting-run-result").textContent = "文案已生成，可继续修改；点击保存设置后生效。";
+    } catch(e) {
+      $("greeting-error").textContent = e.message;
+      $("greeting-run-result").textContent = "生成未完成，原文案已保留。";
+    } finally { greetingRunning = false; controls.forEach(node => node.disabled = false); }
+  });
+  $(slot + "-preview").before(generate);
+}
 $("greeting-dialog").addEventListener("cancel", event => { if (greetingRunning) event.preventDefault(); });
 async function openGreetings(item) {
   if (!item) return;
