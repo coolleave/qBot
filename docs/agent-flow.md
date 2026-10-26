@@ -47,3 +47,7 @@
 查不到接收记录先读[QQ 接入](qq-runtime.md)；有记录但回复异常，按 Dispatcher → RecordedChat → ChatService → 模型配置排查。区分 expired、model_failed、send_failed、delivery_unknown；网络超时不等于未送达，发送开始后不盲目补发。
 
 用量只记录实际返回值，缺失保持未知，输入与输出均有值时可相加；不估算费用。持久化和汇总见[存储](storage.md)。
+
+## 模型连接生命周期修正（已编写，待真实调用验收）
+
+已安装 LangChain 会缓存默认 HTTP 客户端，与项目每次调用后关闭客户端的策略冲突。模型工厂显式创建独立同步和异步 HTTP 客户端，由当前模型调用结束时释放，不关闭其他调用共享的连接。覆盖问候、聊天、视觉和供应商试用。未调用真实模型验收。

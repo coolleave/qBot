@@ -1,3 +1,5 @@
+from openai import DefaultHttpxClient, DefaultAsyncHttpxClient
+
 from langchain_deepseek import ChatDeepSeek
 from langchain_openai import ChatOpenAI
 
@@ -27,7 +29,10 @@ def provider_model(settings: Settings, provider: dict | None):
         raise ValueError("聊天只能使用 chat 类型模型")
     common = dict(model=provider["model_name"], api_key=provider["api_key"],
                   timeout=settings.model_timeout_seconds, max_retries=settings.model_max_retries,
-                  max_tokens=settings.model_max_tokens)
+                  max_tokens=settings.model_max_tokens,
+                  # 调用方会关闭模型客户端，必须独占连接池，不能使用 LangChain 默认缓存。
+                  http_client=DefaultHttpxClient(timeout=settings.model_timeout_seconds),
+                  http_async_client=DefaultAsyncHttpxClient(timeout=settings.model_timeout_seconds))
     if provider["api_type"] == "deepseek":
         return ChatDeepSeek(**common, api_base=provider["base_url"], extra_body={"thinking": {"type": "disabled"}})
     return ChatOpenAI(**common, base_url=provider["base_url"], use_responses_api=False)
