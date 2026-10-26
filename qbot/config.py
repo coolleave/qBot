@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     qq_token_url: str = "https://api.bot.qq.com/app/getAppAccessToken"
     qq_timeout_seconds: float = Field(10, gt=0, le=30)
     host: str = "127.0.0.1"
-    port: int = Field(8080, ge=1, le=65535)
+    port: int = Field(8092, ge=1, le=65535)
     session_ttl_seconds: int = Field(1800, ge=1)
     session_max_turns: int = Field(10, ge=1, le=50)
     session_max_count: int = Field(1000, ge=1, le=10000)

@@ -1,0 +1,20 @@
+# 仅允许构建所需文件，密钥、本机环境及无关素材不进入构建上下文。
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!constraints.txt
+!alembic.ini
+!qbot/
+!qbot/**
+!migrations/
+!migrations/**
+!config/
+!config/**
+!图片/
+!图片/**
+**/__pycache__/
+**/*.py[cod]
+**/.env
+**/.env.*
+**/.git/

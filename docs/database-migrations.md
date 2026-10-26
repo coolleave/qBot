@@ -4,6 +4,8 @@
 
 ## 初始化及升级
 
+Docker 部署使用 `docker compose run --rm --no-deps qbot python -m alembic upgrade head`，版本查询将 `upgrade head` 替换为 `current`。先停止旧应用并备份，迁移成功后才启动新容器；启动不会自动迁移，完整步骤见 [Docker 部署](docker-deployment.md)。容器使用 Compose 注入的 MYSQL_* 环境变量，不需要将 `.env` 打入镜像。
+
 ```powershell
 .\.venv\Scripts\python -m alembic upgrade head
 .\.venv\Scripts\python -m alembic current
