@@ -1,3 +1,4 @@
+import re
 import asyncio
 import base64
 import time
@@ -48,6 +49,22 @@ def response_data(response: httpx.Response) -> dict:
         return data
     except ValueError:
         raise QQAPIError("QQ 返回了无效 JSON 对象") from None
+
+
+def qq_response_error(response: httpx.Response, stage: str) -> QQAPIError:
+    """只提取可核查的短错误标识，不向日志/后台泄露远端正文。"""
+    try:
+        data = response_data(response)
+    except QQAPIError:
+        data = {}
+    fields = [f"HTTP {response.status_code}"]
+    code = data.get("code")
+    if type(code) is int or (isinstance(code, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", code)):
+        fields.append(f"code={code}")
+    trace = response.headers.get("X-Tps-trace-ID") or data.get("trace_id")
+    if isinstance(trace, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", trace):
+        fields.append(f"trace_id={trace}")
+    return QQAPIError(f"QQ {stage}被拒绝或未确认（{'，'.join(fields)}）")
 
 
 class QQClient:
@@ -176,7 +193,7 @@ class QQClient:
             if response.status_code >= 500:
                 raise QQDeliveryUnknown("QQ 服务异常，消息送达状态未知")
             if response.is_error:
-                raise QQAPIError(f"QQ 发送 HTTP {response.status_code}")
+                raise qq_response_error(response, "消息发送")
             try:
                 data = response_data(response)
             except QQAPIError:
@@ -184,7 +201,7 @@ class QQClient:
             if data.get("code") in (None, 0) and not data.get("id"):
                 raise QQDeliveryUnknown("QQ 未返回消息标识，消息送达状态未知")
             if data.get("code") not in (None, 0) or not data.get("id"):
-                raise QQAPIError("QQ 发送失败，请检查平台权限、内容限制及被动回复有效期")
+                raise qq_response_error(response, "消息发送")
             return
 
     async def upload_media(self, source: str, target_id: str, media: MediaUpload) -> str:
@@ -200,11 +217,11 @@ class QQClient:
         except httpx.TransportError:
             raise QQAPIError("QQ 媒体上传网络异常，尚未执行消息发送") from None
         if response.is_error:
-            raise QQAPIError(f"QQ 媒体上传 HTTP {response.status_code}")
+            raise qq_response_error(response, "媒体上传")
         data = response_data(response)
         info = data.get("file_info")
         if data.get("code") not in (None, 0) or not isinstance(info, str) or not info:
-            raise QQAPIError("QQ 未确认媒体上传成功，请检查格式、大小与权限")
+            raise qq_response_error(response, "媒体上传")
         return info
 
     async def send_media(self, source: str, target_id: str, file_info: str, message_id: str | None = None) -> None:

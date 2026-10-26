@@ -126,8 +126,11 @@ class ProactiveSender:
             except (TimeoutError, QQDeliveryUnknown):
                 status = "delivery_unknown" if sending else "send_failed"
                 error = "QQ 发送超时，当前部分可能已送达" if sending else f"{stage}超时，未执行发送"
-            except QQAPIError:
-                error = "QQ 拒绝或未确认发送，请检查主动消息权限、额度及接收范围"
+            except QQAPIError as exc:
+                error = str(exc)
+                details["failed_stage"] = stage
+                logging.getLogger(__name__).warning("QQ 定时发送失败 record=%s stage=%s error=%s",
+                    task["record_id"], stage, error)
             except GreetingGenerationError as exc:
                 error = "AI 文案生成失败：" + str(exc)
             except ValueError as exc:
@@ -225,10 +228,10 @@ class ProactiveSender:
                     status, error = "send_failed", "媒体上传超时，尚未执行消息发送"
                 else:
                     status, error = "delivery_unknown", "QQ 发送超时或网络异常，可能已送达，请勿直接重发"
-            except QQAPIError:
+            except QQAPIError as exc:
                 status = "send_failed"
-                error = ("媒体上传失败，尚未发送；请检查文件格式、大小、网络和平台权限" if stage == "upload"
-                         else "QQ 拒绝或未确认发送，请检查主动消息权限、额度、接收范围及内容限制")
+                error = str(exc) + ("；尚未执行消息发送" if stage == "upload" else "")
+                logging.getLogger(__name__).warning("QQ 主动发送失败 record=%s stage=%s error=%s", rid, stage, error)
             except (ValueError, OSError) as exc:
                 if stage != "convert":
                     raise
