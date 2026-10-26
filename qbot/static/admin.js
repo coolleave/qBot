@@ -3,6 +3,7 @@ const $ = id => document.getElementById(id);
 let csrf = "", currentPage = 1, providers = [], defaultProvider = null, recordsRequest = 0;
 const botNames = new Map();
 const botIdentityRoles = new Map();
+const botVoices = new Map();
 function setIdentityOptions(form, botId, role = "", name = "", roleId = null) {
   const roles = botIdentityRoles.get(Number(botId)) || [];
   const select = form.elements.family_role;
@@ -244,6 +245,8 @@ enter().catch(e => {if(!$("workspace").hidden) toast(e.message);});
 
 async function loadBots() {
   const data = await api("/bots");
+  botVoices.clear();
+  for (const bot of data.items) botVoices.set(Number(bot.id), bot.multimodal?.voice || "Bunny");
   botIdentityRoles.clear();
   for (const bot of data.items) botIdentityRoles.set(bot.id, bot.identity_roles || []);
   $("bots-list").replaceChildren();
@@ -656,6 +659,8 @@ function composeMessage(item) {
   sendTarget = {botId:item.bot_id, recordId:item.id, source:item.source, requestId:crypto.randomUUID()};
   sendPayload = null;
   const form = $("send-form"); form.reset(); form.elements.content.readOnly = false;
+  // 每次编写按目标机器人初始化，临时选择仅影响当前消息。
+  $("send-tts-voice").value = botVoices.get(Number(item.bot_id)) || "Bunny";
   $("send-tts-provider").replaceChildren();
   for (const provider of providers.filter(p => p.model_type === "tts" && p.enabled && p.has_api_key)) {
     const option = element("option", provider.name + " · " + provider.model_name); option.value = provider.id;

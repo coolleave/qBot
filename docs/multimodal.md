@@ -58,6 +58,12 @@ qwen3-tts-flash-realtime 通过专用 WebSocket 输出 24 kHz 单声道 16 位 P
 
 后台试听可到 500 字，与自动 300 字策略不同；手动发送、试听、定时固定文字各走独立流程，见[主动发送](proactive-messages.md)。
 
+## 后台音色候选（已实现，待实际试听）
+
+按 2026-10-26 查阅的[阿里云官方音色列表](https://help.aliyun.com/zh/model-studio/qwen-tts-voice-list)，为当前 `qwen3-tts-flash-realtime` 补齐 48 个预设音色。统一维护在 `qbot/static/admin.html` 的 `tts-voices` datalist，智能体自动回复、早/午/晚定时任务、手动发送及供应商试听共用，后续更新只需修改这一处。
+
+候选显示中文名和音色 ID，默认仍为 `Bunny`（萌小姬）；保留输入框，允许搜索候选或填写 ID，不改写已保存配置。`Seren` 与 `Serena` 是不同音色；`Eldric Sage`、`Ono Anna`、`Radio Gol` 中的空格属于官方 ID，必须保留。候选仅对应当前实时 TTS 模型，不代表其它模型或 VD/VC 复刻音色支持情况。无需数据库迁移，浏览器刷新后台后生效。已静态核对 48 个 ID 无重复、特殊 ID 与全部六处入口的共享引用，差异检查通过；未运行测试或打开浏览器，真实合成效果仍待试听，本次不调用付费 TTS。
+
 ## 部署与排查
 
 依赖见 pyproject.toml / constraints.txt；结构始于 0010_multimodal，后续迁移也要完整升级。维护者停止服务、更新依赖、显式迁移再启动，命令见[项目 README](../README.md)，本次不执行部署。

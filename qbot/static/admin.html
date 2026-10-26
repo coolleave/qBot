@@ -106,7 +106,57 @@
 <label>QQ 号备注<input name="qq_number_note" maxlength="20" pattern="[0-9]*" inputmode="numeric"></label>
 <p class="muted">无需选择群或私聊。绑定后，此机器人收到同一 OpenID 的消息时均使用该身份；其他机器人独立配置。</p>
 <p id="identity-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" data-close="identity-dialog">取消</button><button class="primary" type="submit">保存身份</button></div></form></dialog>
-<datalist id="tts-voices"><option value="Bunny">萌小姬 · 可爱童声风格（默认）</option><option value="Bella">萌宝 · 可爱女声</option><option value="Mochi">沙小弥 · 童真男声</option><option value="Momo">茉兔 · 活泼俏皮</option><option value="Cherry">芊悦 · 自然女声</option><option value="Serena">苏瑶 · 温柔女声</option></datalist>
+<!-- qwen3-tts-flash-realtime 官方预设音色，核对日期 2026-10-26；各语音入口共用。 -->
+<datalist id="tts-voices">
+<option value="Cherry">芊悦 · Cherry</option>
+<option value="Serena">苏瑶 · Serena</option>
+<option value="Ethan">晨煦 · Ethan</option>
+<option value="Chelsie">千雪 · Chelsie</option>
+<option value="Momo">茉兔 · Momo</option>
+<option value="Vivian">十三 · Vivian</option>
+<option value="Moon">月白 · Moon</option>
+<option value="Maia">四月 · Maia</option>
+<option value="Kai">凯 · Kai</option>
+<option value="Nofish">不吃鱼 · Nofish</option>
+<option value="Bella">萌宝 · Bella</option>
+<option value="Jennifer">詹妮弗 · Jennifer</option>
+<option value="Ryan">甜茶 · Ryan</option>
+<option value="Katerina">卡捷琳娜 · Katerina</option>
+<option value="Aiden">艾登 · Aiden</option>
+<option value="Eldric Sage">沧明子 · Eldric Sage</option>
+<option value="Mia">乖小妹 · Mia</option>
+<option value="Mochi">沙小弥 · Mochi</option>
+<option value="Bellona">燕铮莺 · Bellona</option>
+<option value="Vincent">田叔 · Vincent</option>
+<option value="Bunny">萌小姬（默认） · Bunny</option>
+<option value="Neil">阿闻 · Neil</option>
+<option value="Elias">墨讲师 · Elias</option>
+<option value="Arthur">徐大爷 · Arthur</option>
+<option value="Nini">邻家妹妹 · Nini</option>
+<option value="Seren">小婉 · Seren</option>
+<option value="Pip">顽屁小孩 · Pip</option>
+<option value="Stella">少女阿月 · Stella</option>
+<option value="Bodega">博德加 · Bodega</option>
+<option value="Sonrisa">索尼莎 · Sonrisa</option>
+<option value="Alek">阿列克 · Alek</option>
+<option value="Dolce">多尔切 · Dolce</option>
+<option value="Sohee">素熙 · Sohee</option>
+<option value="Ono Anna">小野杏 · Ono Anna</option>
+<option value="Lenn">莱恩 · Lenn</option>
+<option value="Emilien">埃米尔安 · Emilien</option>
+<option value="Andre">安德雷 · Andre</option>
+<option value="Radio Gol">拉迪奥·戈尔 · Radio Gol</option>
+<option value="Jada">上海-阿珍 · Jada</option>
+<option value="Dylan">北京-晓东 · Dylan</option>
+<option value="Li">南京-老李 · Li</option>
+<option value="Marcus">陕西-秦川 · Marcus</option>
+<option value="Roy">闽南-阿杰 · Roy</option>
+<option value="Peter">天津-李彼得 · Peter</option>
+<option value="Sunny">四川-晴儿 · Sunny</option>
+<option value="Eric">四川-程川 · Eric</option>
+<option value="Rocky">粤语-阿强 · Rocky</option>
+<option value="Kiki">粤语-阿清 · Kiki</option>
+</datalist>
 <dialog id="roles-dialog">
 <div class="dialog-heading"><h2 id="roles-title">身份角色</h2><button type="button" data-close="roles-dialog">×</button></div>
 <p class="muted">角色仅属于当前智能体。关系说明用于聊天及问候；角色不授予管理权限。</p>
