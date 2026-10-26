@@ -44,11 +44,12 @@ POST `/api/admin/providers/{provider_id}/speech` 接收 text、voice，返回 WA
 | 绑定 | 范围 | 用途 |
 | --- | --- | --- |
 | 家庭身份 | bot_id + user_id | 姓名、当前智能体目录中的角色，进入模型身份提示 |
-| 接收人名称 | 机器人下对应 QQ 会话 | contact_name / contact_qq，供发送和定时任务选择 |
+| 用户备注 | bot_id + user OpenID | 通讯录显示名，兼容 contact_name/contact_qq，供发送和定时任务选择 |
+| 群备注 | bot_id + group OpenID | 后台群名称，同群不同成员共用 |
 
 家庭身份在 bot_user_identities，同机器人同 OpenID 的私聊/群聊共享身份；历史不合并，身份变化在下一次对话清理该会话旧上下文。QQ 号只是备注，不作鉴权或合并不同 OpenID。角色不授予管理权限。
 
-接收人绑定不设置家庭角色；解除会停用该会话问候。群会话主动发送给全群。身份查询/保存为 GET `/api/admin/identity-bindings`、PUT `/api/admin/bots/{bot_id}/identity-bindings`；接收人为 GET `/api/admin/user-bindings`、PUT `/api/admin/bots/{bot_id}/user-bindings`。按记录绑定/解绑及参数以 admin.py 为准，必须校验归属与已有真实身份。
+用户备注不设置家庭角色；清除会停用同机器人、同 OpenID 所有会话的问候。群会话主动发送给全群。身份查询/保存为 GET `/api/admin/identity-bindings`、PUT `/api/admin/bots/{bot_id}/identity-bindings`；接收人为 GET `/api/admin/user-bindings`、PUT `/api/admin/bots/{bot_id}/user-bindings`。按记录绑定/解绑及参数以 admin.py 为准，必须校验归属与已有真实身份。
 
 ## 维护
 
@@ -79,3 +80,26 @@ POST `/api/admin/providers/{provider_id}/speech` 接收 text、voice，返回 WA
 升级需先停止服务、备份数据库，再执行 `python -m alembic upgrade head`，成功后启动并刷新后台。运行时不再读取 config/identity_roles.json，迁移完成后的维护全部在后台进行。角色编辑不重载机器人或调用模型，保存后下次请求生效。
 
 2026-10-26 本地数据库已迁移至 0015，原两条身份完整保留并匹配成功；Python/JavaScript/JSON 静态检查通过。未运行测试、浏览器或模型验收。本次未启动服务，需启动服务并刷新后台使用新入口。
+
+
+## 用户备注与群备注整理（已实现，界面待验收）
+
+「用户绑定」整理为「用户与群备注」。用户备注按 `(bot_id, user OpenID)` 保存，同机器人相同 OpenID 在已有及新建的私聊/群聊会话中显示同一备注；群备注按 `(bot_id, group OpenID)` 独立保存，同群所有成员共用群备注。备注用于后台展示和原有问候的接收人称呼，不改变身份角色、模型人设或 QQ 昵称，也不合并聊天历史。不同 AppID 的 OpenID 不可互认；私聊 user_openid 与群聊 member_openid 仅在实际值相同时共享，不根据姓名或 QQ 号推断关联。
+
+新增 `bot_contact_notes` 通讯录表和迁移 `0016_contact_notes`。旧会话备注无冲突时导入用户备注并同步到同 OpenID 会话的兼容字段，不改变任务启用状态；同一用户旧会话备注不一致时不自动覆盖，保留原显示，管理员重新保存后统一。群备注初始为空，不把某个群成员的旧接收人名称误当群名。原会话 contact_name/contact_qq 继续兼容定时任务：保存用户备注同步所有同 OpenID 的 QQ 会话，新会话继承；清除用户备注会停用这些会话的定时任务，需界面确认。群备注修改/清除不影响任务启用状态或身份绑定。
+
+聊天记录、详情、发送对象、定时任务对象显示用户备注和群备注，同时保留原始 OpenID。群备注从本机器人已有群会话中选择后编辑，不允许给未知目标创建发送权限。新增 GET `/api/admin/group-bindings` 与 PUT `/api/admin/bots/{bot_id}/group-bindings`，均要求管理员鉴权，写接口沿用 CSRF 校验。空群备注表示清除。
+
+更新需先备份、执行迁移，再重启后端、强制刷新后台。按项目要求不运行测试或浏览器验证，不发送 QQ 消息。
+
+OpenID 依据：[QQ 官方 API 调用指南 · 唯一身份机制](https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/api-call-guide.html)。官方明确不同 AppID 获取不同用户/群 OpenID，并分别定义私聊 user_openid 与群聊 member_openid；本文不假定这两类值必定相等。
+
+
+2026-10-26 本地已核对至 `0016_contact_notes`：执行前版本检查发现并行进程已完成迁移，本轮未重复执行。新表包含 3 条用户备注，兼容字段差异数为 0，14 条会话仍存在；服务已由并行进程启动，8092 健康接口正常。本轮保存的是迁移后现状快照 `contact-notes-after-0016-20261026-164924.json`（本机临时目录 qbot-runtime），不作为迁移前备份。Python AST、JavaScript 语法及差异静态检查完成，无重复 HTML ID；未运行测试、浏览器或真实 QQ 发送，交互待人工验收。
+
+
+### 备注页 Tab 切换（已实现，交互待验收）
+
+「用户与群备注」改为顶部「用户备注 / 群备注」两个页签，默认显示用户备注，仅展示当前页签的筛选和列表；切换保留各自筛选与分页状态。按用户 ID 备注按钮只在用户页签显示，群备注直接从群页签进入。支持键盘方向键切换。纯前端变更，强制刷新后台生效，无需重启或数据库迁移；不运行测试或浏览器验证。
+
+本次完成 JavaScript 语法、HTML 结构与差异静态检查；未运行测试或打开浏览器。返回备注页面保留当前页签，切换时只请求当前列表。

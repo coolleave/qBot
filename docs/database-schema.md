@@ -419,3 +419,19 @@ conn.execute(text("""
 角色迁移快照 `migrations/snapshots/0015_identity_roles.json` 只供一次性升级导入，不是运行配置。新增角色通过后台管理；不要修改已执行快照期待数据库自动更新。
 
 验证边界：本次核对迁移版本、11张表全部字段、主键、索引与外键，并对照数据访问代码；未验证真实消息、定时发送、登录或模型端到端流程。
+
+
+### `bot_contact_notes` — 用户与群备注（0016，本地已核对）
+
+| 字段 | 类型 | 可空 | 用途 |
+| --- | --- | --- | --- |
+| bot_id | BIGINT UNSIGNED | 否 | 机器人归属，外键 bots(id) |
+| target_type | VARCHAR(8) ascii_bin | 否 | user / group，服务端写入固定值 |
+| openid | VARCHAR(256) ascii_bin | 否 | 用户或群 OpenID |
+| name | VARCHAR(100) utf8mb4 | 否 | 后台备注名 |
+| qq_number | VARCHAR(20) ascii_bin | 是 | 用户 QQ 号备注，群为 NULL |
+| updated_at | DATETIME(6) | 否 | 最后更新 UTC 时间 |
+
+主键 `(bot_id, target_type, openid)`，外键 `fk_contact_note_bot`。不关联某个 conversation_id；用户备注与群备注、不同机器人分别隔离。旧 conversations.contact_name/contact_qq 保留为定时任务兼容字段，由 save_contact 同步；新 QQ 会话继承用户备注。迁移仅导入无冲突用户备注，有冲突的旧值不覆盖。删除用户备注同步清除同 OpenID 会话的兼容字段并停用其任务，清除群备注不影响任务。不得根据 QQ 号或备注名合并 OpenID。
+
+2026-10-26 后续核对：本地版本现为 `0016_contact_notes`，新增表主键和外键已核对，早前 0015 的全库快照说明保留为历史基线。当前新增表 3 条用户备注，群备注尚未设置。

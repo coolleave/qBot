@@ -6,7 +6,7 @@ const pages = [
   ["records", "聊天记录", "对话与运行结果", "▤"], ["tokens", "Token 统计", "模型用量分析", "▥"],
   ["providers", "模型供应商", "模型与服务配置", "◇"], ["bots", "机器人管理", "连接与能力配置", "◎"],
   ["messages", "发送消息", "与接收对象沟通", "↗"], ["greetings", "定时任务", "安排每一天的问候", "◷"],
-  ["bindings", "用户绑定", "管理接收对象", "♧"], ["identities", "身份绑定", "对话中的身份", "◈"]
+  ["bindings", "用户与群备注", "管理通讯录备注", "♧"], ["identities", "身份绑定", "对话中的身份", "◈"]
 ];
 function mountComponent(target, component) { createApp(component).use(ElementPlus).mount(target); }
 mountComponent("#console-nav", {
@@ -52,7 +52,7 @@ mountComponent("#records-table-app", {
       ui.recordError?h(ElementPlus.ElAlert,{title:ui.recordError,type:"error",closable:false,showIcon:true}):null,
       h(ElementPlus.ElTable,{data:ui.records,stripe:true,tableLayout:"fixed",emptyText:ui.loading?"正在加载对话…":ui.recordError?"加载失败，请刷新重试":"暂无聊天记录，接入机器人后对话将显示在这里",style:{width:"100%"},"aria-busy":ui.loading},()=>[
         col("时间 / 来源","received_at",190,row=>h("div",[h("span",date(row.received_at)),h("small",{class:"table-secondary"},`${botLabel(row.bot_id)} · ${{qq_group:"群聊",qq_c2c:"私聊",local:"本地"}[row.source]||row.source}`)])),
-        col("群 / 用户","user_id",160,row=>h("div",[h("span",row.source==="qq_c2c"?"私聊":row.group_id||"—"),h("small",{class:"table-secondary"},row.user_id)])),
+        col("群 / 用户备注","user_id",220,row=>h("div",[h("span",row.source==="qq_group"?groupDisplay(row):"私聊"),h("small",{class:"table-secondary"},userDisplay(row))])),
         h(ElementPlus.ElTableColumn,{label:"消息内容",prop:"question",minWidth:230,showOverflowTooltip:true}),
         col("模型","model_name_snapshot",150,row=>row.model_name_snapshot || "—"), col("Token · 输入 / 输出 / 总计",null,200,row=>tokenText(row)),
         col("处理状态","status",110,row=>h(ElementPlus.ElTag,{type:row.status==="replied"?"success":["pending","processing"].includes(row.status)?"info":"warning",effect:"light",round:true},()=>labels[row.status]||row.status)),

@@ -28,6 +28,8 @@ function identityLabel(item) {
   return role?.label || "旧身份不匹配，请重新绑定";
 }
 function botLabel(id) { return `${botNames.get(Number(id)) || "机器人"} #${id}`; }
+function userDisplay(item) { return (item.user_remark || item.contact_name) ? `${item.user_remark || item.contact_name} · ${item.user_id}` : item.user_id; }
+function groupDisplay(item) { return item.group_remark ? `${item.group_remark} · ${item.group_id}` : item.group_id; }
 function updateBotLabels() {
   document.querySelectorAll("[data-bot-label]").forEach(node => {
     node.textContent = botLabel(node.dataset.botLabel);
@@ -35,6 +37,7 @@ function updateBotLabels() {
   ui.records = [...ui.records];
   if (detailRecord) renderDetailMeta(detailRecord);
 }
+let contactNoteTab = "user";
 const labels = {pending:"等待处理",processing:"处理中",replied:"已回复",model_failed:"模型失败",send_failed:"发送失败",delivery_unknown:"送达未知",expired:"已过期",rejected:"已拒绝"};
 function toast(message) { ElementPlus.ElMessage({message, duration:4500, showClose:true, grouping:true, customClass:"console-message", appendTo:document.querySelector("dialog[open]") || document.body}); }
 function loggedOut() { $("bot-form").reset(); csrf = ""; recordsRequest++; ui.records = []; ui.total = 0; ui.loading = false; ui.username = ""; $("workspace").hidden = true; $("login-screen").hidden = false; document.querySelectorAll("dialog[open]").forEach(d => d.close()); }
@@ -93,7 +96,7 @@ async function loadRecords() {
 let detailRecord = null;
 function renderDetailMeta(item) {
   const source = {qq_group:"QQ 群聊", qq_c2c:"QQ 私聊", local:"本地聊天"}[item.source] || item.source;
-  $("detail-meta").textContent = `${botLabel(item.bot_id)} · ${source} · ${date(item.received_at)} · ${labels[item.status] || item.status} · ${item.provider_name_snapshot || "未调用模型"} / ${item.model_name_snapshot || "—"}${item.source === "qq_group" ? " · 群 " + item.group_id : ""} · 用户 ${item.user_id}`;
+  $("detail-meta").textContent = `${botLabel(item.bot_id)} · ${source} · ${date(item.received_at)} · ${labels[item.status] || item.status} · ${item.provider_name_snapshot || "未调用模型"} / ${item.model_name_snapshot || "—"}${item.source === "qq_group" ? " · 群 " + groupDisplay(item) : ""} · 用户 ${userDisplay(item)}`;
   $("detail-meta").append(document.createTextNode(` · 聊天 Token（输入 / 输出 / 总计）：${tokenText(item)}`));
 }
 async function showDetail(id) {
@@ -229,7 +232,7 @@ function switchPage(page) {
   for (const [name] of pages) $(name + "-page").hidden = page !== name;
   if (page === "tokens") void openTokenStats();
   if (page === "identities") void loadIdentityBindings();
-  if (page === "bindings") void loadUserBindings();
+  if (page === "bindings") selectContactNoteTab(contactNoteTab);
   if (page === "greetings") void loadGreetingTargets();
   if (page === "messages") void loadSendTargets().catch(e => toast(e.message));
 }
@@ -250,7 +253,7 @@ async function loadBots() {
   botIdentityRoles.clear();
   for (const bot of data.items) botIdentityRoles.set(bot.id, bot.identity_roles || []);
   $("bots-list").replaceChildren();
-  for (const id of ["binding-bot-filter", "binding-bot", "identity-bot-filter", "identity-bot"]) {
+  for (const id of ["binding-bot-filter", "binding-bot", "identity-bot-filter", "identity-bot", "group-note-bot-filter"]) {
     const select = $(id), selected = select.value;
     select.replaceChildren(new Option(["binding-bot", "identity-bot"].includes(id) ? "请选择机器人" : "全部机器人", ""));
     for (const bot of data.items) {
@@ -489,11 +492,12 @@ async function openGreetings(item) {
   const data = await api(`/bots/${item.bot_id}/records/${item.id}/greetings`);
   const ttsProviders = (await api("/providers")).items.filter(p => p.model_type === "tts" && p.enabled);
   greetingTarget = {botId:item.bot_id, recordId:item.id};
+  item = {...item, group_remark:data.group_remark, user_remark:data.user_remark};
   greetingItem = item; greetingDirty = false;
   $("greeting-run-result").textContent = "";
   const form = $("greeting-form"); form.reset();
   $("greeting-error").textContent = "";
-  $("greeting-target").textContent = `${botLabel(item.bot_id)} · ${data.contact_name || "未命名（请先在用户绑定中设置）"} · ${item.source === "qq_group" ? "群 " + item.group_id : "QQ 私聊"} · 用户 ${item.user_id}`;
+  $("greeting-target").textContent = `${botLabel(item.bot_id)} · ${data.contact_name || "未命名（请先在用户与群备注中设置）"} · ${item.source === "qq_group" ? "群 " + groupDisplay(item) : "QQ 私聊"} · 用户 ${userDisplay(item)}`;
   greetingCatalog = data.catalog;
   for (const rule of data.rules) {
     const templateSelect = form.elements[rule.slot + "_delivery_mode"];
@@ -678,7 +682,7 @@ function composeMessage(item) {
   updateSendKind();
   $("send-submit").disabled = false; $("send-submit").textContent = "立即发送";
   $("send-result").textContent = "";
-  $("send-target").textContent = `${botLabel(item.bot_id)} → ${item.source === "qq_group" ? "整个群：" + item.group_id : "私聊用户：" + (item.contact_name || "未命名") + " · " + item.user_id}`;
+  $("send-target").textContent = `${botLabel(item.bot_id)} → ${item.source === "qq_group" ? "整个群：" + groupDisplay(item) : "私聊用户：" + (item.contact_name || "未命名") + " · " + item.user_id}`;
   $("send-dialog").showModal();
 }
 const openSend = button("主动发送消息", () => composeMessage(detailRecord));
@@ -744,9 +748,10 @@ async function loadSendTargets() {
     $("send-targets-empty").textContent = "暂无此类会话，请先让用户私聊机器人或在群里 @机器人。";
     for (const item of data.items) {
       const group = item.source === "qq_group", row = element("tr");
-      const identity = element("td", group ? item.group_id : (item.contact_name || "私聊用户"));
+      const identity = element("td", group ? groupDisplay(item) : (item.user_remark || item.contact_name || "私聊用户"));
       if (!group) identity.append(element("small", item.user_id));
       const action = element("td"); action.append(button("编写消息", () => composeMessage(item)));
+      if (group) action.append(button("群备注", () => editGroupNote(item)));
       row.append(identity, element("td", group ? "整个群" : "仅此用户"), action);
       $("send-targets-body").append(row);
     }
@@ -771,7 +776,7 @@ async function loadGreetingRecipients() {
   try {
     const data = await api("/greeting-recipients?" + params);
     if (request !== recipientRequest || !$("greeting-recipient-dialog").open) return;
-    $("greeting-recipient-notice").textContent = data.items.length ? "" : "没有匹配的已绑定接收人，请先到「用户绑定」设置接收人名称。";
+    $("greeting-recipient-notice").textContent = data.items.length ? "" : "没有匹配的已绑定接收人，请先到「用户与群备注」设置接收人名称。";
     $("greeting-recipient-page").textContent = `共 ${data.total} 位 · 第 ${data.page} / ${Math.max(1, Math.ceil(data.total / data.page_size))} 页`;
     $("greeting-recipient-prev").disabled = data.page <= 1;
     $("greeting-recipient-next").disabled = data.page * data.page_size >= data.total;
@@ -782,7 +787,7 @@ async function loadGreetingRecipients() {
         await openGreetings(item);
         $("greeting-recipient-dialog").close();
       }));
-      row.append(name, element("td", item.source === "qq_c2c" ? "私聊 · 仅此用户" : "群聊 · 整个群 " + item.group_id), action);
+      row.append(name, element("td", item.source === "qq_c2c" ? "私聊 · 仅此用户" : "群聊 · 整个群 " + groupDisplay(item)), action);
       $("greeting-recipient-body").append(row);
     }
   } catch(e) { if (request === recipientRequest) $("greeting-recipient-notice").textContent = "加载失败：" + e.message; }
@@ -821,13 +826,13 @@ async function loadGreetingTargets() {
     $("greeting-target-prev").disabled = data.page <= 1;
     $("greeting-target-next").disabled = data.page * data.page_size >= data.total;
     $("greeting-targets-empty").hidden = data.items.length > 0;
-    $("greeting-targets-empty").textContent = "暂无问候对象，请先在用户绑定中设置接收人名称，然后刷新。";
+    $("greeting-targets-empty").textContent = "暂无问候对象，请先在用户与群备注中设置接收人名称，然后刷新。";
     for (const item of data.items) {
       const row = element("tr"), bot = element("td", botLabel(item.bot_id)); bot.dataset.botLabel = item.bot_id;
       const member = element("td", item.contact_name || "已解除绑定");
       member.append(element("small", item.user_id));
       const action = element("td"); action.append(button("配置 / 记录", () => openGreetings(item)));
-      row.append(bot, member, element("td", item.source === "qq_c2c" ? "QQ 私聊" : "群 " + item.group_id),
+      row.append(bot, member, element("td", item.source === "qq_c2c" ? "QQ 私聊" : "群 " + groupDisplay(item)),
         element("td", Number(item.enabled_count) ? `已启用 ${item.enabled_count} 个时段` : "未启用"), action);
       $("greeting-targets-body").append(row);
     }
@@ -920,7 +925,7 @@ async function loadUserBindings() {
   try {
     const data = await api("/user-bindings?" + params);
     if (request !== userBindingsRequest) return;
-    $("user-binding-count").textContent = `共 ${data.total} 个会话身份`;
+    $("user-binding-count").textContent = `共 ${data.total} 个用户会话（同 OpenID 共享备注）`;
     $("user-binding-page").textContent = `第 ${data.page} / ${Math.max(1, Math.ceil(data.total / data.page_size))} 页`;
     $("user-binding-prev").disabled = data.page <= 1;
     $("user-binding-next").disabled = data.page * data.page_size >= data.total;
@@ -930,12 +935,14 @@ async function loadUserBindings() {
       const row = element("tr"), bot = element("td"), name = element("span", botLabel(item.bot_id)); name.dataset.botLabel = item.bot_id;
       bot.append(name, element("small", item.source === "qq_c2c" ? "QQ 私聊" : "QQ 群聊"));
       const identity = element("td", item.user_id);
-      if (item.source === "qq_group") identity.append(element("small", "群 " + item.group_id));
+      if (item.source === "qq_group") identity.append(element("small", "群 " + groupDisplay(item)));
       const member = element("td", item.contact_name || "未命名");
-      const actions = element("td"); actions.append(button(item.contact_name ? "编辑" : "绑定", () => editUserBinding(item)));
-      if (item.contact_name && item.record_id) actions.append(button("解除", async () => {
+      if (item.contact_name && !item.user_remark_shared) member.append(element("small", "旧会话备注：重新保存后统一"));
+      const actions = element("td"); actions.append(button(item.contact_name ? "编辑备注" : "添加备注", () => editUserBinding(item)));
+      if (item.contact_name && item.record_id) actions.append(button("清除备注", async () => {
+        if (!confirm("清除此用户在当前机器人下所有相同 OpenID 会话的备注，并停用这些会话的定时任务？身份角色保持不变。")) return;
         await api(`/bots/${item.bot_id}/records/${item.record_id}/user-binding`, {method:"DELETE"});
-        toast("已解除绑定，相关问候已停用"); await loadUserBindings();
+        toast("已清除共享用户备注，相关定时任务已停用"); await loadUserBindings();
       }));
       row.append(bot, identity, member, element("td", item.contact_qq || "—"), actions); $("user-bindings-body").append(row);
     }
@@ -964,7 +971,7 @@ $("user-binding-form").onsubmit = async event => {
   submit.disabled = true; $("user-binding-error").textContent = "";
   try {
     await api(`/bots/${botId}/user-bindings`, {method:"PUT", body:JSON.stringify(values)});
-    $("user-binding-dialog").close(); toast("用户名称已保存，可在定时任务和发送消息中选择"); await loadUserBindings();
+    $("user-binding-dialog").close(); toast("用户备注已保存，同一机器人下相同 OpenID 的会话共用"); await loadUserBindings();
   } catch(e) { $("user-binding-error").textContent = e.message; }
   finally { submit.disabled = false; }
 };
@@ -995,7 +1002,7 @@ async function reloadRoleManager() {
       element("p", role.relationship || "未填写关系说明", "muted"));
     const actions = element("div", undefined, "actions");
     actions.append(button("编辑", () => { if (!roleMutationPending) editRole(role); }), button("删除", async () => {
-      if (roleMutationPending || !confirm(`删除角色“${role.label}”？已有用户绑定时会拒绝删除。`)) return;
+      if (roleMutationPending || !confirm(`删除角色“${role.label}”？已有用户绑定此角色时会拒绝删除。`)) return;
       roleMutationPending = true;
       try {
         await api(`/bots/${botId}/roles/${role.id}`, {method:"DELETE"});
@@ -1026,3 +1033,80 @@ $("role-form").onsubmit = async event => {
   } catch(e) { $("role-error").textContent = e.message; }
   finally { roleMutationPending = false; controls.forEach(node => node.disabled = false); }
 };
+
+
+let groupNotePage = 1, groupNoteRequest = 0;
+async function loadGroupNotes() {
+  const request = ++groupNoteRequest;
+  const params = new URLSearchParams({page:String(groupNotePage)});
+  if ($("group-note-bot-filter").value) params.set("bot_id", $("group-note-bot-filter").value);
+  if ($("group-note-filter-id").value.trim()) params.set("group_id", $("group-note-filter-id").value.trim());
+  $("group-note-body").replaceChildren(); $("group-note-notice").textContent = "正在加载…";
+  $("group-note-page").textContent = "";
+  $("group-note-prev").disabled = true; $("group-note-next").disabled = true;
+  try {
+    const data = await api("/group-bindings?" + params);
+    if (request !== groupNoteRequest) return;
+    $("group-note-notice").textContent = data.items.length ? "" : "暂无匹配群，请先在群里 @机器人发送消息。";
+    $("group-note-page").textContent = `共 ${data.total} 个群 · 第 ${data.page} / ${Math.max(1, Math.ceil(data.total / data.page_size))} 页`;
+    $("group-note-prev").disabled = data.page <= 1;
+    $("group-note-next").disabled = data.page * data.page_size >= data.total;
+    for (const item of data.items) {
+      const row = element("tr"), actions = element("td");
+      actions.append(button(item.group_remark ? "编辑备注" : "添加备注", () => editGroupNote(item)));
+      row.append(element("td", botLabel(item.bot_id)), element("td", item.group_remark || "未备注"), element("td", item.group_id), actions);
+      $("group-note-body").append(row);
+    }
+  } catch(e) { if (request === groupNoteRequest) $("group-note-notice").textContent = "加载失败：" + e.message; }
+}
+function editGroupNote(item) {
+  const form = $("group-note-form"); form.reset();
+  form.elements.bot_id.value = item.bot_id; form.elements.group_id.value = item.group_id;
+  form.elements.name.value = item.group_remark || "";
+  $("group-note-target").textContent = `${botLabel(item.bot_id)} · 群 ${item.group_id}`;
+  $("group-note-error").textContent = ""; $("group-note-dialog").showModal();
+}
+$("group-note-filter").onsubmit = event => { event.preventDefault(); groupNotePage = 1; void loadGroupNotes(); };
+$("group-note-bot-filter").onchange = () => { groupNotePage = 1; void loadGroupNotes(); };
+$("group-note-prev").onclick = () => { groupNotePage--; void loadGroupNotes(); };
+$("group-note-next").onclick = () => { groupNotePage++; void loadGroupNotes(); };
+$("group-note-form").onsubmit = async event => {
+  event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]');
+  const botId = Number(form.elements.bot_id.value), groupId = form.elements.group_id.value;
+  submit.disabled = true; $("group-note-error").textContent = "";
+  try {
+    await api(`/bots/${botId}/group-bindings`, {method:"PUT", body:JSON.stringify({group_id:groupId, name:form.elements.name.value})});
+    $("group-note-dialog").close(); toast("群备注已保存");
+    await Promise.all([loadGroupNotes(), loadUserBindings(), loadRecords()]);
+    if (ui.page === "messages") await loadSendTargets();
+    if (detailRecord?.bot_id === botId && detailRecord.group_id === groupId) {
+      detailRecord = await api("/records/" + detailRecord.id); renderDetailMeta(detailRecord);
+    }
+  } catch(e) { $("group-note-error").textContent = e.message; toast(e.message); }
+  finally { submit.disabled = false; }
+};
+
+
+function selectContactNoteTab(tab) {
+  contactNoteTab = tab;
+  for (const name of ["user", "group"]) {
+    const active = name === tab, button = $("contact-" + name + "-tab");
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+    $("contact-" + name + "-panel").hidden = !active;
+  }
+  $("new-user-binding").hidden = tab !== "user";
+  if (tab === "user") void loadUserBindings();
+  else void loadGroupNotes();
+}
+for (const tab of ["user", "group"]) {
+  const button = $("contact-" + tab + "-tab");
+  button.onclick = () => selectContactNoteTab(tab);
+  button.onkeydown = event => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? "user" : event.key === "End" ? "group" : tab === "user" ? "group" : "user";
+    selectContactNoteTab(next);
+    $("contact-" + next + "-tab").focus();
+  };
+}

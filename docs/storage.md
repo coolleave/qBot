@@ -1,6 +1,6 @@
 # 存储、聊天记录与迁移定位
 
-各表完整字段、主键、索引、外键与 Agent 修改规则见 [数据库表结构指南](database-schema.md)（本地已核对至 `0015_bot_roles`）。本页侧重存储流程。
+各表完整字段、主键、索引、外键与 Agent 修改规则见 [数据库表结构指南](database-schema.md)（原全库基线为 `0015_bot_roles`，新增备注表已核对至 `0016_contact_notes`）。本页侧重存储流程。
 
 导航见 [文档索引](README.md)，操作命令、权限和回退规则见[数据库迁移](database-migrations.md)。
 
@@ -17,6 +17,7 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 | bots | 多机器人凭证、启用、人设、绑定及多模态 JSON |
 | conversations | 机器人、来源、群、用户范围及接收人名称 |
 | chat_records | 问答、状态、模型快照、用量和媒体详情 |
+| bot_contact_notes | bot_id + target_type + OpenID 的用户/群备注；角色独立 |
 | bot_roles | 每个智能体独立的角色定义及关系说明 |
 | bot_user_identities | bot_id + user_id 的身份，通过 role_id 关联角色 |
 | interaction_greetings | 会话早午晚任务规则（end_time 仅兼容保留，不参与调度） |
@@ -62,6 +63,7 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 | 0013_greeting_media | 定时投递 JSON 及上传图片 |
 | 0014_manual_greeting_runs | 手动执行日期可空，自动每日去重保留 |
 | 0015_bot_roles | 数据库角色目录与同机器人复合外键 |
+| 0016_contact_notes | 独立用户/群备注及无冲突旧备注导入 |
 
 上述为整理时工作区迁移，不代表目标库已执行。部署前核对 alembic current 与版本目录。仅新增手写迁移，不改已执行版本/快照，不 stamp、不删库删表初始化，复用现有 Docker MySQL，不操作其他库。
 
@@ -82,3 +84,5 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 `bot_roles` 按 bot_id 保存 role_key、label、relationship、member_name，(bot_id,role_key) 唯一。`bot_user_identities.role_id` 可空，通过 (bot_id,role_id) 外键确保引用同一个机器人；NULL 只用于未匹配旧身份，不能作为可信模型身份。原 family_role 保留兼容，写入时与 role_key 一起校验。迁移 `0015_bot_roles` 仅补充字段及匹配关联，保留原身份资料。角色编辑与绑定共用 bots 行锁，有绑定时拒绝删除或修改为冲突称呼。
 
 2026-10-26 已在本地项目库迁移至 0015：四个初始角色、两条已匹配身份，零条待处理；核对原身份字段未变且复合外键存在。未运行测试或真实模型调用。
+
+用户备注统一入口为 Store.save_contact，群备注为 Store.save_group_note；展示批量补充 user_remark/group_remark，原 OpenID 保留。迁移与冲突处理见[后台与模型](admin-and-models.md)。新备注不合并聊天历史、不合并不同 OpenID。

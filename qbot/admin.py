@@ -100,6 +100,12 @@ class UserBindingInput(BaseModel):
     group_id: str = Field(default="", max_length=191, pattern=r"^[\x21-\x7e]*$")
 
 
+class GroupNoteInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    group_id: str = Field(min_length=1, max_length=191, pattern=r"^[\x21-\x7e]+$")
+    name: str = Field(default="", max_length=100)
+
+
 class DefaultInput(BaseModel):
     provider_id: int | None = Field(default=None, gt=0)
 
@@ -427,6 +433,19 @@ def admin_router(settings: Settings) -> APIRouter:
         try:
             await db.call("delete_identity_role", bot_id, role_id)
             return {"deleted": True}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.get("/api/admin/group-bindings", dependencies=[Depends(require_admin)])
+    async def group_bindings(bot_id: int | None = Query(None, gt=0),
+                             group_id: str = Query("", max_length=191),
+                             page: int = Query(1, ge=1, le=100000), db: Store = Depends(store)) -> dict:
+        return await db.call("list_group_bindings", bot_id, group_id.strip(), page)
+
+    @router.put("/api/admin/bots/{bot_id}/group-bindings", dependencies=[Depends(require_admin)])
+    async def update_group_note(bot_id: int, data: GroupNoteInput, db: Store = Depends(store)) -> dict:
+        try:
+            return await db.call("save_group_note", bot_id, data.group_id, data.name)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
 

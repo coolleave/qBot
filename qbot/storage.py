@@ -7,8 +7,8 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import MetaData, String, cast, create_engine, func, literal_column, select
-from sqlalchemy.engine import Engine, URL
+from sqlalchemy import MetaData, String, cast, create_engine, func, literal_column, select, tuple_
+from sqlalchemy.engine import Connection, Engine, URL
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from qbot.config import Settings
@@ -45,10 +45,11 @@ class Store:
         try:
             metadata.reflect(engine, only=["model_providers", "app_settings", "conversations", "chat_records", "bots",
                                            "interaction_greetings", "interaction_greeting_runs", "bot_user_identities",
-                                           "admin_sessions", "bot_roles"])
+                                           "admin_sessions", "bot_roles", "bot_contact_notes"])
             self.admin_sessions = metadata.tables["admin_sessions"]
             self.identities = metadata.tables["bot_user_identities"]
             self.roles = metadata.tables["bot_roles"]
+            self.contact_notes = metadata.tables["bot_contact_notes"]
             if "role_id" not in self.identities.c:
                 raise StorageError("请先执行 python -m alembic upgrade head 升级身份角色表")
             self.greetings = metadata.tables["interaction_greetings"]
@@ -347,6 +348,8 @@ class Store:
         for attempt in range(3):
             try:
                 with self.engine.begin() as conn:
+                    if source in ("qq_c2c", "qq_group"):
+                        conn.execute(select(self.bots.c.id).where(self.bots.c.id == bot_id).with_for_update()).one()
                     old = conn.execute(select(r.c.id).where(identity)).scalar_one_or_none()
                     if old is not None:
                         return old, False
@@ -355,8 +358,14 @@ class Store:
                         (c.c.bot_id == bot_id) & (c.c.source == source) & (c.c.group_id == group_id) & (c.c.user_id == user_id)
                     )).scalar_one_or_none()
                     if cid is None:
+                        contact = None
+                        if source in ("qq_c2c", "qq_group"):
+                            n = self.contact_notes
+                            contact = conn.execute(select(n.c.name, n.c.qq_number).where(
+                                n.c.bot_id == bot_id, n.c.target_type == "user", n.c.openid == user_id)).mappings().first()
                         cid = conn.execute(c.insert().values(bot_id=bot_id, source=source, group_id=group_id, user_id=user_id,
-                            created_at=now, last_active_at=now)).inserted_primary_key[0]
+                            created_at=now, last_active_at=now, contact_name=contact["name"] if contact else None,
+                            contact_qq=contact["qq_number"] if contact else None)).inserted_primary_key[0]
                     else:
                         conn.execute(c.update().where(c.c.id == cid).values(last_active_at=now))
                     rid = conn.execute(r.insert().values(bot_id=bot_id, conversation_id=cid, source=source,
@@ -399,7 +408,7 @@ class Store:
             filters.append(r.c.received_at >= start)
         if end:
             filters.append(r.c.received_at <= end)
-        columns = [r.c.id, r.c.bot_id, r.c.source, r.c.group_id, c.c.user_id, r.c.status, r.c.received_at,
+        columns = [r.c.id, r.c.bot_id, r.c.source, r.c.group_id, c.c.user_id, c.c.contact_name, c.c.contact_qq, r.c.status, r.c.received_at,
                    r.c.input_tokens, r.c.output_tokens, r.c.total_tokens,
                    r.c.model_name_snapshot, func.substr(r.c.question, 1, 120).label("question")]
         with self.engine.connect() as conn:
@@ -413,7 +422,7 @@ class Store:
             count = usage["records"]
             rows = conn.execute(select(*columns).select_from(joined).where(*filters)
                 .order_by(r.c.received_at.desc(), r.c.id.desc()).offset((page - 1) * page_size).limit(page_size)).mappings()
-            return {"items": [dict(row) for row in rows], "total": count, "page": page,
+            return {"items": self._with_contact_notes(conn, [dict(row) for row in rows]), "total": count, "page": page,
                     "page_size": page_size, "token_usage": usage}
 
     def token_stat_options(self, bot_id: int | None = None, search: str = "", page: int = 1) -> dict:
@@ -493,7 +502,7 @@ class Store:
                 c.c.user_id, c.c.contact_name).select_from(
                     latest.join(r, r.c.id == latest.c.record_id).join(c, c.c.id == r.c.conversation_id)
                 ).order_by(r.c.id.desc()).offset((page - 1) * 50).limit(50)).mappings()
-            return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": 50}
+            return {"items": self._with_contact_notes(conn, [dict(row) for row in rows]), "total": total, "page": page, "page_size": 50}
 
     def record_detail(self, record_id: int) -> dict | None:
         r, c, i = self.records, self.conversations, self.identities
@@ -506,7 +515,7 @@ class Store:
                 .where(r.c.id == record_id)).mappings().first()
             if not row:
                 return None
-            result = dict(row)
+            result = self._with_contact_notes(conn, [dict(row)])[0]
             result["identity"] = None
             if result["role_id"] is not None:
                 role = conn.execute(select(self.roles).where(self.roles.c.bot_id == result["bot_id"],
@@ -666,6 +675,7 @@ class Store:
             rule["workflow"] = resolve_workflow(rule).model_dump()
         return {"rules": result_rules, "catalog": public_catalog(),
                 "bound": bool(record["contact_name"]), "contact_name": record["contact_name"],
+                "group_remark": record["group_remark"], "user_remark": record["user_remark"],
                 "history": [{**dict(r), "manual": r["local_date"] is None,
                     "local_date": r["local_date"] or local_time(r["created_at"]).date()} for r in history]}
 
@@ -821,7 +831,8 @@ class Store:
                 func.coalesce(stats.c.enabled_count, 0).label("enabled_count"))
                 .select_from(joined).where(*filters).order_by(c.c.bot_id, c.c.id)
                 .offset((page - 1) * page_size).limit(page_size)).mappings().all()
-        return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": page_size}
+            items = self._with_contact_notes(conn, [dict(row) for row in rows])
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
 
     def list_user_bindings(self, bot_id: int | None = None, user_id: str = "", page: int = 1) -> dict:
         c, r = self.conversations, self.records
@@ -838,7 +849,8 @@ class Store:
                 c.c.contact_name, c.c.contact_qq, record_id.label("record_id"))
                 .where(*filters).order_by(c.c.last_active_at.desc(), c.c.id.desc())
                 .offset((page - 1) * 20).limit(20)).mappings().all()
-        return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": 20}
+            items = self._with_contact_notes(conn, [dict(row) for row in rows])
+        return {"items": items, "total": total, "page": page, "page_size": 20}
 
     def bind_user_id(self, bot_id: int, values: dict) -> dict:
         """手填 OpenID 只能匹配当前机器人的已知会话，不把数字 QQ 号当身份。"""
@@ -866,9 +878,11 @@ class Store:
         return self.save_contact(bot_id, rows[0]["record_id"], binding)
 
     def save_contact(self, bot_id: int, record_id: int, values: dict | None) -> dict:
-        """维护接收人通讯录，不修改模型的家庭身份。"""
+        """同机器人、同 OpenID 共用用户备注；身份与聊天历史保持独立。"""
         c, r = self.conversations, self.records
         with self.engine.begin() as conn:
+            if not conn.execute(select(self.bots.c.id).where(self.bots.c.id == bot_id).with_for_update()).first():
+                raise ValueError("机器人不存在")
             row = conn.execute(select(c).select_from(r.join(c, r.c.conversation_id == c.c.id)).where(
                 r.c.id == record_id, r.c.bot_id == bot_id, c.c.bot_id == bot_id
             ).with_for_update()).mappings().first()
@@ -880,9 +894,73 @@ class Store:
                 raise ValueError("接收人名称需为 1 至 100 字符且不能包含控制字符")
             if note and (len(note) > 20 or any(ch not in "0123456789" for ch in note)):
                 raise ValueError("QQ 备注只能是最多 20 位数字")
-            conn.execute(c.update().where(c.c.id == row["id"], c.c.bot_id == bot_id).values(
+            n = self.contact_notes
+            note_scope = (n.c.bot_id == bot_id) & (n.c.target_type == "user") & (n.c.openid == row["user_id"])
+            conn.execute(n.delete().where(note_scope))
+            if name:
+                conn.execute(n.insert().values(bot_id=bot_id, target_type="user", openid=row["user_id"],
+                    name=name, qq_number=note or None, updated_at=utc_now()))
+            scope = (c.c.bot_id == bot_id) & (c.c.user_id == row["user_id"]) & c.c.source.in_(("qq_c2c", "qq_group"))
+            conn.execute(c.update().where(scope).values(
                 contact_name=name, contact_qq=note or None))
             if not name:
                 conn.execute(self.greetings.update().where(self.greetings.c.bot_id == bot_id,
-                    self.greetings.c.conversation_id == row["id"]).values(enabled=False))
+                    self.greetings.c.conversation_id.in_(select(c.c.id).where(scope))).values(enabled=False))
             return {"contact_name": name, "contact_qq": note or None}
+
+
+    def _with_contact_notes(self, conn: Connection, rows: list[dict]) -> list[dict]:
+        """批量加载展示备注，不将群名当成员名，也不逐条查询。"""
+        keys = set()
+        for row in rows:
+            if row.get("source") in ("qq_c2c", "qq_group"):
+                keys.add((row["bot_id"], "user", row["user_id"]))
+                if row["source"] == "qq_group":
+                    keys.add((row["bot_id"], "group", row["group_id"]))
+        n = self.contact_notes
+        notes = {(item.bot_id, item.target_type, item.openid): item for item in conn.execute(
+            select(n).where(tuple_(n.c.bot_id, n.c.target_type, n.c.openid).in_(list(keys))))} if keys else {}
+        for row in rows:
+            user = notes.get((row["bot_id"], "user", row.get("user_id")))
+            group = notes.get((row["bot_id"], "group", row.get("group_id"))) if row.get("source") == "qq_group" else None
+            row["user_remark_shared"] = user is not None
+            row["user_remark"] = user.name if user else row.get("contact_name")
+            row["group_remark"] = group.name if group else None
+            if user:
+                row["contact_name"], row["contact_qq"] = user.name, user.qq_number
+        return rows
+
+    def list_group_bindings(self, bot_id: int | None = None, group_id: str = "", page: int = 1) -> dict:
+        c = self.conversations
+        filters = [c.c.source == "qq_group"]
+        if bot_id is not None:
+            filters.append(c.c.bot_id == bot_id)
+        if group_id:
+            filters.append(c.c.group_id == group_id)
+        groups = select(c.c.bot_id, c.c.group_id, func.max(c.c.last_active_at).label("last_active_at")).where(
+            *filters).group_by(c.c.bot_id, c.c.group_id).subquery()
+        n = self.contact_notes
+        joined = groups.outerjoin(n, (n.c.bot_id == groups.c.bot_id) & (n.c.target_type == "group") & (n.c.openid == groups.c.group_id))
+        with self.engine.connect() as conn:
+            total = conn.execute(select(func.count()).select_from(groups)).scalar_one()
+            rows = conn.execute(select(groups.c.bot_id, groups.c.group_id, n.c.name.label("group_remark")).select_from(joined)
+                .order_by(groups.c.last_active_at.desc(), groups.c.bot_id, groups.c.group_id)
+                .offset((page - 1) * 20).limit(20)).mappings().all()
+        return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": 20}
+
+    def save_group_note(self, bot_id: int, group_id: str, name: str) -> dict:
+        """仅允许备注本机器人已有群；清除群备注不改变定时任务。"""
+        name = name.strip()
+        if len(name) > 100 or any(ord(ch) < 32 for ch in name):
+            raise ValueError("群备注最多 100 字符且不能包含控制字符")
+        c, n = self.conversations, self.contact_notes
+        with self.engine.begin() as conn:
+            bot = conn.execute(select(self.bots.c.id).where(self.bots.c.id == bot_id).with_for_update()).first()
+            if not bot or not conn.execute(select(c.c.id).where(c.c.bot_id == bot_id,
+                    c.c.source == "qq_group", c.c.group_id == group_id).limit(1)).first():
+                raise ValueError("未找到该机器人的群会话，请先在群里发送消息")
+            conn.execute(n.delete().where(n.c.bot_id == bot_id, n.c.target_type == "group", n.c.openid == group_id))
+            if name:
+                conn.execute(n.insert().values(bot_id=bot_id, target_type="group", openid=group_id,
+                    name=name, qq_number=None, updated_at=utc_now()))
+        return {"group_remark": name or None}
