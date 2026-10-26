@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import logging
+import struct
 import wave
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from uuid import uuid4
@@ -14,9 +15,34 @@ from qbot.media import MAX_MEDIA_BYTES
 
 logger = logging.getLogger(__name__)
 
+SAMPLE_RATE = 24000
+LEADING_SILENCE_MS = 200
+TRAILING_SILENCE_MS = 350
+EDGE_FADE_MS = 5
+WAV_HEADER_BYTES = 44
+PADDING_BYTES = SAMPLE_RATE * (LEADING_SILENCE_MS + TRAILING_SILENCE_MS) // 1000 * 2
+MAX_RAW_PCM_BYTES = MAX_MEDIA_BYTES - WAV_HEADER_BYTES - PADDING_BYTES
+
 
 class SpeechError(ValueError):
     """可安全展示给管理员的合成错误。"""
+
+
+def smooth_pcm_edges(pcm: bytes | bytearray) -> bytes:
+    """完整保留语音，仅平滑最边缘样本并加播放缓冲，不能恢复上游漏字。"""
+    if not pcm or len(pcm) % 2 or len(pcm) > MAX_RAW_PCM_BYTES:
+        raise SpeechError("音频无效或超过大小限制，请缩短文本")
+    result = bytearray(pcm)
+    frames = len(result) // 2
+    fade = min(SAMPLE_RATE * EDGE_FADE_MS // 1000, frames // 2)
+    for index in range(fade):
+        gain = index / max(1, fade - 1)
+        for position in (index, frames - 1 - index):
+            sample = struct.unpack_from("<h", result, position * 2)[0]
+            struct.pack_into("<h", result, position * 2, round(sample * gain))
+    leading = bytes(SAMPLE_RATE * LEADING_SILENCE_MS // 1000 * 2)
+    trailing = bytes(SAMPLE_RATE * TRAILING_SILENCE_MS // 1000 * 2)
+    return leading + result + trailing
 
 
 async def synthesize(provider: dict, text: str, voice: str) -> bytes:
@@ -37,7 +63,7 @@ async def synthesize(provider: dict, text: str, voice: str) -> bytes:
                     await ws.send(json.dumps({"event_id": uuid4().hex, "type": kind, **values}))
 
                 await send("session.update", session={"mode": "commit", "voice": voice,
-                           "response_format": "pcm", "sample_rate": 24000})
+                           "response_format": "pcm", "sample_rate": SAMPLE_RATE})
                 configured = False
                 finished = False
                 async for raw in ws:
@@ -51,7 +77,7 @@ async def synthesize(provider: dict, text: str, voice: str) -> bytes:
                         await send("input_text_buffer.commit")
                     elif kind == "response.audio.delta":
                         chunk = base64.b64decode(event["delta"], validate=True)
-                        if len(pcm) + len(chunk) > MAX_MEDIA_BYTES - 44:
+                        if len(pcm) + len(chunk) > MAX_RAW_PCM_BYTES:
                             raise SpeechError("生成音频超过 3.5 MB，请缩短文本")
                         pcm.extend(chunk)
                     elif kind == "response.audio.done":
@@ -72,6 +98,6 @@ async def synthesize(provider: dict, text: str, voice: str) -> bytes:
     with wave.open(output, "wb") as audio:
         audio.setnchannels(1)
         audio.setsampwidth(2)
-        audio.setframerate(24000)
-        audio.writeframes(pcm)
+        audio.setframerate(SAMPLE_RATE)
+        audio.writeframes(smooth_pcm_edges(pcm))
     return output.getvalue()

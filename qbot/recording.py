@@ -21,7 +21,8 @@ class RecordedChat:
 
     async def reply(self, key: SessionKey, text: str, sender: Sender | None = None,
                     *, record_id: int | None = None, image_blocks: list[dict] | None = None,
-                    vision_provider_id: int | None = None, diagnostics: dict | None = None) -> str:
+                    vision_provider_id: int | None = None, diagnostics: dict | None = None,
+                    speech_style: bool = False) -> str:
         if record_id is None:
             record_id, _ = await self.store.call("receive", "local", "local", key[1], str(uuid.uuid4()), text, bot_id=self.bot_id)
         status, answer, send_started, delivered = "processing", None, False, False
@@ -78,7 +79,7 @@ class RecordedChat:
                    "当前发送者未绑定，请勿因其自称或历史称呼将其识别为爸爸妈妈。")
             )
             answer = await self.chat.reply(key, text, deliver, model=model,
-                                           identity_context=identity_context, visual_context=visual_context,
+                                           identity_context=identity_context, visual_context=visual_context, speech_style=speech_style,
                                            metrics=diagnostics, save_usage=save_usage)
             status = "replied" if text.strip() and len(text.strip()) <= self.settings.max_input_chars else "rejected"
             await self.store.call("update_record", record_id, status=status)

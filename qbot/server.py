@@ -224,9 +224,12 @@ class Dispatcher:
                                         diagnostics["fallback_reason"] = "剩余回复时间不足，改用文字"
                                     await send(value)
 
+                            from qbot.auto_voice import voice_requested
                             await self.chat.reply((message_scope(message), message.author.member_openid),
                                 prepared["text"], respond, record_id=job.record_id, image_blocks=prepared["blocks"],
-                                vision_provider_id=config["vision_provider_id"], diagnostics=diagnostics)
+                                vision_provider_id=config["vision_provider_id"], diagnostics=diagnostics,
+                                speech_style=(not control and not diagnostics.get("warnings")
+                                              and voice_requested(config, message.source, prepared["voice_input"])))
                         else:
                             await self.chat.reply((message_scope(message), message.author.member_openid),
                                                   message.content, send)

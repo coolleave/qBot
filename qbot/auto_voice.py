@@ -39,7 +39,12 @@ async def voice_file(text: str, config: dict, store, source: str, qq, target: st
         details["voice_latency_ms"] = round((time.monotonic() - started) * 1000)
 
 
-def wants_voice(text: str, config: dict, source: str, voice_input: bool) -> bool:
+def voice_requested(config: dict, source: str, voice_input: bool) -> bool:
+    """生成前可确定的输出偏好；实际发送仍需检查内容与剩余时间。"""
     mode = config["private_reply" if source == "qq_c2c" else "group_reply"]
-    return (mode == "voice" or (mode == "follow" and voice_input)) and (
+    return mode == "voice" or (mode == "follow" and voice_input)
+
+
+def wants_voice(text: str, config: dict, source: str, voice_input: bool) -> bool:
+    return voice_requested(config, source, voice_input) and (
         0 < len(text) <= 300 and not re.search(r"```|https?://|\|", text))
