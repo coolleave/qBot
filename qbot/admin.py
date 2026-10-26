@@ -222,14 +222,22 @@ def admin_router(settings: Settings) -> APIRouter:
     async def edit_bot(bot_id: int, data: BotInput, request: Request, db: Store = Depends(store)) -> dict:
         return await save_bot(data, request, db, bot_id)
 
-    @router.post("/api/admin/bots/{bot_id}/{action}", dependencies=[Depends(require_admin)])
+    # 启停使用固定路径，避免通用 action 路由遮蔽 POST /roles 等接口。
     async def control_bot(bot_id: int, action: Literal["start", "stop"], request: Request,
-                          db: Store = Depends(store)) -> dict:
+                          db: Store) -> dict:
         try:
             await db.call("set_bot_enabled", bot_id, action == "start")
             return await request.app.state.bots.apply(bot_id)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
+
+    @router.post("/api/admin/bots/{bot_id}/start", dependencies=[Depends(require_admin)])
+    async def start_bot(bot_id: int, request: Request, db: Store = Depends(store)) -> dict:
+        return await control_bot(bot_id, "start", request, db)
+
+    @router.post("/api/admin/bots/{bot_id}/stop", dependencies=[Depends(require_admin)])
+    async def stop_bot(bot_id: int, request: Request, db: Store = Depends(store)) -> dict:
+        return await control_bot(bot_id, "stop", request, db)
 
     @router.post("/api/admin/logout")
     async def logout(request: Request, response: Response, token: str = Depends(require_admin)) -> dict:

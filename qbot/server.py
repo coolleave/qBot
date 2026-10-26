@@ -333,6 +333,25 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
+        route_path = getattr(request.scope.get("route"), "path", "")
+        if request.method in {"POST", "PUT"} and route_path in {
+            "/api/admin/bots/{bot_id}/roles", "/api/admin/bots/{bot_id}/roles/{role_id}",
+        }:
+            # 仅使用固定文案，避免 Pydantic 的 input/ctx 泄露用户提交内容。
+            rules = {
+                "value": "角色编号须为 1～16 位小写字母、数字或下划线，且以字母开头",
+                "label": "显示名称必填，最多 100 字，不能包含控制字符",
+                "relationship": "关系说明最多 500 字，不能包含控制字符",
+                "member_name": "预设称呼最多 100 字，不能包含控制字符",
+            }
+            messages = []
+            for error in exc.errors():
+                loc = error.get("loc", ())
+                message = rules.get(loc[-1]) if loc and loc[0] == "body" else None
+                message = message or "角色请求格式不正确，请刷新页面后重试"
+                if message not in messages:
+                    messages.append(message)
+            return JSONResponse({"detail": "；".join(messages)}, status_code=422)
         # 禁止默认验证响应回显输入的密码或 API Key。
         return JSONResponse({"detail": "字段格式不正确，请检查必填项、长度和 URL"}, status_code=422)
 
