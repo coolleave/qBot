@@ -1,5 +1,8 @@
+from qbot.greeting_workflows import resolve_workflow, public_catalog, load_catalog
 import asyncio
+import base64
 import json
+from uuid import uuid4
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
@@ -45,7 +48,11 @@ class Store:
             self.admin_sessions = metadata.tables["admin_sessions"]
             self.identities = metadata.tables["bot_user_identities"]
             self.greetings = metadata.tables["interaction_greetings"]
+            if any(name not in self.greetings.c for name in ("delivery", "image_data", "image_filename")):
+                raise StorageError("请先执行 python -m alembic upgrade head 升级定时任务结构")
             self.greeting_runs = metadata.tables["interaction_greeting_runs"]
+            if not self.greeting_runs.c.local_date.nullable:
+                raise StorageError("请先执行 python -m alembic upgrade head 升级手动任务执行结构")
             self.bots = metadata.tables["bots"]
             self.providers = metadata.tables["model_providers"]
             self.settings = metadata.tables["app_settings"]
@@ -262,6 +269,11 @@ class Store:
                 if values.get("supports_images") and (values["model_type"] != "chat" or values["api_type"] != "openai_compatible"):
                     raise ValueError("图片输入能力仅用于兼容接口的 chat 模型")
                 if provider_id is not None:
+                    for raw in conn.execute(select(self.greetings.c.delivery)).scalars():
+                        delivery = json.loads(raw or "{}")
+                        if (resolve_workflow(delivery).output == "audio" and delivery.get("tts_provider_id") == provider_id
+                                and (not values["enabled"] or values["model_type"] != "tts")):
+                            raise ValueError("供应商已被定时语音任务引用，请先调整任务配置")
                     for bot in conn.execute(select(self.bots)).mappings():
                         mm = json.loads(bot["multimodal"] or "{}")
                         for field, kind in (("vision_provider_id", "chat"), ("asr_provider_id", "asr"), ("tts_provider_id", "tts")):
@@ -501,7 +513,7 @@ class Store:
         return {"member_name": record["member_name"], "family_role": record["family_role"]}
 
     def greeting_settings(self, bot_id: int, record_id: int) -> dict:
-        from qbot.greetings import default_rules
+        from qbot.greetings import default_rules, local_time
         record = self.record_detail(record_id)
         if not record or record["bot_id"] != bot_id or record["source"] not in ("qq_c2c", "qq_group"):
             raise ValueError("该机器人下不存在这条 QQ 消息")
@@ -510,22 +522,30 @@ class Store:
             rows = conn.execute(select(g).where(g.c.bot_id == bot_id,
                 g.c.conversation_id == record["conversation_id"])).mappings().all()
             rules = {r["slot"]: dict(slot=r["slot"], enabled=bool(r["enabled"]), start=r["start_time"],
-                end=r["end_time"], weekdays=[int(d) for d in r["weekdays"].split(",")], content=r["content"]) for r in rows}
-            history = conn.execute(select(runs.c.local_date, g.c.slot, runs.c.content,
+                weekdays=[int(d) for d in r["weekdays"].split(",")], content=r["content"],
+                **json.loads(r["delivery"] or "{}"), image_filename=r["image_filename"] or "",
+                has_image=bool(r["image_data"])) for r in rows}
+            history = conn.execute(select(runs.c.local_date, runs.c.created_at, g.c.slot, runs.c.content,
                 runs.c.record_id, self.records.c.status, self.records.c.error_message)
                 .select_from(runs.join(g, runs.c.greeting_id == g.c.id)
                     .join(self.records, runs.c.record_id == self.records.c.id))
                 .where(g.c.bot_id == bot_id, g.c.conversation_id == record["conversation_id"])
                 .order_by(runs.c.id.desc()).limit(20)).mappings().all()
-        return {"rules": [rules.get(r["slot"], r) for r in default_rules()],
+        result_rules = [rules.get(r["slot"], r) for r in default_rules()]
+        for rule in result_rules:
+            rule["workflow"] = resolve_workflow(rule).model_dump()
+        return {"rules": result_rules, "catalog": public_catalog(),
                 "bound": bool(record["contact_name"]), "contact_name": record["contact_name"],
-                "history": [dict(r) for r in history]}
+                "history": [{**dict(r), "manual": r["local_date"] is None,
+                    "local_date": r["local_date"] or local_time(r["created_at"]).date()} for r in history]}
 
     def save_greeting_settings(self, bot_id: int, record_id: int, values: dict) -> None:
         from qbot.greetings import GreetingInput
+        from qbot.media import validate_media
         data = GreetingInput.model_validate(values)
         c, r, g = self.conversations, self.records, self.greetings
         with self.engine.begin() as conn:
+            conn.execute(select(self.settings.c.id).where(self.settings.c.id == 1).with_for_update()).one()
             # 和绑定修改共用会话行锁，防止解除绑定时又被并发启用。
             row = conn.execute(select(c).select_from(r.join(c, r.c.conversation_id == c.c.id)).where(
                 r.c.id == record_id, r.c.bot_id == bot_id, c.c.bot_id == bot_id
@@ -536,15 +556,39 @@ class Store:
                 raise ValueError("请先在用户绑定中设置接收人名称，再启用问候")
             for rule in data.rules:
                 scope = (g.c.bot_id == bot_id) & (g.c.conversation_id == row["id"]) & (g.c.slot == rule.slot)
-                fields = dict(enabled=rule.enabled, start_time=rule.start, end_time=rule.end,
+                # 保留旧表必填字段兼容结构，结束时间不再参与调度。
+                fields = dict(enabled=rule.enabled, start_time=rule.start, end_time="23:59",
                               weekdays=",".join(map(str, rule.weekdays)), content=rule.content)
-                if conn.execute(select(g.c.id).where(scope)).first():
+                old = conn.execute(select(g).where(scope)).mappings().first()
+                image_data = old["image_data"] if old else None
+                if rule.remove_image:
+                    image_data = None
+                    fields.update(image_data=None, image_filename=None)
+                if rule.image_base64 is not None:
+                    try:
+                        raw = base64.b64decode(rule.image_base64, validate=True)
+                    except ValueError:
+                        raise ValueError("图片编码无效，请重新选择图片") from None
+                    media = validate_media("image", rule.image_filename, raw)
+                    image_data = media.data
+                    fields.update(image_data=image_data, image_filename=media.filename)
+                if rule.workflow.image_source == "upload" and not image_data:
+                    raise ValueError("组合消息需要上传图片")
+                if rule.workflow.image_source == "library" and rule.workflow.library_id not in {item.id for item in load_catalog().libraries}:
+                    raise ValueError("请选择有效素材库")
+                if rule.workflow.output == "audio":
+                    provider = conn.execute(select(self.providers).where(self.providers.c.id == rule.tts_provider_id)).mappings().first()
+                    if not provider or not provider["enabled"] or provider["model_type"] != "tts" or not provider["api_key_encrypted"]:
+                        raise ValueError("请选择已启用且配置密钥的 TTS 供应商")
+                fields["delivery"] = json.dumps(dict(delivery_mode=rule.delivery_mode, workflow=rule.workflow.model_dump(),
+                    tts_provider_id=rule.tts_provider_id, voice=rule.voice))
+                if old:
                     conn.execute(g.update().where(scope).values(**fields))
                 else:
                     conn.execute(g.insert().values(bot_id=bot_id, conversation_id=row["id"], slot=rule.slot, **fields))
 
     def due_greetings(self) -> list[int]:
-        """仅扫描当前执行窗口内、今天尚未领取的任务。"""
+        """仅扫描今天已到发送时间、尚未领取的任务。"""
         from qbot.greetings import local_time
         now = local_time(utc_now())
         g, runs = self.greetings, self.greeting_runs
@@ -555,7 +599,7 @@ class Store:
             return list(conn.execute(select(g.c.id).select_from(g.join(c,
                 (g.c.conversation_id == c.c.id) & (g.c.bot_id == c.c.bot_id))).where(g.c.enabled == 1,
                 c.c.contact_name.is_not(None), c.c.contact_name != "", c.c.source.in_(("qq_c2c", "qq_group")),
-                g.c.start_time <= now.strftime("%H:%M"), g.c.end_time > now.strftime("%H:%M"),
+                g.c.start_time <= now.strftime("%H:%M"),
                 func.find_in_set(str(now.isoweekday()), g.c.weekdays) > 0, ~claimed)
                 .order_by(g.c.id).limit(100)).scalars())
 
@@ -587,28 +631,43 @@ class Store:
                 return None
             if not manual and (not row["enabled"]
                     or str(now.isoweekday()) not in row["weekdays"].split(",")
-                    or not row["start_time"] <= now.strftime("%H:%M") < row["end_time"]):
+                    or row["start_time"] > now.strftime("%H:%M")):
                 return None
-            previous = conn.execute(select(runs.c.record_id, r.c.status, r.c.error_message)
-                .select_from(runs.join(r, runs.c.record_id == r.c.id)).where(runs.c.bot_id == row["bot_id"],
-                    runs.c.greeting_id == greeting_id, runs.c.local_date == now.date())).mappings().first()
-            if previous:
-                return {**dict(previous), "duplicate": True} if manual else None
+            if not manual:
+                previous = conn.execute(select(runs.c.id).where(runs.c.bot_id == row["bot_id"],
+                    runs.c.greeting_id == greeting_id, runs.c.local_date == now.date())).first()
+                if previous:
+                    return None
+            workflow = resolve_workflow(json.loads(row["delivery"] or "{}"))
+            preset = workflow.content_source == "ai"
+            # 预设生成前不将旧固定草稿标为本次实际正文。
+            execution_content = "" if preset else row["content"]
             rid = conn.execute(r.insert().values(bot_id=row["bot_id"], conversation_id=row["conversation_id"],
                 source=row["source"], group_id=row["group_id"],
-                external_message_id=f"scheduled:{greeting_id}:{now.date().isoformat()}",
-                question=("【定时任务执行一次】\n" if manual else "【定时主动发送】\n") + row["content"], answer=row["content"],
+                external_message_id=(f"scheduled-manual:{greeting_id}:{uuid4()}" if manual
+                                     else f"scheduled:{greeting_id}:{now.date().isoformat()}"),
+                question=("【定时任务执行一次】\n" if manual else "【定时主动发送】\n") + ("AI 生成消息" if preset else execution_content), answer=execution_content,
                 record_type="chat", status="processing", received_at=now_utc,
                 updated_at=now_utc)).inserted_primary_key[0]
             conn.execute(runs.insert().values(bot_id=row["bot_id"], greeting_id=greeting_id,
-                local_date=now.date(), record_id=rid, content=row["content"], created_at=now_utc))
-            return {**dict(row), "record_id": rid}
+                local_date=None if manual else now.date(), record_id=rid, content=execution_content, created_at=now_utc))
+            return {**dict(row), "record_id": rid, "workflow": workflow.model_dump()}
 
-    def greeting_targets(self, bot_id: int | None = None, page: int = 1, page_size: int = 20) -> dict:
+    def save_scheduled_content(self, bot_id: int, record_id: int, content: str) -> None:
+        """在发送前一起保存生成正文和执行历史，不改写任务的固定草稿。"""
+        with self.engine.begin() as conn:
+            conn.execute(self.records.update().where(self.records.c.id == record_id,
+                self.records.c.bot_id == bot_id).values(answer=content, updated_at=utc_now()))
+            conn.execute(self.greeting_runs.update().where(self.greeting_runs.c.record_id == record_id,
+                self.greeting_runs.c.bot_id == bot_id).values(content=content))
+
+    def greeting_targets(self, bot_id: int | None = None, page: int = 1, page_size: int = 20,
+                         *, bound_only: bool = False, search: str = "") -> dict:
         """独立菜单列出已绑定或曾配置过问候的会话，沿用记录身份校验。"""
         c, r, g = self.conversations, self.records, self.greetings
         latest = select(r.c.bot_id, r.c.conversation_id, func.max(r.c.id).label("record_id"))
-        stats = select(g.c.bot_id, g.c.conversation_id, func.sum(g.c.enabled).label("enabled_count"))
+        stats = select(g.c.bot_id, g.c.conversation_id, func.sum(g.c.enabled).label("enabled_count"),
+                       func.count(g.c.id).label("configured_count"))
         if bot_id is not None:
             latest = latest.where(r.c.bot_id == bot_id)
             stats = stats.where(g.c.bot_id == bot_id)
@@ -618,12 +677,17 @@ class Store:
             stats, (stats.c.conversation_id == c.c.id) & (stats.c.bot_id == c.c.bot_id))
         filters = [c.c.source.in_(("qq_c2c", "qq_group")),
                    c.c.contact_name.is_not(None) | stats.c.conversation_id.is_not(None)]
+        if bound_only:
+            filters.extend((c.c.contact_name.is_not(None), c.c.contact_name != ""))
+        if search:
+            filters.append(c.c.contact_name.contains(search, autoescape=True) | (c.c.user_id == search))
         if bot_id is not None:
             filters.append(c.c.bot_id == bot_id)
         with self.engine.connect() as conn:
             total = conn.execute(select(func.count()).select_from(joined).where(*filters)).scalar_one()
             rows = conn.execute(select(latest.c.record_id.label("id"), c.c.bot_id, c.c.source,
                 c.c.group_id, c.c.user_id, c.c.contact_name,
+                func.coalesce(stats.c.configured_count, 0).label("configured_count"),
                 func.coalesce(stats.c.enabled_count, 0).label("enabled_count"))
                 .select_from(joined).where(*filters).order_by(c.c.bot_id, c.c.id)
                 .offset((page - 1) * page_size).limit(page_size)).mappings().all()

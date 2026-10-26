@@ -1,0 +1,61 @@
+{
+  "libraries": [
+    {
+      "id": "kittens",
+      "name": "小猫素材（100 张）",
+      "manifest": "图片/greetings.json"
+    }
+  ],
+  "templates": [
+    {
+      "id": "text",
+      "name": "文字",
+      "workflow": {
+        "content_source": "fixed",
+        "image_source": "none",
+        "output": "text",
+        "library_id": null
+      }
+    },
+    {
+      "id": "text_image",
+      "name": "文字＋图片",
+      "workflow": {
+        "content_source": "fixed",
+        "image_source": "upload",
+        "output": "text",
+        "library_id": null
+      }
+    },
+    {
+      "id": "voice_image",
+      "name": "语音＋图片",
+      "workflow": {
+        "content_source": "fixed",
+        "image_source": "upload",
+        "output": "audio",
+        "library_id": null
+      }
+    },
+    {
+      "id": "preset_1",
+      "name": "预设 1 · 小猫随机图片＋AI 文案",
+      "workflow": {
+        "content_source": "ai",
+        "image_source": "library",
+        "output": "text",
+        "library_id": "kittens"
+      }
+    },
+    {
+      "id": "preset_2",
+      "name": "预设 2 · 小猫随机图片＋AI 语音",
+      "workflow": {
+        "content_source": "ai",
+        "image_source": "library",
+        "output": "audio",
+        "library_id": "kittens"
+      }
+    }
+  ]
+}

@@ -16,7 +16,7 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 | conversations | 机器人、来源、群、用户范围及接收人名称 |
 | chat_records | 问答、状态、模型快照、用量和媒体详情 |
 | bot_user_identities | bot_id + user_id 的家庭身份 |
-| interaction_greetings | 会话早晚任务规则 |
+| interaction_greetings | 会话早午晚任务规则（end_time 仅兼容保留，不参与调度） |
 | interaction_greeting_runs | 每日领取与发送记录关联 |
 | admin_sessions | 登录摘要、CSRF、配置指纹及有效期 |
 | alembic_version | 当前迁移版本 |
@@ -52,3 +52,13 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 上述为整理时工作区迁移，不代表目标库已执行。部署前核对 alembic current 与版本目录。仅新增手写迁移，不改已执行版本/快照，不 stamp、不删库删表初始化，复用现有 Docker MySQL，不操作其他库。
 
 启动失败先查连接、权限、迁移及 Store 字段要求；/health 正常不能证明业务读写通过。本次未连库、迁移或测试。
+
+迁移 `0013_greeting_media` 为 interaction_greetings 增加 delivery、image_data、image_filename。定时任务图片作为可重复发送的配置持久化，替换或删除才移除；这与聊天记录不保存原媒体的规则不同。聊天记录只保存发送各部分状态、图片文件名与摘要，不复制图片。
+
+定时预设 1 复用 interaction_greetings.delivery 的 delivery_mode=preset_1，无新迁移；原图读取项目图片目录，不复制进每条任务。执行时生成的正文同步保存 chat_records.answer 与 interaction_greeting_runs.content，配图名称和摘要保存在 media_details；任务固定草稿保留。
+
+预设 2 使用同一 delivery JSON（delivery_mode=preset_2），保存 tts_provider_id 与 voice；执行时的 AI 正文与预设 1 一样保存，media_details.parts 记录 audio / image 的发送状态及 TTS 处理信息。无新表或字段。
+
+通用流程配置保存到 interaction_greetings.delivery.workflow（version、content_source、image_source、output、library_id），delivery_mode 仅作模板标识和旧数据转换。已保存 workflow 优先生效，执行时快照记录到 media_details.workflow。无新迁移；旧任务在读取/执行时从模板目录映射，保存后固定组合。
+
+手动重复执行使用迁移 0014_manual_greeting_runs：interaction_greeting_runs.local_date 改为可空，NULL 表示手动执行，允许同任务多条手动记录；自动记录仍写日期并受 uq_greeting_day 约束。手动 chat_records.external_message_id 使用独立 UUID；日期显示由 created_at 换算北京时间。保留已有领取，不回填或删除历史。

@@ -403,14 +403,14 @@ def admin_router(settings: Settings) -> APIRouter:
     async def put_greetings(bot_id: int, record_id: int, data: GreetingInput, db: Store = Depends(store)) -> dict:
         try:
             await db.call("save_greeting_settings", bot_id, record_id, data.model_dump())
-        except ValueError:
-            raise HTTPException(400, "任务设置无效，请确认接收人名称绑定、时间段和星期") from None
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
         return {"ok": True}
 
     @router.post("/api/admin/bots/{bot_id}/records/{record_id}/greetings/{slot}/generate", dependencies=[Depends(require_admin)])
-    async def generate_greeting_draft(bot_id: int, record_id: int, slot: Literal["morning", "evening"],
+    async def generate_greeting_draft(bot_id: int, record_id: int, slot: Literal["morning", "noon", "evening"],
                                       db: Store = Depends(store)) -> dict:
-        from qbot.greeting_generation import generate_greeting
+        from qbot.greeting_generation import generate_greeting, GreetingGenerationError
 
         nonlocal last_greeting_generation
         if greeting_generation_lock.locked() or time.monotonic() - last_greeting_generation < 10:
@@ -432,14 +432,18 @@ def admin_router(settings: Settings) -> APIRouter:
                 raise HTTPException(400, str(exc)) from None
             try:
                 content = await generate_greeting(settings, provider, bot.get("system_prompt") or "", record, slot)
+            except GreetingGenerationError as exc:
+                raise HTTPException(502, str(exc) + "；原文案未修改") from None
             except TimeoutError:
                 raise HTTPException(504, "生成超时，请稍后重试；原文案未修改") from None
-            except Exception:
-                raise HTTPException(502, "生成失败或返回文案不符合 1 至 200 字要求，请检查模型配置、额度或重试；原文案未修改") from None
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning("问候生成异常 type=%s", type(exc).__name__)
+                raise HTTPException(502, "文案生成异常，请检查服务日志中的异常类型；原文案未修改") from None
             return {"content": content}
 
     @router.post("/api/admin/bots/{bot_id}/records/{record_id}/greetings/{slot}/run", dependencies=[Depends(require_admin)])
-    async def run_greeting(bot_id: int, record_id: int, slot: Literal["morning", "evening"],
+    async def run_greeting(bot_id: int, record_id: int, slot: Literal["morning", "noon", "evening"],
                            request: Request, db: Store = Depends(store)) -> dict:
         try:
             rule_id = await db.call("greeting_for_execution", bot_id, record_id, slot)
@@ -460,6 +464,13 @@ def admin_router(settings: Settings) -> APIRouter:
     async def greeting_targets(bot_id: int | None = Query(None, gt=0),
                                page: int = Query(1, ge=1, le=100000), db: Store = Depends(store)) -> dict:
         return await db.call("greeting_targets", bot_id=bot_id, page=page)
+
+    @router.get("/api/admin/greeting-recipients", dependencies=[Depends(require_admin)])
+    async def greeting_recipients(bot_id: int = Query(..., gt=0), search: str = Query("", max_length=256),
+                                 page: int = Query(1, ge=1, le=100000), db: Store = Depends(store)) -> dict:
+        # 只从该机器人的有效接收人绑定中选择，不能由前端伪造任意发送目标。
+        return await db.call("greeting_targets", bot_id=bot_id, page=page,
+                             bound_only=True, search=search.strip())
 
     @router.get("/api/admin/user-bindings", dependencies=[Depends(require_admin)])
     async def user_bindings(bot_id: int | None = Query(None, gt=0), user_id: str = Query("", max_length=256),
