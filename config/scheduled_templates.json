@@ -67,12 +67,27 @@
         "library_id": null,
         "prompt_style": "dafeiyu"
       }
+    },
+    {
+      "id": "xiaocang_love",
+      "name": "小苍 · 爱的问候（给妈妈）",
+      "workflow": {
+        "content_source": "ai",
+        "image_source": "none",
+        "output": "text",
+        "library_id": null,
+        "prompt_style": "xiaocang_love"
+      }
     }
   ],
   "prompt_styles": [
     {
       "id": "dafeiyu",
       "name": "大肥鱼 · 两位牢弟搞怪问候"
+    },
+    {
+      "id": "xiaocang_love",
+      "name": "小苍 · 爱的问候（给妈妈）"
     }
   ]
 }
