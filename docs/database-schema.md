@@ -447,3 +447,9 @@ conn.execute(text("""
 interaction_greetings 新增 schedule_updated_at，DATETIME(6) 非空、UTC，应用在每次保存时更新，不依赖数据库默认值。自动任务仅在北京时间 start_time 对应分钟领取，且保存时刻必须早于该分钟开始；过期不补发，手动执行不受此条件限制。slot 新增 other（无需扩列），新独立任务可按 task_key 修改 slot，仍保留 greeting_id 和每日去重记录。
 
 0018 已在本地执行并核对：8 条任务、14 条执行记录既有字段保持不变，保存时刻非空。
+
+## 0019_user_nickname：平台昵称
+
+conversations 新增可空 `platform_nickname VARCHAR(256)`（utf8mb4），独立于管理员 contact_name/用户备注与 bot_user_identities。Store.receive 从平台事件接收非空昵称，在机器人行锁下同步同 bot_id/user_id 的 QQ 会话；过滤不可打印字符并限制长度。读取批量选择最近会话的有效昵称；空推送不清空，不推断旧昵称，不影响任务资格或模型身份。
+
+语音文本沿用 chat_records.media_details：attachments[].transcript 为 ASR 转写，tts_text 为合成正文；手动 TTS 同时保存 answer，question 中含文本快照参与原幂等比较。音频文件不入库；旧记录不补造文本。新增迁移须显式执行，应用不自动迁移。

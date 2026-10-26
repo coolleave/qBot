@@ -7,7 +7,7 @@ from collections import deque
 from datetime import date, datetime, timedelta, timezone
 from importlib.resources import files
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, unquote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -539,8 +539,17 @@ def admin_router(settings: Settings) -> APIRouter:
 
     @router.get("/api/admin/bots/{bot_id}/send-targets", dependencies=[Depends(require_admin)])
     async def send_targets(bot_id: int, source: Literal["qq_group", "qq_c2c"],
-                           page: int = Query(1, ge=1, le=100000), db: Store = Depends(store)) -> dict:
-        return await db.call("send_targets", bot_id, source, page)
+                           page: int = Query(1, ge=1, le=100000), search: str = Query("", max_length=256),
+                           db: Store = Depends(store)) -> dict:
+        return await db.call("send_targets", bot_id, source, page, search.strip())
+
+    @router.get("/api/admin/bots/{bot_id}/records/{record_id}/messages", dependencies=[Depends(require_admin)])
+    async def conversation_messages(bot_id: int, record_id: int,
+                                    before_id: int | None = Query(None, gt=0), db: Store = Depends(store)) -> dict:
+        try:
+            return await db.call("conversation_messages", bot_id, record_id, before_id)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from None
 
     @router.post("/api/admin/bots/{bot_id}/records/{record_id}/send", dependencies=[Depends(require_admin)])
     async def send_proactive(bot_id: int, record_id: int, data: ProactiveInput, request: Request) -> dict:
@@ -582,6 +591,16 @@ def admin_router(settings: Settings) -> APIRouter:
                          request_id: UUID, kind: Literal["image", "audio"],
                          filename: str = Query(..., min_length=1, max_length=150)) -> dict:
         from qbot.media import MAX_MEDIA_BYTES, validate_media
+        # 文本放在请求头而非 URL 中，避免进入常规访问日志；仍按不可信管理员输入校验。
+        encoded_text = request.headers.get("X-QBot-Speech-Text", "")
+        if len(encoded_text) > 6000:
+            raise HTTPException(400, "语音文本最多 500 字符")
+        try:
+            speech_text = unquote(encoded_text, errors="strict").strip()
+        except UnicodeError:
+            raise HTTPException(400, "语音文本编码无效") from None
+        if len(speech_text) > 500 or (speech_text and kind != "audio"):
+            raise HTTPException(400, "语音文本仅用于音频且最多 500 字符")
         if media_lock.locked():
             raise HTTPException(429, "已有文件正在上传或发送，请稍后再试")
         async with media_lock:
@@ -598,6 +617,6 @@ def admin_router(settings: Settings) -> APIRouter:
                 media = validate_media(kind, filename, bytes(body))
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from None
-            return await request.app.state.proactive.send(bot_id, record_id, "", str(request_id), media=media)
+            return await request.app.state.proactive.send(bot_id, record_id, "", str(request_id), media=media, speech_text=speech_text)
 
     return router

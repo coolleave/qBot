@@ -2,6 +2,7 @@
 const $ = id => document.getElementById(id);
 let csrf = "", currentPage = 1, providers = [], defaultProvider = null, recordsRequest = 0;
 const botNames = new Map();
+const botAppIds = new Map(), botAvatarUrls = new Map();
 const botIdentityRoles = new Map();
 const botVoices = new Map();
 function setIdentityOptions(form, botId, role = "", name = "", roleId = null) {
@@ -40,7 +41,7 @@ function updateBotLabels() {
 let contactNoteTab = "user";
 const labels = {pending:"等待处理",processing:"处理中",replied:"已回复",model_failed:"模型失败",send_failed:"发送失败",delivery_unknown:"送达未知",expired:"已过期",rejected:"已拒绝"};
 function toast(message) { ElementPlus.ElMessage({message, duration:4500, showClose:true, grouping:true, customClass:"console-message", appendTo:document.querySelector("dialog[open]") || document.body}); }
-function loggedOut() { $("bot-form").reset(); csrf = ""; recordsRequest++; ui.records = []; ui.total = 0; ui.loading = false; ui.username = ""; $("workspace").hidden = true; $("login-screen").hidden = false; document.querySelectorAll("dialog[open]").forEach(d => d.close()); }
+function loggedOut() { document.dispatchEvent(new Event("qbot-logout")); $("bot-form").reset(); csrf = ""; recordsRequest++; ui.records = []; ui.total = 0; ui.loading = false; ui.username = ""; $("workspace").hidden = true; $("login-screen").hidden = false; document.querySelectorAll("dialog[open]").forEach(d => d.close()); }
 async function api(path, options = {}) {
   const response = await fetch("/api/admin" + path, {credentials:"same-origin", ...options, headers:{"Content-Type":"application/json", "X-QBot-Admin":"1", "X-CSRF-Token":csrf, ...options.headers}});
   let data; try { data = await response.json(); } catch { throw new Error("服务器响应异常，请稍后重试"); }
@@ -248,6 +249,8 @@ enter().catch(e => {if(!$("workspace").hidden) toast(e.message);});
 
 async function loadBots() {
   const data = await api("/bots");
+  botAppIds.clear(); botAvatarUrls.clear();
+  for (const bot of data.items) botAppIds.set(Number(bot.id), bot.app_id || "");
   botVoices.clear();
   for (const bot of data.items) botVoices.set(Number(bot.id), bot.multimodal?.voice || "Bunny");
   botIdentityRoles.clear();
@@ -296,6 +299,8 @@ async function loadBots() {
         updateBotLabels();
         profileState.textContent = result.success ? `官方 ID：${result.profile.id}` : result.message;
         const url = result.profile?.avatar;
+        botAvatarUrls.set(Number(item.id), url || "");
+        document.dispatchEvent(new CustomEvent("qbot-profile-loaded", {detail:{botId:item.id}}));
         if(url) {
           avatar.hidden = true; placeholder.hidden = false;
           avatar.src = url;
@@ -693,7 +698,7 @@ $("send-tts-generate").onclick = async () => {
     mediaPreviewUrl = URL.createObjectURL(file);
     $("send-audio-preview").src = mediaPreviewUrl; $("send-audio-preview").hidden = false;
     $("send-file-info").textContent = `${file.name} · ${(file.size / 1000000).toFixed(2)} MB`;
-    generatedSpeech = file; form.elements.media_file.required = false;
+    generatedSpeech = file; generatedSpeech.ttsText = $("send-tts-text").value.trim(); form.elements.media_file.required = false;
     $("send-tts-result").textContent = "生成成功，可试听后点击立即发送。" +
       (target.source === "qq_c2c" ? "私聊发送时自动转成 SILK。" : "") + "修改文本或音色后需重新生成。";
   } catch(e) { $("send-tts-result").textContent = e.message; }
@@ -741,7 +746,7 @@ $("send-form").onsubmit = async event => {
       if (!file || !file.size || file.size > MAX_MEDIA_BYTES) { $("send-result").textContent = "请选择非空且不超过 3.5 MB 的文件"; return; }
       const allowed = kind === "image" ? /\.(png|jpe?g)$/i : target.source === "qq_group" ? /\.(silk|mp3|wav)$/i : /\.(silk|wav)$/i;
       if (!allowed.test(file.name)) { $("send-result").textContent = "文件格式不适用于此消息类型或会话，请按上方说明选择。"; return; }
-      sendPayload = {kind, file};
+      sendPayload = {kind, file, speechText:generatedSpeech?.ttsText || ""};
     }
   }
   const payload = sendPayload, submit = $("send-submit");
@@ -758,51 +763,17 @@ $("send-form").onsubmit = async event => {
     const result = payload.kind === "text" ? await api(base + "/send", {
       method:"POST", body:JSON.stringify({content:payload.content, request_id:target.requestId})
     }) : await api(base + "/send-media?" + new URLSearchParams({kind:payload.kind, filename:payload.file.name, request_id:target.requestId}), {
-      method:"POST", headers:{"Content-Type":"application/octet-stream"}, body:payload.file
+      method:"POST", headers:{"Content-Type":"application/octet-stream", "X-QBot-Speech-Text":encodeURIComponent(payload.speechText)}, body:payload.file
     });
     $("send-result").textContent = `记录 #${result.record_id} · ${result.status === "replied" ? "QQ 已确认发送" : labels[result.status] || result.status}。${result.message || ""}${result.duplicate ? "此请求已记录，未重复发送。" : ""}`;
     if (["pending", "processing", "delivery_unknown"].includes(result.status)) $("send-result").textContent += " 可能已送达或处理中，请先核对 QQ 和聊天记录，不要新建相同消息。";
     void loadRecords().catch(e => toast(e.message));
+    document.dispatchEvent(new CustomEvent("qbot-message-sent", {detail:{botId:target.botId}}));
   } catch(e) {
     $("send-result").textContent = e.message + "。请求结果未确认；再次提交沿用同一请求标识和文件。若需更换内容，请关闭后重新打开。";
     submit.textContent = "重新提交同一请求"; submit.disabled = false;
   } finally { sendPending = false; closeButtons.forEach(node => node.disabled = false); }
 };
-
-let sendTargetsPage = 1, sendTargetsRequest = 0;
-async function loadSendTargets() {
-  const request = ++sendTargetsRequest, botId = $("send-bot").value;
-  $("send-targets-body").replaceChildren(); $("send-targets-empty").hidden = false;
-  $("send-targets-empty").textContent = botId ? "正在加载…" : "请选择发送机器人。";
-  $("send-target-count").textContent = ""; $("send-target-page").textContent = "";
-  $("send-target-prev").disabled = true; $("send-target-next").disabled = true;
-  if (!botId) return;
-  try {
-    const data = await api(`/bots/${botId}/send-targets?source=${$("send-source").value}&page=${sendTargetsPage}`);
-    if (request !== sendTargetsRequest) return;
-    $("send-target-count").textContent = `共 ${data.total} 个接收对象`;
-    $("send-target-page").textContent = `第 ${data.page} / ${Math.max(1, Math.ceil(data.total / data.page_size))} 页`;
-    $("send-target-prev").disabled = data.page <= 1;
-    $("send-target-next").disabled = data.page * data.page_size >= data.total;
-    $("send-targets-empty").hidden = data.items.length > 0;
-    $("send-targets-empty").textContent = "暂无此类会话，请先让用户私聊机器人或在群里 @机器人。";
-    for (const item of data.items) {
-      const group = item.source === "qq_group", row = element("tr");
-      const identity = element("td", group ? groupDisplay(item) : (item.user_remark || item.contact_name || "私聊用户"));
-      if (!group) identity.append(element("small", item.user_id));
-      const action = element("td"); action.append(button("编写消息", () => composeMessage(item)));
-      if (group) action.append(button("群备注", () => editGroupNote(item)));
-      row.append(identity, element("td", group ? "整个群" : "仅此用户"), action);
-      $("send-targets-body").append(row);
-    }
-  } catch(e) {
-    if (request === sendTargetsRequest) $("send-targets-empty").textContent = "加载失败：" + e.message;
-  }
-}
-for (const id of ["send-bot", "send-source"]) $(id).onchange = () => { sendTargetsPage = 1; void loadSendTargets(); };
-$("refresh-send-targets").onclick = () => { sendTargetsPage = 1; void loadSendTargets(); };
-$("send-target-prev").onclick = () => { sendTargetsPage--; void loadSendTargets(); };
-$("send-target-next").onclick = () => { sendTargetsPage++; void loadSendTargets(); };
 
 let recipientPage = 1, recipientRequest = 0;
 async function loadGreetingRecipients() {

@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 class Author(BaseModel):
     member_openid: str = Field(min_length=1, max_length=256, pattern=r"^[\x21-\x7e]+$")
     bot: bool = False
+    username: str | None = None
 
 
 class GroupMessage(BaseModel):
@@ -46,6 +47,7 @@ class GroupMessage(BaseModel):
 class PrivateAuthor(BaseModel):
     user_openid: str = Field(min_length=1, max_length=256, pattern=r"^[\x21-\x7e]+$")
     bot: bool = False
+    username: str | None = None
 
 
 class PrivateMessage(BaseModel):
@@ -62,7 +64,7 @@ def incoming_message(event_type: str, data: dict) -> GroupMessage:
         # 私聊没有群 ID，使用稳定的用户摘要作为存储范围，兼容旧版索引长度。
         scope = "c2c:" + hashlib.sha256(message.author.user_openid.encode()).hexdigest()
         return GroupMessage(source="qq_c2c", id=message.id, group_openid=scope,
-            author=Author(member_openid=message.author.user_openid, bot=message.author.bot),
+            author=Author(member_openid=message.author.user_openid, bot=message.author.bot, username=message.author.username),
             content=message.content, timestamp=message.timestamp, attachments=message.attachments)
     return GroupMessage.model_validate({**data, "source": "qq_group"})
 
@@ -127,7 +129,7 @@ class Dispatcher:
                 record_id, created = await self.store.call("receive", message.source, message.group_openid,
                     message.author.member_openid, message.id,
                     normalize_faces(message.content) + (f"\n【附件 {len(message.attachments)} 个】" if message.attachments else ""),
-                    message.timestamp, bot_id=self.bot_id)
+                    message.timestamp, bot_id=self.bot_id, platform_nickname=message.author.username)
                 if not created:
                     return
             logger.info("收到 QQ 消息，机器人：%s，来源：%s", self.bot_id, message.source)

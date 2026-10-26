@@ -90,3 +90,15 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 独立定时任务自 `0017_independent_tasks` 使用 task_key/task_name，同一会话可有多条同一时段任务；旧配置的 task_key 为空，保留其 ID 和每日领取记录。配置唯一索引包含 task_key，自动去重仍按 greeting_id 和日期，详见定时任务与数据库表结构文档。
 
 自 0018_schedule_timing，定时任务以 schedule_updated_at 防止保存即触发，只领取当前分钟到期任务，取消当天错过时间的补发。扫描与领取双重校验；手动执行仍独立。
+
+## 对话页面读取范围
+
+Store.send_targets 私聊按机器人、来源和 user_id 分组，群聊按机器人、来源和 group_id 分组，支持备注或 OpenID 包含搜索。Store.conversation_messages 从已归属记录解析目标：私聊只读同机器人同用户的 qq_c2c 记录，群聊只读同机器人同群的 qq_group 记录，群成员的原会话仍独立存储。每页40条记录，以 id 向前游标分页，返回按 ID 升序的问答及状态。服务端将 external_message_id 前缀转为 incoming/manual/scheduled 来源，不把原始外部 ID 和完整媒体诊断返回页面。仅聚合展示，不合并模型上下文、不新增数据库表。
+
+## 昵称与语音文本（已实现，真实消息待验收）
+
+新增迁移 0019_user_nickname，在 conversations 单独保存 platform_nickname；从 QQ 消息 author.username 接收非空昵称，同机器人同 OpenID 同步，空值不覆盖已有昵称，不改备注或身份权限。对话显示备注优先，其次平台昵称、绑定名称和 ID；昵称可搜索。旧记录不猜测昵称，等待新消息。
+
+ASR 继续保存 media_details.attachments[].transcript；自动/定时 TTS 增加 tts_text，记录实际送入合成的文本。手动 TTS 随音频上传保存文本快照，纳入同请求内容校验，不重复合成。对话气泡显示“语音消息：文本”，识别失败或纯上传音频没有文本时明确提示；音频文件不落库、不接 OSS、不提供历史播放。旧记录仅展示已有转写/回复正文，不重新调用模型。
+
+2026-10-26 已完成 Python AST、JavaScript 语法与差异静态检查；本地已迁移至 0019_user_nickname 并重启。未运行测试、浏览器、付费 ASR/TTS 或真实发送验证；昵称取决于平台实际推送。

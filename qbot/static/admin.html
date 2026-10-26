@@ -8,10 +8,12 @@
   <link rel="stylesheet" href="/admin-assets/element-plus.css">
   <link rel="stylesheet" href="/admin-assets/admin.css">
   <link rel="stylesheet" href="/admin-assets/admin-theme.css">
+  <link rel="stylesheet" href="/admin-assets/conversation.css">
   <script src="/admin-assets/vue.global.prod.js" defer></script>
   <script src="/admin-assets/element-plus.full.min.js" defer></script>
   <script src="/admin-assets/admin-ui.js" defer></script>
   <script src="/admin-assets/admin.js" defer></script>
+  <script src="/admin-assets/conversation.js" defer></script>
   <script src="/admin-assets/token-stats.js" defer></script>
 </head>
 <body>
@@ -51,10 +53,30 @@
     <section id="providers-page" hidden><div class="page-heading"><div><span class="eyebrow">MODEL PROVIDERS</span><h1>模型供应商</h1><p class="muted">集中管理模型与密钥，默认配置从下一次请求生效。</p></div><button id="new-provider" class="primary">＋ 添加供应商</button></div><div class="provider-summary"><div><span class="eyebrow">当前默认聊天供应商</span><h2 id="default-label">加载中…</h2></div><button id="environment-default">取消默认供应商</button></div><div id="providers-list" class="provider-grid"></div><div id="providers-empty" class="empty" hidden>尚未添加供应商。点击右上角添加 DeepSeek 或兼容接口。</div><p class="muted footnote">密钥加密保存，页面不会显示原文。保存配置不会调用付费模型接口。点击“测试连接”会向已保存的模型发送“你好”，可能产生少量费用；显示完整回复耗时，非首字延迟。</p></section>
     <section id="bots-page" hidden><div class="page-heading"><div><h1>机器人管理</h1><p class="muted">每个机器人独立连接、模型和会话。保存启用的机器人会重新连接并清空内存上下文。</p></div><button id="new-bot" class="primary">＋ 添加机器人</button></div><button id="refresh-bots">刷新连接状态</button><div id="bots-list" class="provider-grid"></div></section>
 <section id="messages-page" hidden>
-<div class="page-heading"><div><h1>发送消息</h1><p class="muted">选择机器人和已有会话，向私聊用户或整个群发送文字、图片或语音。</p></div><button id="refresh-send-targets" type="button">刷新接收对象</button></div>
-<div class="filters"><label>发送机器人<select id="send-bot"></select></label><label>会话类型<select id="send-source"><option value="qq_c2c">QQ 私聊</option><option value="qq_group">QQ 群聊</option></select></label></div>
-<div class="card"><div class="card-title"><h2>接收对象</h2><span id="send-target-count" class="muted"></span></div><div class="table-scroll"><table><thead><tr><th>接收对象</th><th>范围</th><th>操作</th></tr></thead><tbody id="send-targets-body"></tbody></table></div><p id="send-targets-empty" class="empty">选择机器人后加载已有会话。</p><div class="pagination"><span id="send-target-page"></span><div><button id="send-target-prev" type="button">上一页</button><button id="send-target-next" type="button">下一页</button></div></div></div>
-<p class="muted footnote">点击“编写消息”填写内容并发送。发送结果保存在聊天记录中；QQ 平台主动消息权限和额度仍然适用。</p>
+<div class="page-heading chat-page-heading"><div><h1>对话</h1><p class="muted">让历史与此刻的交流，在同一个地方。</p></div><label class="chat-bot-picker">当前机器人<select id="send-bot" aria-label="选择机器人"></select></label></div>
+<div class="chat-workspace">
+<aside class="chat-sidebar" aria-label="会话列表">
+<div class="chat-tabs" role="tablist" aria-label="会话类型">
+<button id="chat-private-tab" type="button" role="tab" aria-selected="true" aria-controls="chat-session-panel">私聊</button>
+<button id="chat-group-tab" type="button" role="tab" aria-selected="false" aria-controls="chat-session-panel" tabindex="-1">群聊</button>
+</div><input id="send-source" type="hidden" value="qq_c2c">
+<form id="chat-search-form" class="chat-search"><input id="chat-search" maxlength="256" placeholder="搜索备注或 OpenID" aria-label="搜索会话"><button type="submit" aria-label="搜索">搜索</button></form>
+<div class="chat-list-heading"><span id="send-target-count">选择机器人开始</span><button id="refresh-send-targets" type="button" title="刷新会话列表">刷新</button></div>
+<div id="chat-session-panel" class="chat-session-panel" role="tabpanel" aria-labelledby="chat-private-tab"><div id="send-targets-body" class="chat-session-list"></div><p id="send-targets-empty" class="empty">选择机器人后查看对话。</p></div>
+<div class="chat-list-pagination"><span id="send-target-page"></span><div><button id="send-target-prev" type="button" aria-label="上一页会话">‹</button><button id="send-target-next" type="button" aria-label="下一页会话">›</button></div></div>
+</aside>
+<div class="chat-main">
+<div id="chat-welcome" class="chat-welcome"><img src="/admin-assets/qbot-logo-v1.png" width="76" height="76" alt=""><h2>从一段对话开始</h2><p>在左侧选择用户或群聊<br>查看历史消息，也可以发送新的内容</p></div>
+<div id="chat-active" class="chat-active" hidden>
+<header class="chat-heading"><div><h2 id="chat-title"></h2><p id="chat-subtitle"></p></div><div class="chat-heading-actions"><button id="chat-group-note" type="button" hidden>群备注</button><button id="chat-refresh" type="button">刷新消息</button></div></header>
+<div id="chat-timeline" class="chat-timeline" tabindex="0" aria-label="历史对话">
+<div class="chat-history-top"><button id="chat-load-older" type="button" hidden>加载更早消息</button></div>
+<p id="chat-history-notice" class="chat-history-notice" role="status"></p><div id="chat-message-list"></div>
+</div>
+<form id="chat-composer" class="chat-composer"><label class="chat-input-label" for="chat-text">发送新消息</label><textarea id="chat-text" rows="3" maxlength="10000" placeholder="输入消息，Enter 发送，Shift + Enter 换行" required></textarea><div class="chat-composer-toolbar"><button id="chat-media" type="button">图片 / 语音</button><span id="chat-send-scope">以机器人身份发送</span><button id="chat-new-message" type="button" hidden>开始新消息</button><button id="chat-send" class="primary" type="submit">发送 ↑</button></div><p id="chat-send-result" role="status"></p></form>
+</div>
+</div>
+</div>
 </section>
     <section id="greetings-page" hidden>
 <div class="page-heading"><div><h1>定时任务</h1><p class="muted">按北京时间到点主动发送固定文案，无需用户先发消息。实际送达受 QQ 主动消息权限限制。</p></div><div class="actions"><button id="new-greeting" type="button" class="primary">新建任务</button><button id="refresh-greeting-targets" type="button">刷新列表</button></div></div>

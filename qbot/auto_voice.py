@@ -20,6 +20,7 @@ async def voice_file(text: str, config: dict, store, source: str, qq, target: st
             speech = re.sub(r"[*_#~]", "", text).strip()
             if not speech:
                 raise ValueError("没有可朗读内容")
+            details["tts_text"] = speech
             async with asyncio.timeout(30):
                 wav = await synthesize(provider, speech, config["voice"])
             details["tts_status"] = "success"

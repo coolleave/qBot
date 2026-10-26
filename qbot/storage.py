@@ -62,6 +62,8 @@ class Store:
             self.providers = metadata.tables["model_providers"]
             self.settings = metadata.tables["app_settings"]
             self.conversations = metadata.tables["conversations"]
+            if "platform_nickname" not in self.conversations.c:
+                raise StorageError("请先执行 python -m alembic upgrade head 升级用户昵称字段")
             self.records = metadata.tables["chat_records"]
             if any(name not in self.records.c for name in ("input_tokens", "output_tokens", "total_tokens")):
                 raise StorageError("Token 统计表结构尚未升级，请先执行 python -m alembic upgrade head")
@@ -336,7 +338,8 @@ class Store:
             return result
 
     def receive(self, source: str, group_id: str, user_id: str, message_id: str,
-                question: str, sent_at: datetime | None = None, *, bot_id: int = 1) -> tuple[int, bool]:
+                question: str, sent_at: datetime | None = None, *, bot_id: int = 1,
+                platform_nickname: str | None = None) -> tuple[int, bool]:
         """接收记录和会话同事务提交；唯一索引阻止重复推送创建新记录。"""
         if source not in ("qq_group", "qq_c2c", "local"):
             raise ValueError("无效的聊天来源")
@@ -368,6 +371,11 @@ class Store:
                             contact_qq=contact["qq_number"] if contact else None)).inserted_primary_key[0]
                     else:
                         conn.execute(c.update().where(c.c.id == cid).values(last_active_at=now))
+                    # 平台昵称仅用于展示，空值不清空；不写入管理员备注或可信身份。
+                    nickname = "".join(ch for ch in (platform_nickname or "") if ch.isprintable()).strip()[:256]
+                    if nickname and source in ("qq_c2c", "qq_group"):
+                        conn.execute(c.update().where(c.c.bot_id == bot_id, c.c.user_id == user_id,
+                            c.c.source.in_(("qq_c2c", "qq_group"))).values(platform_nickname=nickname))
                     rid = conn.execute(r.insert().values(bot_id=bot_id, conversation_id=cid, source=source,
                         group_id=group_id, external_message_id=message_id, question=question,
                         record_type="reset" if question.strip() == "/reset" else "chat", status="pending",
@@ -490,19 +498,80 @@ class Store:
                 "conversations": ranking([r.c.conversation_id, r.c.bot_id, c.c.source,
                     c.c.group_id, c.c.user_id, c.c.contact_name], 20)}
 
-    def send_targets(self, bot_id: int, source: str, page: int = 1) -> dict:
-        """按实际投递范围去重；群内不同用户只显示一个群目标。"""
-        r, c = self.records, self.conversations
-        latest = select(func.max(r.c.id).label("record_id")).where(
-            r.c.bot_id == bot_id, r.c.source == source,
-        ).group_by(r.c.group_id).subquery()
+    def send_targets(self, bot_id: int, source: str, page: int = 1, search: str = "") -> dict:
+        """按实际投递目标分页；群成员合并展示，私聊按用户区分。"""
+        r, c, n = self.records, self.conversations, self.contact_notes
+        target = c.c.user_id if source == "qq_c2c" else r.c.group_id
+        note_type = "user" if source == "qq_c2c" else "group"
+        joined = r.join(c, (c.c.id == r.c.conversation_id) & (c.c.bot_id == r.c.bot_id))
+        filters = [r.c.bot_id == bot_id, r.c.source == source]
+        if search:
+            note_matches = select(n.c.openid).where(n.c.bot_id == bot_id, n.c.target_type == note_type,
+                n.c.openid == target, n.c.name.contains(search, autoescape=True)).exists()
+            match = target.contains(search, autoescape=True) | note_matches
+            if source == "qq_c2c":
+                match |= c.c.contact_name.contains(search, autoescape=True) | c.c.platform_nickname.contains(search, autoescape=True)
+            filters.append(match)
+        latest = select(func.max(r.c.id).label("record_id")).select_from(joined).where(
+            *filters).group_by(target).subquery()
         with self.engine.connect() as conn:
             total = conn.execute(select(func.count()).select_from(latest)).scalar_one()
             rows = conn.execute(select(r.c.id, r.c.bot_id, r.c.source, r.c.group_id,
-                c.c.user_id, c.c.contact_name).select_from(
+                c.c.user_id, c.c.contact_name, r.c.received_at, r.c.external_message_id,
+                func.substr(r.c.question, 1, 100).label("question"),
+                func.substr(r.c.answer, 1, 100).label("answer"), r.c.status).select_from(
                     latest.join(r, r.c.id == latest.c.record_id).join(c, c.c.id == r.c.conversation_id)
                 ).order_by(r.c.id.desc()).offset((page - 1) * 50).limit(50)).mappings()
-            return {"items": self._with_contact_notes(conn, [dict(row) for row in rows]), "total": total, "page": page, "page_size": 50}
+            items = self._with_contact_notes(conn, [dict(row) for row in rows])
+            for item in items:
+                outbound = str(item.pop("external_message_id") or "").startswith(
+                    ("admin-send:", "scheduled:", "scheduled-manual:"))
+                question, answer = item.pop("question"), item.pop("answer")
+                item["preview"] = (answer if outbound else question) or "暂无文字内容"
+            return {"items": items, "total": total, "page": page, "page_size": 50}
+
+    def conversation_messages(self, bot_id: int, record_id: int, before_id: int | None = None) -> dict:
+        """只从已验证记录解析范围，群聊汇总成员，私聊不混入同用户的群消息。"""
+        r, c = self.records, self.conversations
+        joined = r.join(c, (c.c.id == r.c.conversation_id) & (c.c.bot_id == r.c.bot_id))
+        with self.engine.connect() as conn:
+            target = conn.execute(select(r.c.source, r.c.group_id, c.c.user_id).select_from(joined)
+                .where(r.c.id == record_id, r.c.bot_id == bot_id)).mappings().first()
+            if not target or target["source"] not in ("qq_c2c", "qq_group"):
+                raise ValueError("该机器人下不存在这条 QQ 会话")
+            filters = [r.c.bot_id == bot_id, r.c.source == target["source"]]
+            filters.append(r.c.group_id == target["group_id"] if target["source"] == "qq_group"
+                           else c.c.user_id == target["user_id"])
+            if before_id is not None:
+                filters.append(r.c.id < before_id)
+            rows = conn.execute(select(r.c.id, r.c.bot_id, r.c.source, r.c.group_id, c.c.user_id,
+                c.c.contact_name, r.c.question, r.c.answer, r.c.status, r.c.error_message,
+                r.c.received_at, r.c.updated_at, r.c.external_message_id, r.c.media_details)
+                .select_from(joined).where(*filters).order_by(r.c.id.desc()).limit(41)).mappings().all()
+            has_more = len(rows) > 40
+            items = self._with_contact_notes(conn, [dict(row) for row in rows[:40]])
+            for item in items:
+                external_id = str(item.pop("external_message_id") or "")
+                item["origin"] = ("manual" if external_id.startswith("admin-send:") else
+                    "scheduled" if external_id.startswith(("scheduled:", "scheduled-manual:")) else "incoming")
+                # 只提供展示需要的媒体类型，不暴露附件诊断及内部资源信息。
+                media = json.loads(item.pop("media_details") or "{}")
+                item["reply_kind"] = media.get("reply_kind", "text")
+                if (item["origin"] == "manual" and not media
+                        and item["question"].startswith("【后台主动发送】\n【语音】")
+                        and "\nSHA256: " in item["question"]):
+                    item["reply_kind"] = "audio"
+                audio = [part for part in media.get("attachments", [])
+                         if isinstance(part, dict) and part.get("kind") == "audio"]
+                item["voice_input"] = bool(audio)
+                item["asr_text"] = "\n".join(part["transcript"] for part in audio
+                    if isinstance(part.get("transcript"), str) and part["transcript"].strip())
+                item["tts_text"] = media.get("tts_text") if isinstance(media.get("tts_text"), str) else ""
+                item["media_kinds"] = list(dict.fromkeys(part["kind"] for part in media.get("parts", [])
+                    if isinstance(part, dict) and part.get("kind") in ("image", "audio")))
+            items.reverse()
+            return {"items": items, "has_more": has_more,
+                    "before_id": items[0]["id"] if items else None}
 
     def record_detail(self, record_id: int) -> dict | None:
         r, c, i = self.records, self.conversations, self.identities
@@ -939,7 +1008,22 @@ class Store:
         n = self.contact_notes
         notes = {(item.bot_id, item.target_type, item.openid): item for item in conn.execute(
             select(n).where(tuple_(n.c.bot_id, n.c.target_type, n.c.openid).in_(list(keys))))} if keys else {}
+        c = self.conversations
+        user_keys = [(bot, openid) for bot, kind, openid in keys if kind == "user"]
+        nicknames = {}
+        if user_keys:
+            for item in conn.execute(select(c.c.bot_id, c.c.user_id, c.c.platform_nickname).where(
+                    tuple_(c.c.bot_id, c.c.user_id).in_(user_keys), c.c.source.in_(("qq_c2c", "qq_group")),
+                    c.c.platform_nickname.is_not(None), c.c.platform_nickname != "")
+                    .order_by(c.c.last_active_at.desc(), c.c.id.desc())):
+                nicknames.setdefault((item.bot_id, item.user_id), item.platform_nickname)
+        i = self.identities
+        bound_names = {(item.bot_id, item.user_id): item.member_name for item in conn.execute(
+            select(i.c.bot_id, i.c.user_id, i.c.member_name).where(
+                tuple_(i.c.bot_id, i.c.user_id).in_(user_keys), i.c.role_id.is_not(None)))} if user_keys else {}
         for row in rows:
+            row["bound_name"] = bound_names.get((row["bot_id"], row.get("user_id")))
+            row["platform_nickname"] = nicknames.get((row["bot_id"], row.get("user_id")))
             user = notes.get((row["bot_id"], "user", row.get("user_id")))
             group = notes.get((row["bot_id"], "group", row.get("group_id"))) if row.get("source") == "qq_group" else None
             row["user_remark_shared"] = user is not None

@@ -24,7 +24,7 @@
 | 定时任务、早晚问候、每日去重、执行一次、文案生成 | [docs/scheduled-tasks.md](docs/scheduled-tasks.md) |
 | QQ 接入、WebSocket/Webhook、多机器人、队列与重连 | [docs/qq-runtime.md](docs/qq-runtime.md) |
 | 后台登录、供应商、模型类型、身份及接收人绑定 | [docs/admin-and-models.md](docs/admin-and-models.md) |
-| 后台主动发送、图片/语音上传、发送幂等 | [docs/proactive-messages.md](docs/proactive-messages.md) |
+| 对话页面、私聊/群聊历史、主动发送、图片/语音上传、发送幂等 | [docs/proactive-messages.md](docs/proactive-messages.md)、[docs/storage.md](docs/storage.md) |
 | 聊天记录、token 用量、数据隔离、表结构定位 | [docs/storage.md](docs/storage.md) |
 | Token 统计独立菜单、筛选、趋势与排行 | [docs/storage.md](docs/storage.md)、[docs/admin-and-models.md](docs/admin-and-models.md) |
 | 数据库表、字段、索引、外键、身份隔离及 SQL 排查 | [docs/database-schema.md](docs/database-schema.md) |

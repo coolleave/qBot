@@ -163,7 +163,7 @@ class ProactiveSender:
             return {"record_id": task["record_id"], "status": status, "message": error, "duplicate": False}
 
     async def send(self, bot_id: int, record_id: int, content: str, request_id: str,
-                   media: MediaUpload | None = None) -> dict:
+                   media: MediaUpload | None = None, speech_text: str = "") -> dict:
         if len(content) > self.settings.max_reply_chars:
             raise HTTPException(400, f"消息最多 {self.settings.max_reply_chars} 字符")
         # 与启停共用锁，发送期间不关闭客户端或替换凭证。
@@ -195,6 +195,8 @@ class ProactiveSender:
             question = "【后台主动发送】\n" + summary
             if media:
                 question += "\nSHA256: " + media.fingerprint
+                if speech_text:
+                    question += "\n语音文本：" + speech_text
             rid, created = await self.store.call(
                 "receive", source, target["group_id"], target["user_id"],
                 "admin-send:" + request_id, question, bot_id=bot_id,
@@ -205,7 +207,10 @@ class ProactiveSender:
                     raise HTTPException(409, "请求标识已用于其他消息，请重新打开主动发送窗口")
                 return {"record_id": rid, "status": previous["status"],
                         "message": previous["error_message"] or "", "duplicate": True}
-            await self.store.call("update_record", rid, status="processing", answer=summary)
+            details = {"reply_kind": media.kind, "parts": [{"kind": media.kind}],
+                       "tts_text": speech_text} if media else {"reply_kind": "text"}
+            await self.store.call("update_record", rid, status="processing", answer=speech_text or summary,
+                                  media_details=json.dumps(details, ensure_ascii=False))
             self.requests.append((now, bot_id, source, destination))
             status, error, stage = "replied", "", "upload" if media else "send"
             try:

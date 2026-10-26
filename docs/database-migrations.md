@@ -67,3 +67,9 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 0018_schedule_timing 为 interaction_greetings 增加非空 DATETIME(6) schedule_updated_at（UTC），旧任务初始化为迁移时刻，不改其他字段及执行历史。新保存由应用更新此字段；调度扫描和领取均要求配置早于当前分钟开始、发送时间等于当前分钟，取消过期补发。迁移前停服务并备份任务及历史，再显式迁移、启动。
 
 2026-10-26 已备份到本机临时目录 `qbot-before-0018-1tjql7xl`，显式迁移至 `0018_schedule_timing`，核对原 8 条任务及 14 条执行记录的既有字段全部保留，新增保存时刻非空。后端已重启，健康接口正常；Python AST、JavaScript 语法、HTML ID 唯一性及差异静态检查通过。未运行测试、打开浏览器或手动执行发送验证，自动调度效果待实际到点验收。
+
+## 平台昵称
+
+0019_user_nickname 仅为 conversations 新增可空 platform_nickname VARCHAR(256)，不修改既有备注或身份。部署先停服务、备份 conversations 及版本，再显式升级并启动。语音文本复用 media_details，无额外表。迁移实现已编写，执行状态见后续记录。
+
+2026-10-26 已停服务并备份 conversations 和版本到本机临时目录 `qbot-before-0019-9jah0_u8`，显式从 0018 升级至 0019，逐字段核对原 14 条会话完整保留，新昵称字段初始为空。已重启项目服务。

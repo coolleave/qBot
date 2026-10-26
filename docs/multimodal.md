@@ -87,3 +87,11 @@ qwen3-tts-flash-realtime 通过专用 WebSocket 输出 24 kHz 单声道 16 位 P
 实现使用 NoSpeechError 区分空正文，附件诊断 recognition_reason 标记 no_speech / asr_unavailable；audio_unrecognized 经 Dispatcher / RecordedChat 传入 ChatService 的 recognition_notice 消息模板，业务提示词为 prompts/asr_clarification.txt。Python AST 和差异静态检查通过，未新增或运行测试，未调用付费 ASR/聊天/TTS 或实际发送验证。
 
 部署核对：2026-10-26 恢复服务前数据库已处于 0015_bot_roles，本次只备份其当前状态并核对 2 条身份均有有效关联，未重复导入。空语音回复已加载，健康接口正常；真实 ASR/模型回复效果仍待联调。
+
+## 昵称与语音文本（已实现，真实消息待验收）
+
+新增迁移 0019_user_nickname，在 conversations 单独保存 platform_nickname；从 QQ 消息 author.username 接收非空昵称，同机器人同 OpenID 同步，空值不覆盖已有昵称，不改备注或身份权限。对话显示备注优先，其次平台昵称、绑定名称和 ID；昵称可搜索。旧记录不猜测昵称，等待新消息。
+
+ASR 继续保存 media_details.attachments[].transcript；自动/定时 TTS 增加 tts_text，记录实际送入合成的文本。手动 TTS 随音频上传保存文本快照，纳入同请求内容校验，不重复合成。对话气泡显示“语音消息：文本”，识别失败或纯上传音频没有文本时明确提示；音频文件不落库、不接 OSS、不提供历史播放。旧记录仅展示已有转写/回复正文，不重新调用模型。
+
+2026-10-26 已完成 Python AST、JavaScript 语法与差异静态检查；本地已迁移至 0019_user_nickname 并重启。未运行测试、浏览器、付费 ASR/TTS 或真实发送验证；昵称取决于平台实际推送。

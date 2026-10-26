@@ -12,7 +12,7 @@
 | 定时任务、可组合流程与模板、绑定用户选择、每日去重、执行一次 | [定时任务](scheduled-tasks.md) | greetings.py、greeting_workflows.py、proactive.py |
 | QQ WebSocket/Webhook、重连、多机器人启停、队列 | [QQ 接入与运行](qq-runtime.md) | gateway.py、qq.py、bots.py、server.py |
 | 管理员登录、供应商、模型类型、家庭身份和接收人绑定 | [后台与模型](admin-and-models.md) | admin.py、security.py、static/ |
-| 后台手动发文字/图片/语音、上传、发送幂等 | [主动发送](proactive-messages.md) | proactive.py、media.py、audio_codec.py |
+| 对话页、私聊/群聊历史、手动发文字/图片/语音、发送幂等 | [主动发送](proactive-messages.md)、[存储与记录](storage.md) | static/conversation.js、static/conversation.css、proactive.py、storage.py |
 | 聊天记录、数据隔离、token 汇总、表职责与版本定位 | [存储与记录](storage.md) | storage.py、migrations/versions/ |
 | Token 统计菜单、机器人/对话/模型筛选、趋势与排行 | [存储与记录](storage.md)、[后台与模型](admin-and-models.md) | storage.py、admin.py、static/token-stats.js |
 | 数据库表、字段、索引、外键、隔离规则与 SQL 排查（Agent） | [数据库表结构指南](database-schema.md) | storage.py、migrations/versions/ |

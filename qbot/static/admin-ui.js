@@ -5,7 +5,7 @@ const ui = reactive({ page: "records", username: "", records: [], total: 0, page
 const pages = [
   ["records", "聊天记录", "对话与运行结果", "▤"], ["tokens", "Token 统计", "模型用量分析", "▥"],
   ["providers", "模型供应商", "模型与服务配置", "◇"], ["bots", "机器人管理", "连接与能力配置", "◎"],
-  ["messages", "发送消息", "与接收对象沟通", "↗"], ["greetings", "定时任务", "安排每一天的问候", "◷"],
+  ["messages", "对话", "历史消息与实时沟通", "↗"], ["greetings", "定时任务", "安排每一天的问候", "◷"],
   ["bindings", "用户与群备注", "管理通讯录备注", "♧"], ["identities", "身份绑定", "对话中的身份", "◈"]
 ];
 function mountComponent(target, component) { createApp(component).use(ElementPlus).mount(target); }
