@@ -12,7 +12,7 @@ function mountComponent(target, component) { createApp(component).use(ElementPlu
 mountComponent("#console-nav", {
   setup() {
     return () => h("div", {class:"console-navigation"}, [
-      h("a", {class:"console-brand", href:"#", onClick:e=>{e.preventDefault();switchPage("records");}}, [h("span", {class:"brand-mark"}, "q"), h("div", [h("strong", "qBot"), h("small", "AI WORKSPACE")])]),
+      h("a", {class:"console-brand", href:"#", onClick:e=>{e.preventDefault();switchPage("records");}}, [h("img", {class:"brand-mark", src:"/admin-assets/qbot-logo-v1.png", alt:"", width:42, height:42}), h("div", [h("strong", "qBot"), h("small", "AI WORKSPACE")])]),
       h("p", {class:"nav-caption"}, "工作空间"),
       h(ElementPlus.ElMenu, {defaultActive:ui.page, onSelect:page=>switchPage(page)}, () => pages.map(([key,label,desc,icon]) => h(ElementPlus.ElMenuItem, {index:key}, () => [h("span", {class:"menu-symbol", "aria-hidden":"true"}, icon), h("span", label)]))),
       h("div", {class:"sidebar-note"}, [h("span", "你的 AI 工作台"), h("p", "让每一次对话，都井然有序。")]),
