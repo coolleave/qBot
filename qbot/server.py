@@ -228,6 +228,7 @@ class Dispatcher:
                             await self.chat.reply((message_scope(message), message.author.member_openid),
                                 prepared["text"], respond, record_id=job.record_id, image_blocks=prepared["blocks"],
                                 vision_provider_id=config["vision_provider_id"], diagnostics=diagnostics,
+                                audio_unrecognized=bool(diagnostics.get("audio_unrecognized")),
                                 speech_style=(not control and not diagnostics.get("warnings")
                                               and voice_requested(config, message.source, prepared["voice_input"])))
                         else:
@@ -245,7 +246,13 @@ class Dispatcher:
                     if not sending:
                         async with asyncio.timeout(max(0.01, min(10, 270 - (datetime.now(timezone.utc) - message.timestamp).total_seconds()))):
                             from qbot.vision import VisionError
-                            await send(str(exc) if isinstance(exc, VisionError) else "模型服务暂时不可用或请求超时，请稍后重试。")
+                            if diagnostics.get("audio_unrecognized"):
+                                fallback = "刚才那段语音我没听清，可以再说一遍，或者发文字给我吗？"
+                                if self.store and job.record_id:
+                                    await self.store.call("update_record", job.record_id, answer=fallback)
+                                await send(fallback)
+                            else:
+                                await send(str(exc) if isinstance(exc, VisionError) else "模型服务暂时不可用或请求超时，请稍后重试。")
             except Exception as exc:
                 logger.error("消息处理或发送失败：%s", type(exc).__name__)
                 if self.store and job.record_id:

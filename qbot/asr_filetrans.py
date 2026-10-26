@@ -12,6 +12,10 @@ class ASRError(ValueError):
     """仅包含可以安全展示的错误，不回传签名地址、密钥和上游响应。"""
 
 
+class NoSpeechError(ASRError):
+    """音频为空白或服务成功但没有转写正文，区别于服务故障。"""
+
+
 FILETRANS_MODELS = {"qwen-audio-3.0-asr-flash-filetrans", "qwen-audio-3.1-asr-flash-filetrans"}
 
 
@@ -95,7 +99,7 @@ async def transcribe_file(provider: dict, wav: bytes, details: dict | None = Non
                 text = "\n".join(item["text"] for item in paragraphs
                     if isinstance(item, dict) and isinstance(item.get("text"), str)).strip()
                 if not text:
-                    raise ASRError("音频转写未识别出有效文字")
+                    raise NoSpeechError("音频转写未识别出有效文字")
                 usage = result.get("usage") or {}
                 duration = usage.get("duration") if isinstance(usage, dict) else None
                 details["asr_stage"] = "complete"

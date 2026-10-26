@@ -2,6 +2,8 @@
 import asyncio
 import base64
 import ipaddress
+import io
+import wave
 import json
 import re
 import socket
@@ -12,6 +14,8 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 from pydantic import BaseModel, Field
+
+from qbot.asr_filetrans import NoSpeechError
 
 MEDIA_SLOTS = asyncio.Semaphore(2)
 MAX_FILE = 8_000_000
@@ -135,8 +139,10 @@ async def transcribe(provider: dict, wav: bytes, details: dict | None = None) ->
     result = json.loads(body)
     output = result.get("output") or {}
     text = output.get("text", "")
-    if not isinstance(text, str) or not text.strip():
-        raise ValueError("语音识别未返回有效文字")
+    if not isinstance(text, str):
+        raise ValueError("语音识别正文格式无效")
+    if not text.strip():
+        raise NoSpeechError("语音识别未返回有效文字")
     raw_usage = result.get("usage") or {}
     usage = {k: v for k, v in raw_usage.items() if k in
              ("input_tokens", "output_tokens", "total_tokens", "duration") and type(v) in (int, float)} if isinstance(raw_usage, dict) else {}
@@ -194,8 +200,14 @@ async def prepare_message(text: str, attachments: list[Attachment], config: dict
                             {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + frame["data"]}}])
                 else:
                     wav = await decode_media(data, "audio")
+                    # 只判定明确的全零 PCM，不用音量阈值把轻声说话误当静音。
+                    with wave.open(io.BytesIO(wav), "rb") as audio:
+                        if not any(audio.readframes(audio.getnframes())):
+                            entry["asr_stage"] = "local_silence"
+                            raise NoSpeechError("音频中没有可识别的语音")
                     provider = await store.call("capability_provider", config["asr_provider_id"], "asr")
                     entry.update(model=provider["model_name"], provider=provider["name"])
+                    entry["asr_attempted"] = True
                     transcript, usage = await transcribe(provider, wav, entry)
                     entry.update(transcript=transcript, model=provider["model_name"], provider=provider["name"], usage=usage)
                     result["text"] += "\n[语音转写]\n" + transcript
@@ -206,11 +218,20 @@ async def prepare_message(text: str, attachments: list[Attachment], config: dict
                 from qbot.asr_filetrans import ASRError
                 error = str(exc) if type(exc) is ValueError or isinstance(exc, ASRError) else "附件处理失败，请检查格式、网络及模型配置"
                 entry["error"] = error
-                result["details"]["warnings"].append(f"附件{index + 1}：{error}")
+                if isinstance(exc, NoSpeechError) or entry.get("asr_attempted"):
+                    entry["status"] = "unrecognized" if isinstance(exc, NoSpeechError) else "failed"
+                    entry["recognition_reason"] = "no_speech" if isinstance(exc, NoSpeechError) else "asr_unavailable"
+                    result["details"]["audio_unrecognized"] = True
+                    result["voice_input"] = True
+                else:
+                    result["details"]["warnings"].append(f"附件{index + 1}：{error}")
             finally:
                 entry["latency_ms"] = round((time.monotonic() - started) * 1000)
     if len(attachments) > 4:
         result["details"]["warnings"].append("仅处理前4个附件，其余未识别")
+    if result["details"].get("audio_unrecognized"):
+        # 这是处理状态，不是假转写；真实技术错误只留在附件诊断。
+        result["text"] += "\n[用户发送了一段语音，但未识别到可用内容]"
     result["usable"] = bool(result["text"] or result["blocks"])
     if result["blocks"] and not result["text"]:
         result["text"] = "请结合图片或表情包和聊天上下文自然回应；不确定的内容不要猜测。"
