@@ -11,7 +11,7 @@ BEIJING = timezone(timedelta(hours=8))
 
 class GreetingRule(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    slot: Literal["morning", "noon", "evening"]
+    slot: Literal["morning", "noon", "evening", "other"]
     enabled: bool = False
     start: str = Field(pattern=r"^(?:[01][0-9]|2[0-3]):[0-5][0-9]$")
     # 兼容旧客户端；调度不再使用结束时间。
@@ -43,24 +43,37 @@ class GreetingRule(BaseModel):
 
 class GreetingInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    rules: list[GreetingRule] = Field(min_length=2, max_length=3)
+    task_key: str = Field(default="", pattern=r"^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$")
+    task_name: str = Field(default="", max_length=100)
+    rules: list[GreetingRule] = Field(min_length=1, max_length=3)
 
     @model_validator(mode="after")
     def validate_rules(self):
+        if self.task_key:
+            self.task_name = self.task_name.strip()
+            if not self.task_name or any(ord(c) < 32 or ord(c) == 127 for c in self.task_name):
+                raise ValueError("任务名称必填，最多 100 字且不能包含控制字符")
+            if len(self.rules) != 1:
+                raise ValueError("独立任务只允许保存一条发送规则")
+            return self
         slots = {r.slot for r in self.rules}
-        if len(slots) != len(self.rules) or not {"morning", "evening"}.issubset(slots):
+        if len(slots) != len(self.rules) or "other" in slots or not {"morning", "evening"}.issubset(slots):
             raise ValueError("需提供不重复的早间、午间和晚间设置")
         # 旧客户端只保存早晚规则时，不覆盖已经保存的午间任务。
         return self
 
 
-def default_rules() -> list[dict]:
-    return [dict(slot="morning", enabled=False, start="07:00", weekdays=list(range(1, 8)),
+def default_rules(*, include_other: bool = False) -> list[dict]:
+    rules = [dict(slot="morning", enabled=False, start="07:00", weekdays=list(range(1, 8)),
                  content="早呀，新的一天开始啦，记得吃早饭喵。"),
             dict(slot="noon", enabled=False, start="12:00", weekdays=list(range(1, 8)),
                  content="中午好呀，记得好好吃午饭，休息一下喵。"),
             dict(slot="evening", enabled=False, start="21:00", weekdays=list(range(1, 8)),
                  content="晚上好呀，忙了一天辛苦了，记得留点时间休息喵。")]
+    if include_other:
+        rules.append(dict(slot="other", enabled=False, start="17:00", weekdays=list(range(1, 8)),
+                          content="你好呀，送你一份小小的关心，愿你今天开开心心。"))
+    return rules
 
 
 def local_time(value: datetime) -> datetime:

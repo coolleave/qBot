@@ -479,9 +479,9 @@ def admin_router(settings: Settings) -> APIRouter:
             raise HTTPException(400, str(exc)) from None
 
     @router.get("/api/admin/bots/{bot_id}/records/{record_id}/greetings", dependencies=[Depends(require_admin)])
-    async def get_greetings(bot_id: int, record_id: int, db: Store = Depends(store)) -> dict:
+    async def get_greetings(bot_id: int, record_id: int, task_key: UUID | None = None, db: Store = Depends(store)) -> dict:
         try:
-            return await db.call("greeting_settings", bot_id, record_id)
+            return await db.call("greeting_settings", bot_id, record_id, str(task_key) if task_key else "")
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
 
@@ -494,7 +494,7 @@ def admin_router(settings: Settings) -> APIRouter:
         return {"ok": True}
 
     @router.post("/api/admin/bots/{bot_id}/records/{record_id}/greetings/{slot}/generate", dependencies=[Depends(require_admin)])
-    async def generate_greeting_draft(bot_id: int, record_id: int, slot: Literal["morning", "noon", "evening"],
+    async def generate_greeting_draft(bot_id: int, record_id: int, slot: Literal["morning", "noon", "evening", "other"],
                                       db: Store = Depends(store)) -> dict:
         from qbot.greeting_generation import generate_greeting, GreetingGenerationError
 
@@ -529,10 +529,10 @@ def admin_router(settings: Settings) -> APIRouter:
             return {"content": content}
 
     @router.post("/api/admin/bots/{bot_id}/records/{record_id}/greetings/{slot}/run", dependencies=[Depends(require_admin)])
-    async def run_greeting(bot_id: int, record_id: int, slot: Literal["morning", "noon", "evening"],
-                           request: Request, db: Store = Depends(store)) -> dict:
+    async def run_greeting(bot_id: int, record_id: int, slot: Literal["morning", "noon", "evening", "other"],
+                           request: Request, task_key: UUID | None = None, db: Store = Depends(store)) -> dict:
         try:
-            rule_id = await db.call("greeting_for_execution", bot_id, record_id, slot)
+            rule_id = await db.call("greeting_for_execution", bot_id, record_id, slot, str(task_key) if task_key else "")
             return await request.app.state.proactive.send_scheduled(rule_id, manual=True)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None

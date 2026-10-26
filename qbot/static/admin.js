@@ -430,7 +430,7 @@ function updateGreetingMedia(slot) {
   $(slot + "-voice-fields").hidden = !audio;
   form.elements[slot + "_tts_provider_id"].required = audio;
 }
-for (const slot of ["morning", "noon", "evening"]) {
+for (const slot of ["morning", "noon", "evening", "other"]) {
   const fields = $("greeting-form").elements;
   fields[slot + "_delivery_mode"].onchange = () => {
     const template = greetingCatalog.templates.find(item => item.id === fields[slot + "_delivery_mode"].value);
@@ -462,7 +462,7 @@ function greetingImageBase64(file) {
 }
 
 $("greeting-target").after(element("p", "生成文案会调用此机器人配置的聊天模型，可能产生费用。按最新保存的人设生成，替换当前时段的草稿；确认后请保存设置。", "muted"));
-for (const slot of ["morning", "noon", "evening"]) {
+for (const slot of ["morning", "noon", "evening", "other"]) {
   const generate = button("按人设生成文案", async () => {
     const form = $("greeting-form");
     if (!greetingTarget || greetingRunning || form.querySelector('[type="submit"]').disabled) return;
@@ -481,21 +481,59 @@ for (const slot of ["morning", "noon", "evening"]) {
     } catch(e) {
       $("greeting-error").textContent = e.message;
       $("greeting-run-result").textContent = "生成未完成，原文案已保留。";
-    } finally { greetingRunning = false; controls.forEach(node => node.disabled = false); }
+    } finally { greetingRunning = false; controls.forEach(node => node.disabled = false); $("greeting-task-slot").disabled = false; }
   });
   generate.id = slot + "-generate";
   $(slot + "-preview").before(generate);
 }
 $("greeting-dialog").addEventListener("cancel", event => { if (greetingRunning) event.preventDefault(); });
+function greetingTaskQuery(target) {
+  return target.taskKey ? "?" + new URLSearchParams({task_key:target.taskKey}) : "";
+}
+function updateGreetingTaskSlot() {
+  const independent = Boolean(greetingTarget?.taskKey);
+  const slot = $("greeting-task-slot").value;
+  for (const name of ["morning", "noon", "evening", "other"]) {
+    const fieldset = $("greeting-form").elements[name + "_enabled"].closest("fieldset");
+    fieldset.hidden = independent ? name !== slot : name === "other";
+    fieldset.disabled = fieldset.hidden;
+  }
+}
+$("greeting-task-slot").onchange = () => {
+  const from = greetingTarget.activeSlot, to = $("greeting-task-slot").value;
+  const form = $("greeting-form");
+  // 切换的是文案时段，发送时间、媒体与正文继续使用同一份设置。
+  const source = form.elements[from + "_enabled"].closest("fieldset");
+  for (const field of source.querySelectorAll("[name]")) {
+    const name = to + field.name.slice(from.length);
+    const target = field.name.endsWith("_days")
+      ? form.querySelector(`[name="${name}"][value="${field.value}"]`) : form.elements[name];
+    if (field.tagName === "SELECT") target.replaceChildren(...[...field.options].map(option => option.cloneNode(true)));
+    if (field.type === "checkbox") target.checked = field.checked;
+    else if (field.type === "file") target.files = field.files;
+    else target.value = field.value;
+  }
+  $(to + "-image-name").textContent = $(from + "-image-name").textContent;
+  $(to + "-preview").textContent = form.elements[to + "_content"].value;
+  greetingTarget.activeSlot = to;
+  updateGreetingMedia(to); updateGreetingTaskSlot(); greetingDirty = true;
+};
 async function openGreetings(item) {
   if (!item) return;
-  const data = await api(`/bots/${item.bot_id}/records/${item.id}/greetings`);
+  const taskKey = item.task_key || "";
+  const data = await api(`/bots/${item.bot_id}/records/${item.id}/greetings` + greetingTaskQuery({taskKey}));
   const ttsProviders = (await api("/providers")).items.filter(p => p.model_type === "tts" && p.enabled);
-  greetingTarget = {botId:item.bot_id, recordId:item.id};
+  greetingTarget = {botId:item.bot_id, recordId:item.id, taskKey, savedSlot:data.task_slot};
   item = {...item, group_remark:data.group_remark, user_remark:data.user_remark};
-  greetingItem = item; greetingDirty = false;
+  greetingItem = item; greetingDirty = Boolean(taskKey && !data.task_slot);
   $("greeting-run-result").textContent = "";
   const form = $("greeting-form"); form.reset();
+  $("greeting-task-fields").hidden = !taskKey;
+  $("greeting-task-name").required = Boolean(taskKey);
+  $("greeting-task-name").value = data.task_name || "";
+  $("greeting-task-slot").value = data.task_slot || (taskKey ? "other" : "morning");
+  greetingTarget.activeSlot = $("greeting-task-slot").value;
+  $("greeting-task-slot").disabled = false;
   $("greeting-error").textContent = "";
   $("greeting-target").textContent = `${botLabel(item.bot_id)} · ${data.contact_name || "未命名（请先在用户与群备注中设置）"} · ${item.source === "qq_group" ? "群 " + groupDisplay(item) : "QQ 私聊"} · 用户 ${userDisplay(item)}`;
   greetingCatalog = data.catalog;
@@ -524,19 +562,20 @@ async function openGreetings(item) {
     form.querySelectorAll(`[name="${rule.slot}_days"]`).forEach(node => node.checked = rule.weekdays.includes(Number(node.value)));
     $(rule.slot + "-preview").textContent = rule.content;
   }
+  updateGreetingTaskSlot();
   $("greeting-history").replaceChildren();
   for (const run of data.history) {
     const state = ["pending", "processing"].includes(run.status) ? "处理中或中断后未确认，不自动重发" : (labels[run.status] || run.status);
-    $("greeting-history").append(element("p", `${run.local_date} · ${run.manual ? "手动执行" : "自动／历史领取"} · ${({morning:"早间", noon:"午间", evening:"晚间"})[run.slot]} · ${state} · 对话 #${run.record_id}`), element("pre", run.content), element("p", run.error_message || "", "error"));
+    $("greeting-history").append(element("p", `${run.local_date} · ${run.manual ? "手动执行" : "自动／历史领取"} · ${({morning:"早间", noon:"午间", evening:"晚间", other:"其他时段"})[run.slot]} · ${state} · 对话 #${run.record_id}`), element("pre", run.content), element("p", run.error_message || "", "error"));
   }
   if (!data.history.length) $("greeting-history").append(element("p", "暂无记录", "muted"));
   $("greeting-dialog").showModal();
 }
 $("greeting-form").oninput = () => {
   greetingDirty = true;
-  for (const slot of ["morning", "noon", "evening"]) $(slot + "-preview").textContent = $("greeting-form").elements[slot + "_content"].value;
+  for (const slot of ["morning", "noon", "evening", "other"]) $(slot + "-preview").textContent = $("greeting-form").elements[slot + "_content"].value;
 };
-for (const slot of ["morning", "noon", "evening"]) $(slot + "-run").onclick = async () => {
+for (const slot of ["morning", "noon", "evening", "other"]) $(slot + "-run").onclick = async () => {
   if (!greetingTarget || greetingRunning) return;
   if (greetingDirty) { $("greeting-error").textContent = "请先保存修改后的任务，再执行一次。"; return; }
   const target = greetingTarget, item = greetingItem;
@@ -544,20 +583,21 @@ for (const slot of ["morning", "noon", "evening"]) $(slot + "-run").onclick = as
   greetingRunning = true; controls.forEach(node => node.disabled = true);
   $("greeting-error").textContent = ""; $("greeting-run-result").textContent = "正在执行，请稍候…";
   try {
-    const result = await api(`/bots/${target.botId}/records/${target.recordId}/greetings/${slot}/run`, {method:"POST"});
+    const result = await api(`/bots/${target.botId}/records/${target.recordId}/greetings/${slot}/run` + greetingTaskQuery(target), {method:"POST"});
     const message = `记录 #${result.record_id} · ${result.status === "replied" ? "QQ 已确认发送" : labels[result.status] || result.status}。${result.message || ""}`;
     $("greeting-run-result").textContent = message;
     try { await openGreetings(item); } catch(e) { $("greeting-error").textContent = "记录刷新失败：" + e.message; }
     $("greeting-run-result").textContent = message;
   } catch(e) {
     $("greeting-run-result").textContent = e.message + "。本次结果未确认时请先查看聊天记录；再次点击会发起新的发送。";
-  } finally { greetingRunning = false; controls.forEach(node => node.disabled = false); }
+  } finally { greetingRunning = false; controls.forEach(node => node.disabled = false); $("greeting-task-slot").disabled = false; }
 };
 $("greeting-form").onsubmit = async event => {
   event.preventDefault();
   const form = event.currentTarget, target = greetingTarget, submit = form.querySelector('[type="submit"]');
   if (!target || greetingRunning) return;
-  const rules = ["morning", "noon", "evening"].map(slot => ({slot,
+  const slots = target.taskKey ? [$("greeting-task-slot").value] : ["morning", "noon", "evening"];
+  const rules = slots.map(slot => ({slot,
     enabled:form.elements[slot + "_enabled"].checked,
     start:form.elements[slot + "_start"].value,
     content:form.elements[slot + "_content"].value.trim(),
@@ -583,11 +623,11 @@ $("greeting-form").onsubmit = async event => {
         rule.image_base64 = await greetingImageBase64(file);
       }
     }
-    await api(`/bots/${target.botId}/records/${target.recordId}/greetings`, {method:"PUT", body:JSON.stringify({rules})});
-    $("greeting-dialog").close(); toast("定时任务已保存，将在设置的时间主动发送");
+    await api(`/bots/${target.botId}/records/${target.recordId}/greetings`, {method:"PUT", body:JSON.stringify({rules, task_key:target.taskKey, task_name:target.taskKey ? $("greeting-task-name").value.trim() : ""})});
+    $("greeting-dialog").close(); toast("定时任务已保存；只在后续设定时间自动执行，错过不补发");
     void loadGreetingTargets();
   } catch(e) { $("greeting-error").textContent = e.message; }
-  finally { greetingRunning = false; controls.forEach(node => node.disabled = false); }
+  finally { greetingRunning = false; controls.forEach(node => node.disabled = false); $("greeting-task-slot").disabled = false; }
 };
 
 const MAX_MEDIA_BYTES = 3500000;
@@ -783,8 +823,8 @@ async function loadGreetingRecipients() {
     for (const item of data.items) {
       const row = element("tr"), name = element("td", item.contact_name), action = element("td");
       name.append(element("small", item.user_id));
-      action.append(button(Number(item.configured_count) ? "查看 / 编辑已有任务" : "选择并新建", async () => {
-        await openGreetings(item);
+      action.append(button("选择并新建", async () => {
+        await openGreetings({...item, task_key:crypto.randomUUID()});
         $("greeting-recipient-dialog").close();
       }));
       row.append(name, element("td", item.source === "qq_c2c" ? "私聊 · 仅此用户" : "群聊 · 整个群 " + groupDisplay(item)), action);
@@ -821,19 +861,19 @@ async function loadGreetingTargets() {
   try {
     const data = await api("/greeting-targets?" + params);
     if (request !== greetingTargetsRequest) return;
-    $("greeting-target-count").textContent = `共 ${data.total} 个对象`;
+    $("greeting-target-count").textContent = `共 ${data.total} 项任务配置`;
     $("greeting-target-page").textContent = `第 ${data.page} / ${Math.max(1, Math.ceil(data.total / data.page_size))} 页`;
     $("greeting-target-prev").disabled = data.page <= 1;
     $("greeting-target-next").disabled = data.page * data.page_size >= data.total;
     $("greeting-targets-empty").hidden = data.items.length > 0;
-    $("greeting-targets-empty").textContent = "暂无问候对象，请先在用户与群备注中设置接收人名称，然后刷新。";
+    $("greeting-targets-empty").textContent = "暂无任务，请点击「新建任务」选择已备注的接收人。";
     for (const item of data.items) {
       const row = element("tr"), bot = element("td", botLabel(item.bot_id)); bot.dataset.botLabel = item.bot_id;
-      const member = element("td", item.contact_name || "已解除绑定");
-      member.append(element("small", item.user_id));
+      const member = element("td", item.task_name || "早午晚（旧配置）");
+      member.append(element("small", (item.contact_name || "已解除绑定") + " · " + item.user_id));
       const action = element("td"); action.append(button("配置 / 记录", () => openGreetings(item)));
       row.append(bot, member, element("td", item.source === "qq_c2c" ? "QQ 私聊" : "群 " + groupDisplay(item)),
-        element("td", Number(item.enabled_count) ? `已启用 ${item.enabled_count} 个时段` : "未启用"), action);
+        element("td", Number(item.enabled_count) ? `已启用 ${item.enabled_count} 条规则` : "未启用"), action);
       $("greeting-targets-body").append(row);
     }
   } catch(e) {

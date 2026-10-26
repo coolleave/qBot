@@ -55,3 +55,15 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 2026-10-26 备注功能开发期间，版本检查发现并行进程已升级到 0016，本轮未再次迁移。已核对备注表主键、外键和兼容字段一致性，并保存迁移后现状快照；本轮未获得迁移前备份。服务 8092 健康接口正常。
 
 迁移执行记录：2026-10-26 重启服务时从 0015 显式升级至 0016。升级前 conversations（14 条）及 alembic_version 已备份到本机临时目录 `qbot-before-0016-2me0gwy2`；升级成功后重新启动服务，健康接口返回正常。上述并行核对使用的是迁移后快照。
+
+## 多条独立定时任务
+
+`0017_independent_tasks` 扩展 interaction_greetings 的任务标识、名称及配置唯一索引，保留旧任务 ID、配置和执行历史。升级前停止服务并备份 interaction_greetings、interaction_greeting_runs 和版本信息，然后显式执行 `python -m alembic upgrade head`。不支持将多个任务降级合并为旧三时段配置。
+
+2026-10-26 已备份到本机临时目录 `qbot-before-0017-nb96g0cx` 并显式升级至 `0017_independent_tasks`。升级后逐字段核对原 6 条任务和 11 条执行记录保持不变，配置唯一索引已包含 task_key。后端已重启，健康接口正常。已完成 Python AST、JavaScript 语法和差异静态检查；未运行测试、浏览器验证、模型调用或主动发送验收。
+
+## 定时保存时刻
+
+0018_schedule_timing 为 interaction_greetings 增加非空 DATETIME(6) schedule_updated_at（UTC），旧任务初始化为迁移时刻，不改其他字段及执行历史。新保存由应用更新此字段；调度扫描和领取均要求配置早于当前分钟开始、发送时间等于当前分钟，取消过期补发。迁移前停服务并备份任务及历史，再显式迁移、启动。
+
+2026-10-26 已备份到本机临时目录 `qbot-before-0018-1tjql7xl`，显式迁移至 `0018_schedule_timing`，核对原 8 条任务及 14 条执行记录的既有字段全部保留，新增保存时刻非空。后端已重启，健康接口正常；Python AST、JavaScript 语法、HTML ID 唯一性及差异静态检查通过。未运行测试、打开浏览器或手动执行发送验证，自动调度效果待实际到点验收。

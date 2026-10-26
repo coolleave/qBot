@@ -86,3 +86,7 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 2026-10-26 已在本地项目库迁移至 0015：四个初始角色、两条已匹配身份，零条待处理；核对原身份字段未变且复合外键存在。未运行测试或真实模型调用。
 
 用户备注统一入口为 Store.save_contact，群备注为 Store.save_group_note；展示批量补充 user_remark/group_remark，原 OpenID 保留。迁移与冲突处理见[后台与模型](admin-and-models.md)。新备注不合并聊天历史、不合并不同 OpenID。
+
+独立定时任务自 `0017_independent_tasks` 使用 task_key/task_name，同一会话可有多条同一时段任务；旧配置的 task_key 为空，保留其 ID 和每日领取记录。配置唯一索引包含 task_key，自动去重仍按 greeting_id 和日期，详见定时任务与数据库表结构文档。
+
+自 0018_schedule_timing，定时任务以 schedule_updated_at 防止保存即触发，只领取当前分钟到期任务，取消当天错过时间的补发。扫描与领取双重校验；手动执行仍独立。

@@ -2,7 +2,7 @@
 
 ## 适用范围与事实来源
 
-面向修改 qBot 的开发 Agent，不是机器人的业务提示词。2026-10-26 已只读核对本地项目库：当前版本为 `0015_bot_roles`，与迁移 head 一致，共 10 张业务表和 1 张 Alembic 版本表。字段、空值属性、主键、索引与外键来自实际数据库元数据；业务含义核对 `qbot/storage.py` 及相关调用方。本次未运行测试或真实平台调用，也未重新执行已完成的迁移。
+面向修改 qBot 的开发 Agent，不是机器人的业务提示词。2026-10-26 已只读核对本地项目库：最初基线版本为 `0015_bot_roles`，当时共 10 张业务表和 1 张 Alembic 版本表。当前已升级至 `0018_schedule_timing`，后续新增表和字段见本文扩展说明。字段、空值属性、主键、索引与外键来自实际数据库元数据；业务含义核对 `qbot/storage.py` 及相关调用方。本次未运行测试或真实平台调用，也未重新执行已完成的迁移。
 
 部署到其他环境时先执行 `python -m alembic current` 并与 `migrations/versions/` 核对，不能把本地已升级视为所有环境已升级。结构变更以新增手写 Alembic 迁移为准；已执行的版本和快照不可改写。迁移操作见 [数据库迁移](database-migrations.md)，流程语义见 [存储与记录](storage.md)。
 
@@ -290,7 +290,7 @@ erDiagram
 | --- | --- | --- |
 | `fk_greeting_conversation` | `conversation_id` | 普通 |
 | `uq_greeting_bot` | `id, bot_id` | 唯一 |
-| `uq_greeting_scope` | `bot_id, conversation_id, slot` | 唯一 |
+| `uq_greeting_scope` | `bot_id, conversation_id, task_key, slot` | 唯一，0017 扩展 |
 
 - `fk_greeting_bot`：`(bot_id)` → `bots(id)`。
 - `fk_greeting_conversation`：`(conversation_id)` → `conversations(id)`。
@@ -352,7 +352,7 @@ erDiagram
 
 | 字段 | 数据库类型 | 可空 | 业务含义 |
 | --- | --- | --- | --- |
-| `version_num` | `VARCHAR(32) COLLATE utf8mb4_unicode_ci` | 否 | 已应用的迁移 revision；核对时为 0015_bot_roles |
+| `version_num` | `VARCHAR(32) COLLATE utf8mb4_unicode_ci` | 否 | 已应用的迁移 revision；当前本地为 0018_schedule_timing |
 
 主键：`(version_num)`。
 
@@ -435,3 +435,15 @@ conn.execute(text("""
 主键 `(bot_id, target_type, openid)`，外键 `fk_contact_note_bot`。不关联某个 conversation_id；用户备注与群备注、不同机器人分别隔离。旧 conversations.contact_name/contact_qq 保留为定时任务兼容字段，由 save_contact 同步；新 QQ 会话继承用户备注。迁移仅导入无冲突用户备注，有冲突的旧值不覆盖。删除用户备注同步清除同 OpenID 会话的兼容字段并停用其任务，清除群备注不影响任务。不得根据 QQ 号或备注名合并 OpenID。
 
 2026-10-26 后续核对：本地版本现为 `0016_contact_notes`，新增表主键和外键已核对，早前 0015 的全库快照说明保留为历史基线。当前新增表 3 条用户备注，群备注尚未设置。
+
+## 独立任务扩展（0017）
+
+`interaction_greetings.task_key` 为 ASCII VARCHAR(36)、非空默认空字符串；旧早午晚配置使用空值，新任务使用 UUID。`task_name` 为 VARCHAR(100)、非空默认空字符串，新任务必填。`uq_greeting_scope` 更新为 `(bot_id, conversation_id, task_key, slot)`。独立任务在服务端限定一个时段，0018 起可修改时段并保留原 ID；修改发送时间不受此限制。旧主键、图片、配置和执行记录不回填或删除，`interaction_greeting_runs` 的每日唯一索引不变。读写任务时必须同时限定 bot_id、conversation_id、task_key；不能再只按 slot 定位。
+
+0017 已在本地执行，原 6 条任务、11 条执行记录字段未变，已核对新唯一索引；未新增测试任务或真实发送。
+
+## 定时触发语义（0018）
+
+interaction_greetings 新增 schedule_updated_at，DATETIME(6) 非空、UTC，应用在每次保存时更新，不依赖数据库默认值。自动任务仅在北京时间 start_time 对应分钟领取，且保存时刻必须早于该分钟开始；过期不补发，手动执行不受此条件限制。slot 新增 other（无需扩列），新独立任务可按 task_key 修改 slot，仍保留 greeting_id 和每日去重记录。
+
+0018 已在本地执行并核对：8 条任务、14 条执行记录既有字段保持不变，保存时刻非空。

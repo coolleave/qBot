@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import re
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from typing import Literal
 from importlib.resources import files
@@ -13,6 +14,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from qbot.config import Settings
 from qbot.model import provider_model
+from qbot.greetings import local_time
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,9 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
     config = settings.model_copy(update={"model_max_retries": 0,
         "model_timeout_seconds": 30, "model_max_tokens": 1024})
     prompts = files("qbot").joinpath("prompts")
-    context = {"时段": {"morning": "早间", "noon": "午间", "evening": "晚间"}[slot],
+    now = local_time(datetime.now(timezone.utc))
+    context = {"时段": {"morning": "早间", "noon": "午间", "evening": "晚间", "other": "其他时段"}[slot],
+               "当前北京时间": now.strftime("%H:%M"),
                "场景": "群聊" if record["source"] == "qq_group" else "私聊"}
     # 群消息面向整个群，避免把绑定成员的私人称呼注入群问候。
     if record["source"] == "qq_c2c":

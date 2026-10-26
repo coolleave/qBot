@@ -53,7 +53,7 @@ class Store:
             if "role_id" not in self.identities.c:
                 raise StorageError("请先执行 python -m alembic upgrade head 升级身份角色表")
             self.greetings = metadata.tables["interaction_greetings"]
-            if any(name not in self.greetings.c for name in ("delivery", "image_data", "image_filename")):
+            if any(name not in self.greetings.c for name in ("delivery", "image_data", "image_filename", "task_key", "task_name", "schedule_updated_at")):
                 raise StorageError("请先执行 python -m alembic upgrade head 升级定时任务结构")
             self.greeting_runs = metadata.tables["interaction_greeting_runs"]
             if not self.greeting_runs.c.local_date.nullable:
@@ -651,7 +651,7 @@ class Store:
             return None
         return record["identity"]
 
-    def greeting_settings(self, bot_id: int, record_id: int) -> dict:
+    def greeting_settings(self, bot_id: int, record_id: int, task_key: str = "") -> dict:
         from qbot.greetings import default_rules, local_time
         record = self.record_detail(record_id)
         if not record or record["bot_id"] != bot_id or record["source"] not in ("qq_c2c", "qq_group"):
@@ -659,7 +659,7 @@ class Store:
         g, runs = self.greetings, self.greeting_runs
         with self.engine.connect() as conn:
             rows = conn.execute(select(g).where(g.c.bot_id == bot_id,
-                g.c.conversation_id == record["conversation_id"])).mappings().all()
+                g.c.conversation_id == record["conversation_id"], g.c.task_key == task_key)).mappings().all()
             rules = {r["slot"]: dict(slot=r["slot"], enabled=bool(r["enabled"]), start=r["start_time"],
                 weekdays=[int(d) for d in r["weekdays"].split(",")], content=r["content"],
                 **json.loads(r["delivery"] or "{}"), image_filename=r["image_filename"] or "",
@@ -668,12 +668,14 @@ class Store:
                 runs.c.record_id, self.records.c.status, self.records.c.error_message)
                 .select_from(runs.join(g, runs.c.greeting_id == g.c.id)
                     .join(self.records, runs.c.record_id == self.records.c.id))
-                .where(g.c.bot_id == bot_id, g.c.conversation_id == record["conversation_id"])
+                .where(g.c.bot_id == bot_id, g.c.conversation_id == record["conversation_id"], g.c.task_key == task_key)
                 .order_by(runs.c.id.desc()).limit(20)).mappings().all()
-        result_rules = [rules.get(r["slot"], r) for r in default_rules()]
+        result_rules = [rules.get(r["slot"], r) for r in default_rules(include_other=bool(task_key))]
         for rule in result_rules:
             rule["workflow"] = resolve_workflow(rule).model_dump()
         return {"rules": result_rules, "catalog": public_catalog(),
+                "task_key": task_key, "task_name": rows[0]["task_name"] if rows else "",
+                "task_slot": rows[0]["slot"] if task_key and rows else None,
                 "bound": bool(record["contact_name"]), "contact_name": record["contact_name"],
                 "group_remark": record["group_remark"], "user_remark": record["user_remark"],
                 "history": [{**dict(r), "manual": r["local_date"] is None,
@@ -695,9 +697,14 @@ class Store:
             if any(rule.enabled for rule in data.rules) and not row["contact_name"]:
                 raise ValueError("请先在用户绑定中设置接收人名称，再启用问候")
             for rule in data.rules:
-                scope = (g.c.bot_id == bot_id) & (g.c.conversation_id == row["id"]) & (g.c.slot == rule.slot)
+                # 独立任务按 task_key 定位，换时段也沿用原 ID 和每日领取记录。
+                scope = ((g.c.bot_id == bot_id) & (g.c.conversation_id == row["id"])
+                         & (g.c.task_key == data.task_key))
+                if not data.task_key:
+                    scope &= g.c.slot == rule.slot
                 # 保留旧表必填字段兼容结构，结束时间不再参与调度。
-                fields = dict(enabled=rule.enabled, start_time=rule.start, end_time="23:59",
+                fields = dict(task_name=data.task_name, slot=rule.slot,
+                              enabled=rule.enabled, start_time=rule.start, end_time="23:59",
                               weekdays=",".join(map(str, rule.weekdays)), content=rule.content)
                 old = conn.execute(select(g).where(scope)).mappings().first()
                 image_data = old["image_data"] if old else None
@@ -722,15 +729,19 @@ class Store:
                         raise ValueError("请选择已启用且配置密钥的 TTS 供应商")
                 fields["delivery"] = json.dumps(dict(delivery_mode=rule.delivery_mode, workflow=rule.workflow.model_dump(),
                     tts_provider_id=rule.tts_provider_id, voice=rule.voice))
+                # 校验和媒体处理结束后记录保存时刻，当前分钟不会因保存而触发。
+                fields["schedule_updated_at"] = utc_now()
                 if old:
                     conn.execute(g.update().where(scope).values(**fields))
                 else:
-                    conn.execute(g.insert().values(bot_id=bot_id, conversation_id=row["id"], slot=rule.slot, **fields))
+                    conn.execute(g.insert().values(bot_id=bot_id, conversation_id=row["id"], task_key=data.task_key, **fields))
 
     def due_greetings(self) -> list[int]:
-        """仅扫描今天已到发送时间、尚未领取的任务。"""
+        """只扫描当前分钟的任务；保存/重启后不补发过去的时间。"""
         from qbot.greetings import local_time
-        now = local_time(utc_now())
+        now_utc = utc_now()
+        now = local_time(now_utc)
+        minute_start = now_utc.replace(second=0, microsecond=0)
         g, runs = self.greetings, self.greeting_runs
         c = self.conversations
         claimed = select(runs.c.id).where(runs.c.bot_id == g.c.bot_id,
@@ -739,18 +750,18 @@ class Store:
             return list(conn.execute(select(g.c.id).select_from(g.join(c,
                 (g.c.conversation_id == c.c.id) & (g.c.bot_id == c.c.bot_id))).where(g.c.enabled == 1,
                 c.c.contact_name.is_not(None), c.c.contact_name != "", c.c.source.in_(("qq_c2c", "qq_group")),
-                g.c.start_time <= now.strftime("%H:%M"),
+                g.c.start_time == now.strftime("%H:%M"), g.c.schedule_updated_at < minute_start,
                 func.find_in_set(str(now.isoweekday()), g.c.weekdays) > 0, ~claimed)
                 .order_by(g.c.id).limit(100)).scalars())
 
-    def greeting_for_execution(self, bot_id: int, record_id: int, slot: str) -> int:
+    def greeting_for_execution(self, bot_id: int, record_id: int, slot: str, task_key: str = "") -> int:
         record = self.record_detail(record_id)
         if not record or record["bot_id"] != bot_id or record["source"] not in ("qq_group", "qq_c2c"):
             raise ValueError("请选择此机器人已有的 QQ 接收对象")
         g = self.greetings
         with self.engine.connect() as conn:
             rule_id = conn.execute(select(g.c.id).where(g.c.bot_id == bot_id,
-                g.c.conversation_id == record["conversation_id"], g.c.slot == slot)).scalar_one_or_none()
+                g.c.conversation_id == record["conversation_id"], g.c.slot == slot, g.c.task_key == task_key)).scalar_one_or_none()
         if rule_id is None:
             raise ValueError("请先保存该任务，再执行一次")
         return rule_id
@@ -771,7 +782,8 @@ class Store:
                 return None
             if not manual and (not row["enabled"]
                     or str(now.isoweekday()) not in row["weekdays"].split(",")
-                    or row["start_time"] > now.strftime("%H:%M")):
+                    or row["start_time"] != now.strftime("%H:%M")
+                    or row["schedule_updated_at"] >= now_utc.replace(second=0, microsecond=0)):
                 return None
             if not manual:
                 previous = conn.execute(select(runs.c.id).where(runs.c.bot_id == row["bot_id"],
@@ -812,11 +824,16 @@ class Store:
             latest = latest.where(r.c.bot_id == bot_id)
             stats = stats.where(g.c.bot_id == bot_id)
         latest = latest.group_by(r.c.bot_id, r.c.conversation_id).subquery()
+        if not bound_only:
+            stats = stats.add_columns(g.c.task_key, func.max(g.c.task_name).label("task_name"))
+            stats = stats.group_by(g.c.task_key)
         stats = stats.group_by(g.c.bot_id, g.c.conversation_id).subquery()
         joined = c.join(latest, (latest.c.conversation_id == c.c.id) & (latest.c.bot_id == c.c.bot_id)).outerjoin(
             stats, (stats.c.conversation_id == c.c.id) & (stats.c.bot_id == c.c.bot_id))
         filters = [c.c.source.in_(("qq_c2c", "qq_group")),
                    c.c.contact_name.is_not(None) | stats.c.conversation_id.is_not(None)]
+        if not bound_only:
+            filters.append(stats.c.configured_count > 0)
         if bound_only:
             filters.extend((c.c.contact_name.is_not(None), c.c.contact_name != ""))
         if search:
@@ -827,9 +844,11 @@ class Store:
             total = conn.execute(select(func.count()).select_from(joined).where(*filters)).scalar_one()
             rows = conn.execute(select(latest.c.record_id.label("id"), c.c.bot_id, c.c.source,
                 c.c.group_id, c.c.user_id, c.c.contact_name,
+                (literal_column("''") if bound_only else stats.c.task_key).label("task_key"),
+                (literal_column("''") if bound_only else stats.c.task_name).label("task_name"),
                 func.coalesce(stats.c.configured_count, 0).label("configured_count"),
                 func.coalesce(stats.c.enabled_count, 0).label("enabled_count"))
-                .select_from(joined).where(*filters).order_by(c.c.bot_id, c.c.id)
+                .select_from(joined).where(*filters).order_by(c.c.bot_id, c.c.id, literal_column("task_key"))
                 .offset((page - 1) * page_size).limit(page_size)).mappings().all()
             items = self._with_contact_notes(conn, [dict(row) for row in rows])
         return {"items": items, "total": total, "page": page, "page_size": page_size}
