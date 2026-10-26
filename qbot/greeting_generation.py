@@ -31,8 +31,10 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
                "场景": "群聊" if record["source"] == "qq_group" else "私聊"}
     # 群消息面向整个群，避免把绑定成员的私人称呼注入群问候。
     if record["source"] == "qq_c2c":
-        context.update(姓名=record.get("member_name") or record.get("contact_name"),
-                       家庭角色=record.get("family_role"))
+        identity = record.get("identity")
+        context.update(姓名=identity["member_name"] if identity else record.get("contact_name"),
+                       身份角色=identity["role_label"] if identity else None,
+                       关系说明=identity["relationship"] if identity else None)
     if image_description is not None:
         context["配图描述"] = image_description
     model = None

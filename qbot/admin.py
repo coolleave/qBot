@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from qbot.config import Settings
+from qbot.identity_roles import IdentityRole
 from qbot.greetings import GreetingInput
 from qbot.security import verify_password
 from qbot.storage import Store
@@ -82,7 +83,7 @@ class BotInput(QQInput):
 class FamilyBindingInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     member_name: str = Field(min_length=1, max_length=100)
-    family_role: Literal["father", "mother", "friend", "owner"]
+    family_role: str = Field(min_length=1, max_length=16, pattern=r"^[a-z][a-z0-9_]*$")
     qq_number_note: str = Field(default="", max_length=20, pattern=r"^[0-9]*$")
 
 
@@ -193,6 +194,7 @@ def admin_router(settings: Settings) -> APIRouter:
         items = await db.call("list_bots")
         for item in items:
             item.update(request.app.state.bots.state(item["id"]))
+            item["identity_roles"] = await db.call("list_identity_roles", item["id"])
         return {"items": items}
 
     @router.get("/api/admin/bots/{bot_id}/profile", dependencies=[Depends(require_admin)])
@@ -390,6 +392,35 @@ def admin_router(settings: Settings) -> APIRouter:
         if result is None:
             raise HTTPException(404, "记录不存在")
         return result
+
+    @router.get("/api/admin/bots/{bot_id}/roles", dependencies=[Depends(require_admin)])
+    async def roles(bot_id: int, db: Store = Depends(store)) -> dict:
+        try:
+            return {"items": await db.call("list_identity_roles", bot_id)}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.post("/api/admin/bots/{bot_id}/roles", dependencies=[Depends(require_admin)])
+    async def create_role(bot_id: int, data: IdentityRole, db: Store = Depends(store)) -> dict:
+        try:
+            return {"id": await db.call("save_identity_role", bot_id, data.model_dump())}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.put("/api/admin/bots/{bot_id}/roles/{role_id}", dependencies=[Depends(require_admin)])
+    async def update_role(bot_id: int, role_id: int, data: IdentityRole, db: Store = Depends(store)) -> dict:
+        try:
+            return {"id": await db.call("save_identity_role", bot_id, data.model_dump(), role_id)}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.delete("/api/admin/bots/{bot_id}/roles/{role_id}", dependencies=[Depends(require_admin)])
+    async def delete_role(bot_id: int, role_id: int, db: Store = Depends(store)) -> dict:
+        try:
+            await db.call("delete_identity_role", bot_id, role_id)
+            return {"deleted": True}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
 
     @router.get("/api/admin/identity-bindings", dependencies=[Depends(require_admin)])
     async def identity_bindings(bot_id: int | None = Query(None, gt=0),

@@ -43,7 +43,7 @@ POST `/api/admin/providers/{provider_id}/speech` 接收 text、voice，返回 WA
 
 | 绑定 | 范围 | 用途 |
 | --- | --- | --- |
-| 家庭身份 | bot_id + user_id | 姓名、father/mother/friend 角色，进入模型身份提示 |
+| 家庭身份 | bot_id + user_id | 姓名、当前智能体目录中的角色，进入模型身份提示 |
 | 接收人名称 | 机器人下对应 QQ 会话 | contact_name / contact_qq，供发送和定时任务选择 |
 
 家庭身份在 bot_user_identities，同机器人同 OpenID 的私聊/群聊共享身份；历史不合并，身份变化在下一次对话清理该会话旧上下文。QQ 号只是备注，不作鉴权或合并不同 OpenID。角色不授予管理权限。
@@ -62,8 +62,18 @@ POST `/api/admin/providers/{provider_id}/speech` 接收 text、voice，返回 WA
 
 本次完成源码引用、资源路径和脚本语法静态检查；未运行测试、浏览器、数据库或真实平台联调。更新后强制刷新 `/admin`；Docker 部署需重新构建镜像。
 
-## 大肥鱼主人身份（拟实现，待验证）
+## 数据库角色管理（已实现，界面待验收）
 
-身份角色新增 `owner`（主人），原有 father/mother/friend 保持兼容；角色只决定称呼，不赋予后台管理权限。已有 VARCHAR(16) 字段可容纳，无需迁移。聊天详情和身份绑定表单均提供主人选项，模型身份信息同步解释 owner。
+后台「机器人管理 → 身份角色」独立维护每个智能体的角色：编号、显示名称、关系说明、可选预设称呼。新增智能体默认没有角色，管理员自行添加；不在运行代码中按 bot_id 写死角色。初始大肥鱼与小苍角色由迁移快照一次性导入。
 
-智能体 1 的大肥鱼人设补充宇老弟为主人、丁一哥为宇老弟的朋友。实际发送者仍只按该机器人后台绑定的 OpenID 识别，不根据昵称或自称自动绑定。宇老弟绑定 owner，丁一哥绑定 friend；两人的 OpenID 尚待确认。
+`bot_roles` 保存角色，`bot_user_identities.role_id` 通过 (bot_id, role_id) 复合外键关联，禁止跨智能体绑定。旧 family_role 保留用于兼容 API 和待处理旧身份，角色编号创建后不可修改；角色名称及关系说明可以编辑，下一次对话生效。修改预设称呼不得与已绑定用户姓名冲突；角色仍被使用时禁止删除，须先解绑或改绑。角色修改与身份绑定共用机器人行锁。
+
+迁移 `0015_bot_roles` 导入固化的 `migrations/snapshots/0015_identity_roles.json`（原 JSON 目录快照），只为存在的机器人导入。其他已有机器人初始化普通朋友。已有身份仅在角色编号和预设称呼匹配时关联，无法匹配的 role_id 保持 NULL，显示“待重新绑定”，不改写用户 OpenID、姓名或原角色。之后创建新角色不会自动认领旧身份。用户需明确重新绑定。新角色可用于多个用户，同一用户在一个机器人下仍只有一个身份。
+
+角色编号为 1～16 位小写字母、数字、下划线，字母开头；显示名称最多100字，关系说明最多500字，预设称呼最多100字。无预设称呼时绑定用户可自由填写姓名。支持 teacher、student 等任意合规编号；模型按显示名称和关系说明理解关系，不依赖固定枚举。
+
+接口（均需管理员鉴权，写操作校验 CSRF）：GET/POST `/api/admin/bots/{bot_id}/roles`，PUT/DELETE `/api/admin/bots/{bot_id}/roles/{role_id}`。`GET /api/admin/bots` 返回各机器人的 identity_roles；绑定接口维持 family_role 字段，服务端在同一事务解析到对应 role_id。聊天和 AI 问候均读取已验证的数据库身份。
+
+升级需先停止服务、备份数据库，再执行 `python -m alembic upgrade head`，成功后启动并刷新后台。运行时不再读取 config/identity_roles.json，迁移完成后的维护全部在后台进行。角色编辑不重载机器人或调用模型，保存后下次请求生效。
+
+2026-10-26 本地数据库已迁移至 0015，原两条身份完整保留并匹配成功；Python/JavaScript/JSON 静态检查通过。未运行测试、浏览器或模型验收。本次未启动服务，需启动服务并刷新后台使用新入口。

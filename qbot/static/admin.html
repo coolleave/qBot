@@ -77,7 +77,7 @@
 <dialog id="detail-dialog"><div class="dialog-heading"><h2>对话详情</h2><button data-close="detail-dialog" aria-label="关闭">×</button></div><p id="detail-meta" class="muted"></p><h3>用户消息</h3><pre id="detail-question"></pre><h3>机器人回复</h3><pre id="detail-answer"></pre><h3>多模态处理详情</h3><pre id="detail-media"></pre><p id="detail-error" class="error"></p>
 <form id="binding-form" hidden><h3>绑定此发送者</h3><p class="muted">使用这条消息的真实用户 ID。绑定当前机器人与此用户 OpenID，身份在该机器人下的所有同 OpenID 会话中生效。不同机器人独立，QQ 号仅作备注；不同 OpenID 不会自动合并。</p>
 <label>姓名<input name="member_name" required maxlength="100" placeholder="例如：宇哥"></label>
-<label>家庭角色<select name="family_role"><option value="father">爸爸</option><option value="mother">妈妈</option><option value="friend">朋友</option><option value="owner">主人</option></select></label>
+<label>智能体身份<select name="family_role" required><option value="">请选择智能体身份</option></select></label>
 <label>QQ 号备注<input name="qq_number_note" maxlength="20" pattern="[0-9]*" inputmode="numeric" placeholder="仅备注，不用于身份校验"></label>
 <p id="binding-error" class="error" role="alert"></p><div class="dialog-actions"><button id="unbind-member" type="button">解除绑定</button><button type="submit" class="primary">保存绑定</button></div></form></dialog>
 <dialog id="greeting-recipient-dialog"><div class="dialog-heading"><h2>新建定时任务 · 选择接收人</h2><button type="button" data-close="greeting-recipient-dialog" aria-label="关闭">×</button></div><form id="greeting-recipient-filter" class="filters"><label>机器人<select id="greeting-recipient-bot" required><option value="">请选择机器人</option></select></label><label>接收人<input id="greeting-recipient-search" maxlength="256" placeholder="姓名或完整 OpenID"></label><button type="submit">查询</button></form><p class="muted">选择「用户绑定」中的接收人后，设置发送时间和文字／语音／图片。无需进入聊天记录。已存在的早午晚任务会保留原配置。</p><div class="table-scroll"><table><thead><tr><th>接收人</th><th>发送范围</th><th>操作</th></tr></thead><tbody id="greeting-recipient-body"></tbody></table></div><p id="greeting-recipient-notice" role="status"></p><div class="pagination"><span id="greeting-recipient-page"></span><div><button id="greeting-recipient-prev" type="button">上一页</button><button id="greeting-recipient-next" type="button">下一页</button></div></div></dialog>
@@ -102,9 +102,21 @@
 <label>机器人<select name="bot_id" id="identity-bot" required></select></label>
 <label>用户 OpenID<input name="user_id" required maxlength="256" placeholder="已向此机器人发送过消息的 OpenID，不是 QQ 号"></label>
 <label>姓名<input name="member_name" required maxlength="100"></label>
-<label>角色<select name="family_role"><option value="father">爸爸</option><option value="mother">妈妈</option><option value="friend">朋友</option><option value="owner">主人</option></select></label>
+<label>智能体身份<select name="family_role" required><option value="">请选择智能体身份</option></select></label>
 <label>QQ 号备注<input name="qq_number_note" maxlength="20" pattern="[0-9]*" inputmode="numeric"></label>
 <p class="muted">无需选择群或私聊。绑定后，此机器人收到同一 OpenID 的消息时均使用该身份；其他机器人独立配置。</p>
 <p id="identity-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" data-close="identity-dialog">取消</button><button class="primary" type="submit">保存身份</button></div></form></dialog>
 <datalist id="tts-voices"><option value="Bunny">萌小姬 · 可爱童声风格（默认）</option><option value="Bella">萌宝 · 可爱女声</option><option value="Mochi">沙小弥 · 童真男声</option><option value="Momo">茉兔 · 活泼俏皮</option><option value="Cherry">芊悦 · 自然女声</option><option value="Serena">苏瑶 · 温柔女声</option></datalist>
+<dialog id="roles-dialog">
+<div class="dialog-heading"><h2 id="roles-title">身份角色</h2><button type="button" data-close="roles-dialog">×</button></div>
+<p class="muted">角色仅属于当前智能体。关系说明用于聊天及问候；角色不授予管理权限。</p>
+<div id="roles-list"></div><button id="new-role" type="button">＋ 新增角色</button>
+<form id="role-form"><h3 id="role-editor-title">新增角色</h3><input name="id" type="hidden">
+<label>角色编号<input name="value" required maxlength="16" pattern="[a-z][a-z0-9_]*" placeholder="例如 teacher，创建后不可修改"></label>
+<label>显示名称<input name="label" required maxlength="100" placeholder="例如 老师"></label>
+<label>关系说明<input name="relationship" maxlength="500" placeholder="例如 当前智能体的老师"></label>
+<label>预设称呼（可选）<input name="member_name" maxlength="100" placeholder="留空允许绑定多个不同姓名的用户"></label>
+<p class="muted">预设称呼填写后，绑定姓名须与其一致。角色仍有用户绑定时不能删除。</p>
+<p id="role-error" class="error" role="alert"></p><div class="dialog-actions"><button type="submit" class="primary">保存角色</button></div>
+</form></dialog>
 <datalist id="provider-model-suggestions"></datalist></body></html>

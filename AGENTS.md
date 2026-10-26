@@ -84,3 +84,5 @@
 - 提交说明使用 `类型: 中文说明`，例如 `feat: 新增聊天记录查询`、`fix: 修复重复消息处理`。
 - 按职责拆分提交，使用 feat、fix、docs、test、chore 等类型；相互依赖的代码保持在同一提交中。
 - 提交前检查暂存内容，不提交 `.env`、真实密钥、虚拟环境、缓存或 IDE 本地配置。
+
+身份角色目录的配置与扩展请读 [后台与模型](docs/admin-and-models.md)：入口 `qbot/identity_roles.py`（输入校验）和 `qbot/storage.py`（数据库 CRUD），通过后台「机器人管理 → 身份角色」维护 `bot_roles`，按 bot_id 隔离，自定义角色不依赖固定枚举。

@@ -12,6 +12,7 @@ from sqlalchemy.engine import Engine, URL
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from qbot.config import Settings
+from qbot.identity_roles import IdentityRole
 
 
 class StorageError(RuntimeError):
@@ -44,9 +45,12 @@ class Store:
         try:
             metadata.reflect(engine, only=["model_providers", "app_settings", "conversations", "chat_records", "bots",
                                            "interaction_greetings", "interaction_greeting_runs", "bot_user_identities",
-                                           "admin_sessions"])
+                                           "admin_sessions", "bot_roles"])
             self.admin_sessions = metadata.tables["admin_sessions"]
             self.identities = metadata.tables["bot_user_identities"]
+            self.roles = metadata.tables["bot_roles"]
+            if "role_id" not in self.identities.c:
+                raise StorageError("请先执行 python -m alembic upgrade head 升级身份角色表")
             self.greetings = metadata.tables["interaction_greetings"]
             if any(name not in self.greetings.c for name in ("delivery", "image_data", "image_filename")):
                 raise StorageError("请先执行 python -m alembic upgrade head 升级定时任务结构")
@@ -494,7 +498,7 @@ class Store:
     def record_detail(self, record_id: int) -> dict | None:
         r, c, i = self.records, self.conversations, self.identities
         with self.engine.connect() as conn:
-            row = conn.execute(select(r, c.c.user_id, i.c.member_name, i.c.family_role,
+            row = conn.execute(select(r, c.c.user_id, i.c.member_name, i.c.family_role, i.c.role_id,
                 i.c.qq_number_note, c.c.contact_name, c.c.contact_qq)
                 .select_from(r.join(c, r.c.conversation_id == c.c.id).outerjoin(i,
                     (i.c.bot_id == c.c.bot_id) & (i.c.user_id == c.c.user_id)
@@ -503,8 +507,66 @@ class Store:
             if not row:
                 return None
             result = dict(row)
+            result["identity"] = None
+            if result["role_id"] is not None:
+                role = conn.execute(select(self.roles).where(self.roles.c.bot_id == result["bot_id"],
+                                    self.roles.c.id == result["role_id"])).mappings().first()
+                if (role and role["role_key"] == result["family_role"]
+                        and (not role["member_name"] or role["member_name"] == result["member_name"])):
+                    result["identity"] = dict(member_name=result["member_name"], family_role=role["role_key"],
+                                              role_label=role["label"], relationship=role["relationship"])
             result["media_details"] = json.loads(result["media_details"] or "{}")
             return result
+
+    def list_identity_roles(self, bot_id: int) -> list[dict]:
+        with self.engine.connect() as conn:
+            if conn.execute(select(self.bots.c.id).where(self.bots.c.id == bot_id)).first() is None:
+                raise ValueError("机器人不存在")
+            rows = conn.execute(select(self.roles).where(self.roles.c.bot_id == bot_id)
+                                .order_by(self.roles.c.id)).mappings()
+            return [dict(id=row["id"], value=row["role_key"], label=row["label"],
+                         member_name=row["member_name"], relationship=row["relationship"]) for row in rows]
+
+    def save_identity_role(self, bot_id: int, values: dict, role_id: int | None = None) -> int:
+        values = IdentityRole.model_validate(values).model_dump()
+        values["role_key"] = values.pop("value")
+        try:
+            with self.engine.begin() as conn:
+                # 和身份绑定共用机器人行锁，阻止删除/改名与绑定写入交错。
+                if conn.execute(select(self.bots.c.id).where(self.bots.c.id == bot_id)
+                                .with_for_update()).first() is None:
+                    raise ValueError("机器人不存在")
+                if role_id is None:
+                    return conn.execute(self.roles.insert().values(bot_id=bot_id, **values)).inserted_primary_key[0]
+                old = conn.execute(select(self.roles).where(self.roles.c.id == role_id,
+                                   self.roles.c.bot_id == bot_id)).mappings().first()
+                if old is None:
+                    raise ValueError("该智能体下不存在此角色")
+                if old["role_key"] != values["role_key"]:
+                    raise ValueError("角色编号创建后不可修改，请新增角色后调整绑定")
+                if values["member_name"]:
+                    names = conn.execute(select(self.identities.c.member_name).where(
+                        self.identities.c.bot_id == bot_id, self.identities.c.role_id == role_id)).scalars()
+                    if any(name != values["member_name"] for name in names):
+                        raise ValueError("预设称呼与已绑定用户不一致，请先调整用户绑定")
+                conn.execute(self.roles.update().where(self.roles.c.bot_id == bot_id,
+                             self.roles.c.id == role_id).values(**values))
+                return role_id
+        except IntegrityError:
+            raise ValueError("该智能体的角色编号已存在或角色配置无效") from None
+
+    def delete_identity_role(self, bot_id: int, role_id: int) -> None:
+        with self.engine.begin() as conn:
+            if conn.execute(select(self.bots.c.id).where(self.bots.c.id == bot_id)
+                            .with_for_update()).first() is None:
+                raise ValueError("机器人不存在")
+            if conn.execute(select(self.identities.c.user_id).where(
+                self.identities.c.bot_id == bot_id, self.identities.c.role_id == role_id).limit(1)).first():
+                raise ValueError("角色仍有用户绑定，请先解绑或改绑后再删除")
+            result = conn.execute(self.roles.delete().where(self.roles.c.bot_id == bot_id,
+                                  self.roles.c.id == role_id))
+            if not result.rowcount:
+                raise ValueError("该智能体下不存在此角色")
 
     def save_family_binding(self, bot_id: int, record_id: int, values: dict | None) -> dict:
         """仅从已有 QQ 记录取身份，客户端不能指定或替换 OpenID。"""
@@ -519,15 +581,18 @@ class Store:
                 raise ValueError("该机器人下不存在这条消息")
             if row["source"] not in ("qq_group", "qq_c2c"):
                 raise ValueError("仅支持从 QQ 消息绑定家庭成员")
-            binding = {"member_name": None, "family_role": None, "qq_number_note": None}
+            binding = {"member_name": None, "family_role": None, "qq_number_note": None, "role_id": None}
             if values is not None:
                 name = values.get("member_name", "").strip()
                 role = values.get("family_role")
                 note = values.get("qq_number_note", "").strip()
                 if not name or len(name) > 100 or any(ord(ch) < 32 for ch in name):
                     raise ValueError("姓名需为 1 至 100 字符且不能包含控制字符")
-                if role not in ("father", "mother", "friend", "owner"):
-                    raise ValueError("无效的家庭角色")
+                selected_role = conn.execute(select(self.roles).where(self.roles.c.bot_id == bot_id,
+                                             self.roles.c.role_key == role)).mappings().first()
+                if not selected_role or (selected_role["member_name"] and selected_role["member_name"] != name):
+                    raise ValueError("该身份不属于此智能体，请重新选择对应角色和姓名")
+                binding["role_id"] = selected_role["id"]
                 if len(note) > 20 or any(ch not in "0123456789" for ch in note):
                     raise ValueError("QQ 备注只能填写最多 20 位数字")
                 binding.update(member_name=name, family_role=role, qq_number_note=note or None)
@@ -553,7 +618,7 @@ class Store:
         joined = users.outerjoin(i, (i.c.bot_id == users.c.bot_id) & (i.c.user_id == users.c.user_id))
         with self.engine.connect() as conn:
             total = conn.execute(select(func.count()).select_from(users)).scalar_one()
-            rows = conn.execute(select(users, i.c.member_name, i.c.family_role, i.c.qq_number_note)
+            rows = conn.execute(select(users, i.c.member_name, i.c.family_role, i.c.qq_number_note, i.c.role_id)
                 .select_from(joined).order_by(users.c.record_id.desc())
                 .offset((page - 1) * 20).limit(20)).mappings().all()
         return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": 20}
@@ -575,7 +640,7 @@ class Store:
         if (not record or record["bot_id"] != bot_id or record["source"] not in ("qq_group", "qq_c2c")
                 or not record["family_role"]):
             return None
-        return {"member_name": record["member_name"], "family_role": record["family_role"]}
+        return record["identity"]
 
     def greeting_settings(self, bot_id: int, record_id: int) -> dict:
         from qbot.greetings import default_rules, local_time

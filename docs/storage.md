@@ -15,7 +15,8 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 | bots | 多机器人凭证、启用、人设、绑定及多模态 JSON |
 | conversations | 机器人、来源、群、用户范围及接收人名称 |
 | chat_records | 问答、状态、模型快照、用量和媒体详情 |
-| bot_user_identities | bot_id + user_id 的家庭身份 |
+| bot_roles | 每个智能体独立的角色定义及关系说明 |
+| bot_user_identities | bot_id + user_id 的身份，通过 role_id 关联角色 |
 | interaction_greetings | 会话早午晚任务规则（end_time 仅兼容保留，不参与调度） |
 | interaction_greeting_runs | 每日领取与发送记录关联 |
 | admin_sessions | 登录摘要、CSRF、配置指纹及有效期 |
@@ -56,6 +57,9 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 | 0010_multimodal | 多模态、图片声明及处理详情 |
 | 0011_admin_sessions | 持久登录 |
 | 0012_token_usage | 聊天模型 token 字段 |
+| 0013_greeting_media | 定时投递 JSON 及上传图片 |
+| 0014_manual_greeting_runs | 手动执行日期可空，自动每日去重保留 |
+| 0015_bot_roles | 数据库角色目录与同机器人复合外键 |
 
 上述为整理时工作区迁移，不代表目标库已执行。部署前核对 alembic current 与版本目录。仅新增手写迁移，不改已执行版本/快照，不 stamp、不删库删表初始化，复用现有 Docker MySQL，不操作其他库。
 
@@ -70,3 +74,9 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 通用流程配置保存到 interaction_greetings.delivery.workflow（version、content_source、image_source、output、library_id），delivery_mode 仅作模板标识和旧数据转换。已保存 workflow 优先生效，执行时快照记录到 media_details.workflow。无新迁移；旧任务在读取/执行时从模板目录映射，保存后固定组合。
 
 手动重复执行使用迁移 0014_manual_greeting_runs：interaction_greeting_runs.local_date 改为可空，NULL 表示手动执行，允许同任务多条手动记录；自动记录仍写日期并受 uq_greeting_day 约束。手动 chat_records.external_message_id 使用独立 UUID；日期显示由 created_at 换算北京时间。保留已有领取，不回填或删除历史。
+
+## 数据库角色目录
+
+`bot_roles` 按 bot_id 保存 role_key、label、relationship、member_name，(bot_id,role_key) 唯一。`bot_user_identities.role_id` 可空，通过 (bot_id,role_id) 外键确保引用同一个机器人；NULL 只用于未匹配旧身份，不能作为可信模型身份。原 family_role 保留兼容，写入时与 role_key 一起校验。迁移 `0015_bot_roles` 仅补充字段及匹配关联，保留原身份资料。角色编辑与绑定共用 bots 行锁，有绑定时拒绝删除或修改为冲突称呼。
+
+2026-10-26 已在本地项目库迁移至 0015：四个初始角色、两条已匹配身份，零条待处理；核对原身份字段未变且复合外键存在。未运行测试或真实模型调用。

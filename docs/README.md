@@ -24,3 +24,5 @@
 [admin-plan.md](admin-plan.md) 和 [multimodal-plan.md](multimodal-plan.md) 保留设计背景、历史阶段和待验收清单。维护当前实现先读模块文档，具体行为以工作区代码为准；不要把历史草案或未完成验收写成现有能力。
 
 功能行为、入口或约束变化时更新对应模块文档；新增模块同步维护本索引和根 AGENTS.md 的查阅表。启动/环境变量变化仍更新项目 README 和 .env.example。文档不作为业务提示词。
+
+身份角色目录的配置与扩展请读 [后台与模型](admin-and-models.md)：入口 `qbot/identity_roles.py`（输入校验）和 `qbot/storage.py`（数据库 CRUD），通过后台「机器人管理 → 身份角色」维护 `bot_roles`，按 bot_id 隔离，自定义角色不依赖固定枚举。

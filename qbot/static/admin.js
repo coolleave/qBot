@@ -2,6 +2,30 @@
 const $ = id => document.getElementById(id);
 let csrf = "", currentPage = 1, providers = [], defaultProvider = null, recordsRequest = 0;
 const botNames = new Map();
+const botIdentityRoles = new Map();
+function setIdentityOptions(form, botId, role = "", name = "", roleId = null) {
+  const roles = botIdentityRoles.get(Number(botId)) || [];
+  const select = form.elements.family_role;
+  select.replaceChildren(new Option(roles.length ? "请选择身份" : botId ? "该机器人暂无角色，请到机器人管理添加" : "请先选择机器人", ""));
+  for (const entry of roles) select.add(new Option(entry.label, entry.value));
+  // 旧绑定不自动替换；管理员须明确选择当前智能体允许的身份。
+  const matched = roles.find(entry => entry.id === roleId && entry.value === role && (!entry.member_name || entry.member_name === name));
+  select.value = matched ? role : "";
+  form.elements.member_name.value = name;
+  form.elements.member_name.readOnly = Boolean(matched?.member_name);
+  select.onchange = () => {
+    const entry = roles.find(value => value.value === select.value);
+    form.elements.member_name.value = entry?.member_name || "";
+    form.elements.member_name.readOnly = Boolean(entry?.member_name);
+  };
+}
+function identityLabel(item) {
+  if (!item.family_role) return "—";
+  if (!item.role_id) return "待重新绑定（旧角色：" + item.family_role + "）";
+  const role = (botIdentityRoles.get(Number(item.bot_id)) || []).find(entry =>
+    entry.id === item.role_id && entry.value === item.family_role && (!entry.member_name || entry.member_name === item.member_name));
+  return role?.label || "旧身份不匹配，请重新绑定";
+}
 function botLabel(id) { return `${botNames.get(Number(id)) || "机器人"} #${id}`; }
 function updateBotLabels() {
   document.querySelectorAll("[data-bot-label]").forEach(node => {
@@ -73,13 +97,13 @@ function renderDetailMeta(item) {
 }
 async function showDetail(id) {
   const item = await api("/records/" + id);
+  await refreshIdentityRoles(item.bot_id);
   detailRecord = item;
   $("detail-media").textContent = item.media_details ? JSON.stringify(item.media_details, null, 2) : "无附件处理记录";
   const form = $("binding-form"); form.reset();
   form.hidden = !["qq_group", "qq_c2c"].includes(item.source);
   $("open-send").hidden = form.hidden;
-  form.elements.member_name.value = item.member_name || "";
-  form.elements.family_role.value = item.family_role || "father";
+  setIdentityOptions(form, item.bot_id, item.family_role, item.member_name || "", item.role_id);
   form.elements.qq_number_note.value = item.qq_number_note || "";
   $("unbind-member").disabled = !item.family_role;
   $("binding-error").textContent = "";
@@ -220,6 +244,8 @@ enter().catch(e => {if(!$("workspace").hidden) toast(e.message);});
 
 async function loadBots() {
   const data = await api("/bots");
+  botIdentityRoles.clear();
+  for (const bot of data.items) botIdentityRoles.set(bot.id, bot.identity_roles || []);
   $("bots-list").replaceChildren();
   for (const id of ["binding-bot-filter", "binding-bot", "identity-bot-filter", "identity-bot"]) {
     const select = $(id), selected = select.value;
@@ -277,7 +303,7 @@ async function loadBots() {
       element("p", item.provider_id ? `模型供应商 #${item.provider_id}` : "跟随全局默认供应商", "muted"));
     if (item.transport === "webhook") card.append(element("p", `回调路径：/qq/webhook/${item.id}`, "muted"));
     const actions = element("div", undefined, "actions");
-    actions.append(button("编辑配置", () => editBot(item)), button("刷新官方资料", () => renderProfile(true)));
+    actions.append(button("编辑配置", () => editBot(item)), button("身份角色", () => openRoleManager(item)), button("刷新官方资料", () => renderProfile(true)));
     actions.append(button(item.running ? "重新连接" : "启动", async () => {
       const result = await api(`/bots/${item.id}/start`, {method:"POST"});
       await loadBots(); toast(result.status);
@@ -358,8 +384,7 @@ async function saveBinding(remove = false) {
     });
     Object.assign(item, binding);
     if (detailRecord === item) {
-      form.elements.member_name.value = item.member_name || "";
-      form.elements.family_role.value = item.family_role || "father";
+      setIdentityOptions(form, item.bot_id, item.family_role, item.member_name || "", item.role_id);
       form.elements.qq_number_note.value = item.qq_number_note || "";
     }
     toast(remove ? "已解除绑定，下次对话生效" : "已保存绑定，下次对话生效");
@@ -831,20 +856,31 @@ async function loadIdentityBindings() {
         toast("身份已解除，下次对话生效"); await loadIdentityBindings();
       }));
       row.append(bot, element("td", item.user_id), element("td", item.member_name || "未绑定"),
-        element("td", ({father:"爸爸",mother:"妈妈",friend:"朋友",owner:"主人"})[item.family_role] || "—"),
+        element("td", identityLabel(item)),
         element("td", item.qq_number_note || "—"), actions);
       $("identities-body").append(row);
     }
   } catch(e) { if (request === identitiesRequest) $("identities-empty").textContent = "加载失败：" + e.message; }
 }
-function editIdentityBinding(item = null) {
+async function editIdentityBinding(item = null) {
   const form = $("identity-form"); form.reset(); $("identity-error").textContent = "";
   const values = item || {bot_id:$("identity-bot-filter").value, user_id:$("identity-user-filter").value.trim(), family_role:"friend"};
-  for (const key of ["bot_id", "user_id", "member_name", "family_role", "qq_number_note"]) form.elements[key].value = values[key] || (key === "family_role" ? "friend" : "");
+  if (values.bot_id) await refreshIdentityRoles(values.bot_id);
+  for (const key of ["bot_id", "user_id", "qq_number_note"]) form.elements[key].value = values[key] || "";
+  setIdentityOptions(form, values.bot_id, values.family_role, values.member_name || "", values.role_id);
   form.elements.bot_id.disabled = Boolean(item); form.elements.user_id.readOnly = Boolean(item);
   $("identity-dialog").showModal();
 }
-$("new-identity-binding").onclick = () => editIdentityBinding();
+$("identity-bot").onchange = async () => {
+  const botId = $("identity-bot").value, form = $("identity-form");
+  setIdentityOptions(form, "");
+  if (!botId) return;
+  try {
+    await refreshIdentityRoles(botId);
+    if ($("identity-bot").value === botId) setIdentityOptions(form, botId);
+  } catch(e) { $("identity-error").textContent = e.message; }
+};
+$("new-identity-binding").onclick = () => editIdentityBinding().catch(e => toast(e.message));
 $("identity-filter").onsubmit = event => { event.preventDefault(); identitiesPage = 1; void loadIdentityBindings(); };
 $("identity-bot-filter").onchange = () => { identitiesPage = 1; void loadIdentityBindings(); };
 $("identity-prev").onclick = () => { identitiesPage--; void loadIdentityBindings(); };
@@ -920,4 +956,62 @@ $("user-binding-form").onsubmit = async event => {
     $("user-binding-dialog").close(); toast("用户名称已保存，可在定时任务和发送消息中选择"); await loadUserBindings();
   } catch(e) { $("user-binding-error").textContent = e.message; }
   finally { submit.disabled = false; }
+};
+
+
+// 角色管理与绑定共用服务端目录，不在浏览器维护固定角色枚举。
+async function refreshIdentityRoles(botId) {
+  const data = await api(`/bots/${botId}/roles`);
+  botIdentityRoles.set(Number(botId), data.items);
+  return data.items;
+}
+let roleManagerBot = null, roleMutationPending = false;
+function editRole(item = null) {
+  const form = $("role-form"); form.reset(); $("role-error").textContent = "";
+  for (const key of ["id", "value", "label", "relationship", "member_name"]) form.elements[key].value = item?.[key] || "";
+  form.elements.value.readOnly = Boolean(item);
+  $("role-editor-title").textContent = item ? "编辑角色" : "新增角色";
+}
+async function reloadRoleManager() {
+  const botId = roleManagerBot;
+  const roles = await refreshIdentityRoles(botId);
+  if (botId !== roleManagerBot) return;
+  $("roles-list").replaceChildren();
+  if (!roles.length) $("roles-list").append(element("p", "尚无角色，请先添加角色再绑定用户。", "muted"));
+  for (const role of roles) {
+    const card = element("article", undefined, "provider-card");
+    card.append(element("h3", role.label), element("p", `编号：${role.value} · 预设称呼：${role.member_name || "不限"}`),
+      element("p", role.relationship || "未填写关系说明", "muted"));
+    const actions = element("div", undefined, "actions");
+    actions.append(button("编辑", () => { if (!roleMutationPending) editRole(role); }), button("删除", async () => {
+      if (roleMutationPending || !confirm(`删除角色“${role.label}”？已有用户绑定时会拒绝删除。`)) return;
+      roleMutationPending = true;
+      try {
+        await api(`/bots/${botId}/roles/${role.id}`, {method:"DELETE"});
+        toast("角色已删除"); editRole(); await reloadRoleManager();
+      } finally { roleMutationPending = false; }
+    }));
+    card.append(actions); $("roles-list").append(card);
+  }
+}
+async function openRoleManager(bot) {
+  if (roleMutationPending) return;
+  roleManagerBot = bot.id;
+  $("roles-title").textContent = `${botLabel(bot.id)} · 身份角色`;
+  editRole(); $("roles-list").replaceChildren();
+  await reloadRoleManager(); $("roles-dialog").showModal();
+}
+$("new-role").onclick = () => { if (!roleMutationPending) editRole(); };
+$("roles-dialog").addEventListener("cancel", event => { if (roleMutationPending) event.preventDefault(); });
+$("role-form").onsubmit = async event => {
+  event.preventDefault();
+  if (roleMutationPending || !roleManagerBot) return;
+  const form = event.currentTarget, data = Object.fromEntries(new FormData(form)), id = data.id, botId = roleManagerBot;
+  delete data.id; roleMutationPending = true; $("role-error").textContent = "";
+  const controls = [...$("roles-dialog").querySelectorAll("button,input")]; controls.forEach(node => node.disabled = true);
+  try {
+    await api(`/bots/${botId}/roles` + (id ? `/${id}` : ""), {method:id ? "PUT" : "POST", body:JSON.stringify(data)});
+    toast("角色已保存，下次对话生效"); editRole(); await reloadRoleManager();
+  } catch(e) { $("role-error").textContent = e.message; }
+  finally { roleMutationPending = false; controls.forEach(node => node.disabled = false); }
 };
