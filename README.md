@@ -4,7 +4,7 @@
 
 ## 模块文档导航
 
-按功能维护代码时先查 [模块文档索引](docs/README.md)：[智能体链路](docs/agent-flow.md)、[多模态处理](docs/multimodal.md)、[定时任务](docs/scheduled-tasks.md)、[QQ 接入与多机器人](docs/qq-runtime.md)、[后台与模型](docs/admin-and-models.md)、[主动发送](docs/proactive-messages.md)、[存储与记录](docs/storage.md)、[数据库迁移](docs/database-migrations.md)。AI 开发入口仍为根目录 [AGENTS.md](AGENTS.md)，其中提供按功能查阅规则。
+按功能维护代码时先查 [模块文档索引](docs/README.md)：[智能体链路](docs/agent-flow.md)、[多模态处理](docs/multimodal.md)、[定时任务](docs/scheduled-tasks.md)、[QQ 接入与多机器人](docs/qq-runtime.md)、[后台与模型](docs/admin-and-models.md)、[主动发送](docs/proactive-messages.md)、[存储与记录](docs/storage.md)、[数据库迁移](docs/database-migrations.md)、[数据库表结构（Agent）](docs/database-schema.md)。AI 开发入口仍为根目录 [AGENTS.md](AGENTS.md)，其中提供按功能查阅规则。
 
 模块文档集中说明当前实现、代码入口和边界；本 README 保留启动配置、操作说明和历史更新。原方案文档保留设计背景与待验收项，不将其视为全部已实现。本次整理仅核对文档与源码，未运行测试、迁移、浏览器或真实接口验证。
 

@@ -2,6 +2,8 @@
 
 使用 Alembic + SQLAlchemy + PyMySQL，复用项目根目录 .env 的 MYSQL_HOST、MYSQL_PORT、MYSQL_DATABASE、MYSQL_USER、MYSQL_PASSWORD。alembic.ini 不保存凭证。所有命令在项目根目录执行；迁移只作用于配置的项目库，本项目使用 qbot。
 
+表结构、字段语义与 Agent 排查入口见 [数据库表结构指南](database-schema.md)。
+
 ## 初始化及升级
 
 Docker 部署使用 `docker compose run --rm --no-deps qbot python -m alembic upgrade head`，版本查询将 `upgrade head` 替换为 `current`。先停止旧应用并备份，迁移成功后才启动新容器；启动不会自动迁移，完整步骤见 [Docker 部署](docker-deployment.md)。容器使用 Compose 注入的 MYSQL_* 环境变量，不需要将 `.env` 打入镜像。

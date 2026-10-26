@@ -1,6 +1,6 @@
 # 模块文档索引
 
-本文及下列模块文档于 2026-10-25 按工作区代码整理，仅做文档和源码核对，不表示测试或真实平台验收通过。启动、环境变量及历史更新见[项目 README](../README.md)，开发约定见[AGENTS.md](../AGENTS.md)。
+模块文档最初于 2026-10-25 按工作区代码整理，后续核对范围以各文档说明为准；2026-10-26 新增数据库表结构指南，已只读核对本地实际结构至 `0015_bot_roles`。这些说明不代表测试或真实平台验收通过。启动、环境变量及历史更新见[项目 README](../README.md)，开发约定见[AGENTS.md](../AGENTS.md)。
 
 ## 按功能查阅
 
@@ -15,6 +15,7 @@
 | 后台手动发文字/图片/语音、上传、发送幂等 | [主动发送](proactive-messages.md) | proactive.py、media.py、audio_codec.py |
 | 聊天记录、数据隔离、token 汇总、表职责与版本定位 | [存储与记录](storage.md) | storage.py、migrations/versions/ |
 | Token 统计菜单、机器人/对话/模型筛选、趋势与排行 | [存储与记录](storage.md)、[后台与模型](admin-and-models.md) | storage.py、admin.py、static/token-stats.js |
+| 数据库表、字段、索引、外键、隔离规则与 SQL 排查（Agent） | [数据库表结构指南](database-schema.md) | storage.py、migrations/versions/ |
 | 数据库初始化、升级命令、权限、迁移失败处理 | [数据库迁移](database-migrations.md) | alembic.ini、migrations/ |
 
 ## 阅读与维护顺序

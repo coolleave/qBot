@@ -27,6 +27,7 @@
 | 后台主动发送、图片/语音上传、发送幂等 | [docs/proactive-messages.md](docs/proactive-messages.md) |
 | 聊天记录、token 用量、数据隔离、表结构定位 | [docs/storage.md](docs/storage.md) |
 | Token 统计独立菜单、筛选、趋势与排行 | [docs/storage.md](docs/storage.md)、[docs/admin-and-models.md](docs/admin-and-models.md) |
+| 数据库表、字段、索引、外键、身份隔离及 SQL 排查 | [docs/database-schema.md](docs/database-schema.md) |
 | 数据库升级、迁移权限和失败处理 | [docs/database-migrations.md](docs/database-migrations.md) |
 
 现有 admin-plan.md、multimodal-plan.md 保留历史方案与待验收项；当前实现先看模块文档并核对代码，不把计划当成已支持。功能变化同步更新对应模块说明，新增模块同时更新此表和 docs/README.md。以上文档均不作为业务提示词。
