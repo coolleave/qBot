@@ -17,3 +17,23 @@
 
 #send-image-preview { max-width:100%; max-height:300px; object-fit:contain; }
 #send-audio-preview { width:100%; }
+.token-cards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin-bottom:20px; }
+.token-metric { margin:0; padding:20px; min-width:0; }
+.token-metric strong { display:block; font-size:28px; color:var(--accent); overflow-wrap:anywhere; }
+.token-metric small { display:block; margin-top:10px; color:var(--muted); }
+.token-rank-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.token-rank-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px 12px; margin:18px 0; }
+.token-rank-name { text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:2px 0; }
+.token-rank-value { align-self:center; font-variant-numeric:tabular-nums; }
+.token-track { grid-column:1 / -1; background:#eef3f0; border-radius:6px; overflow:hidden; height:10px; }
+.token-bar { height:100%; background:var(--accent); border-radius:6px; }
+.token-rank-row small { grid-column:1 / -1; }
+.token-trend { overflow-x:auto; }
+.token-trend svg { display:block; width:100%; height:240px; }
+.token-search { display:flex; align-items:end; gap:12px; margin-top:16px; }
+.token-search label { flex:1; }
+#tokens-page summary { cursor:pointer; padding:8px 0; color:var(--accent); }
+#tokens-page .card { margin-bottom:20px; }
+#token-filter select { max-width:340px; }
+@media(max-width:1000px) { .token-cards { grid-template-columns:repeat(2,minmax(0,1fr)); } .token-rank-grid { grid-template-columns:1fr; } }
+@media(max-width:600px) { .token-cards { grid-template-columns:1fr; } .token-rank-row { grid-template-columns:minmax(0,1fr); } .token-search { flex-direction:column; align-items:stretch; } }

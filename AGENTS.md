@@ -18,6 +18,7 @@
 
 | 需求涉及 | 优先阅读 |
 | --- | --- |
+| Docker 镜像、Compose、部署网络与更新 | [docs/docker-deployment.md](docs/docker-deployment.md) |
 | 智能体链路、人设、模型调用、上下文、回复 | [docs/agent-flow.md](docs/agent-flow.md) |
 | 图片/GIF、ASR/Filetrans、TTS、自动语音回复 | [docs/multimodal.md](docs/multimodal.md) |
 | 定时任务、早晚问候、每日去重、执行一次、文案生成 | [docs/scheduled-tasks.md](docs/scheduled-tasks.md) |
@@ -25,6 +26,7 @@
 | 后台登录、供应商、模型类型、身份及接收人绑定 | [docs/admin-and-models.md](docs/admin-and-models.md) |
 | 后台主动发送、图片/语音上传、发送幂等 | [docs/proactive-messages.md](docs/proactive-messages.md) |
 | 聊天记录、token 用量、数据隔离、表结构定位 | [docs/storage.md](docs/storage.md) |
+| Token 统计独立菜单、筛选、趋势与排行 | [docs/storage.md](docs/storage.md)、[docs/admin-and-models.md](docs/admin-and-models.md) |
 | 数据库升级、迁移权限和失败处理 | [docs/database-migrations.md](docs/database-migrations.md) |
 
 现有 admin-plan.md、multimodal-plan.md 保留历史方案与待验收项；当前实现先看模块文档并核对代码，不把计划当成已支持。功能变化同步更新对应模块说明，新增模块同时更新此表和 docs/README.md。以上文档均不作为业务提示词。

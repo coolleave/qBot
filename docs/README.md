@@ -6,6 +6,7 @@
 
 | 要处理的功能 | 优先阅读 | 主要代码 |
 | --- | --- | --- |
+| Docker 镜像、Compose、部署网络与更新 | [Docker 部署](docker-deployment.md) | Dockerfile、compose.yaml、.env.example |
 | 智能体链路、人设、上下文、回复与 token 提取 | [智能体链路与会话](agent-flow.md) | chat.py、recording.py、model.py |
 | 图片/GIF、ASR、Filetrans、TTS、自动语音 | [多模态处理](multimodal.md) | multimodal.py、vision.py、asr_filetrans.py、auto_voice.py |
 | 定时任务、可组合流程与模板、绑定用户选择、每日去重、执行一次 | [定时任务](scheduled-tasks.md) | greetings.py、greeting_workflows.py、proactive.py |
@@ -13,6 +14,7 @@
 | 管理员登录、供应商、模型类型、家庭身份和接收人绑定 | [后台与模型](admin-and-models.md) | admin.py、security.py、static/ |
 | 后台手动发文字/图片/语音、上传、发送幂等 | [主动发送](proactive-messages.md) | proactive.py、media.py、audio_codec.py |
 | 聊天记录、数据隔离、token 汇总、表职责与版本定位 | [存储与记录](storage.md) | storage.py、migrations/versions/ |
+| Token 统计菜单、机器人/对话/模型筛选、趋势与排行 | [存储与记录](storage.md)、[后台与模型](admin-and-models.md) | storage.py、admin.py、static/token-stats.js |
 | 数据库初始化、升级命令、权限、迁移失败处理 | [数据库迁移](database-migrations.md) | alembic.ini、migrations/ |
 
 ## 阅读与维护顺序

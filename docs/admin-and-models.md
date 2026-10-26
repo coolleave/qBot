@@ -4,7 +4,7 @@
 
 ## 后台与登录
 
-[admin.py](../qbot/admin.py) 提供 `/admin`、`/api/admin`；[security.py](../qbot/security.py) 负责密码哈希；[static/](../qbot/static) 为原生 HTML/CSS/JavaScript，无独立构建工程。页面展示登录界面，管理数据与操作由服务端鉴权。
+[admin.py](../qbot/admin.py) 提供 `/admin`、`/api/admin`；[security.py](../qbot/security.py) 负责密码哈希；[static/](../qbot/static) 使用 Vue 3 + Element Plus 组件及现有业务脚本，无独立构建工程。页面展示登录界面，管理数据与操作由服务端鉴权。
 
 ADMIN_ENABLED 控制后台模式。账号、密码哈希、会话签名密钥、数据库连接和加密主密钥仍来自本地环境；QQ 与供应商凭证由后台管理。
 
@@ -13,6 +13,10 @@ Cookie 签名且启用 HttpOnly / SameSite Strict；HTTPS 配置 ADMIN_COOKIE_SE
 写接口校验 X-QBot-Admin、Origin 同源和 X-CSRF-Token；登录尚无会话，采用来源校验。数据库不可用明确报错。新增路由复用鉴权依赖，不能只隐藏前端按钮。
 
 ## 模型类型与协议
+
+### Token 统计菜单（已编写，待验证）
+
+独立页面提供机器人、对话、模型、日期筛选，用量卡片、每日趋势和分组排行；使用原生 SVG/CSS，无外部图表依赖。对话支持关键词搜索及分页，排行可点击筛选。数据接口均要求管理员登录，加载失败清空旧图表并提示，避免把旧筛选结果当成新结果。用量口径和接口见[存储与记录](storage.md)。
 
 | model_type | 当前用途 | 实现 |
 | --- | --- | --- |
@@ -49,3 +53,17 @@ POST `/api/admin/providers/{provider_id}/speech` 接收 text、voice，返回 WA
 ## 维护
 
 表单改动通常涉及 admin.html、admin.js、admin.py 和 storage.py；结构变更新增手写迁移。登录问题看会话配置和数据库，模型问题看类型、协议、默认/绑定及启用状态。步骤见[数据库迁移](database-migrations.md)。本次未测试、未开浏览器、未调用真实模型。
+
+## Vue 3 界面重构（已编写，交互待验证）
+
+采用 Vue 3 + Element Plus 渐进式接入：登录、侧边导航、聊天表格与分页、全局提示由组件管理；供应商、多模态、发送和定时任务等现有表单继续复用业务脚本，统一视觉样式。Vue 管理独立挂载点，不接管旧表单 DOM，避免破坏原有事件与 FormData。静态依赖固定版本并随项目分发，不需要 Node 构建或浏览器访问 CDN。接口、鉴权、CSRF 和数据库结构保持现状。本次不运行测试、不打开浏览器，实际交互待人工验收。
+
+组件入口为 `admin-ui.js`，统一主题为 `admin-theme.css`；`admin.js` 负责请求、业务表单和页面切换，`token-stats.js` 保留统计逻辑。Vue 3.5.13、Element Plus 2.9.3 及许可文件保存在静态目录，来源见 `frontend-vendor.txt`。仅重构呈现，不新增接口或迁移。登录、菜单、表格、分页、状态标签与消息提示使用 Element Plus；复杂业务表单和原生 dialog 尚未全面迁移为 Vue 组件。
+
+本次完成源码引用、资源路径和脚本语法静态检查；未运行测试、浏览器、数据库或真实平台联调。更新后强制刷新 `/admin`；Docker 部署需重新构建镜像。
+
+## 大肥鱼主人身份（拟实现，待验证）
+
+身份角色新增 `owner`（主人），原有 father/mother/friend 保持兼容；角色只决定称呼，不赋予后台管理权限。已有 VARCHAR(16) 字段可容纳，无需迁移。聊天详情和身份绑定表单均提供主人选项，模型身份信息同步解释 owner。
+
+智能体 1 的大肥鱼人设补充宇老弟为主人、丁一哥为宇老弟的朋友。实际发送者仍只按该机器人后台绑定的 OpenID 识别，不根据昵称或自称自动绑定。宇老弟绑定 owner，丁一哥绑定 friend；两人的 OpenID 尚待确认。

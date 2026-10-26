@@ -4,7 +4,7 @@ import hmac
 import secrets
 import time
 from collections import deque
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from importlib.resources import files
 from typing import Literal
 from urllib.parse import urlsplit
@@ -82,7 +82,7 @@ class BotInput(QQInput):
 class FamilyBindingInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     member_name: str = Field(min_length=1, max_length=100)
-    family_role: Literal["father", "mother", "friend"]
+    family_role: Literal["father", "mother", "friend", "owner"]
     qq_number_note: str = Field(default="", max_length=20, pattern=r"^[0-9]*$")
 
 
@@ -339,6 +339,34 @@ def admin_router(settings: Settings) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
         return {"ok": True}
+
+    @router.get("/api/admin/token-stats/options", dependencies=[Depends(require_admin)])
+    async def token_stat_options(bot_id: int | None = Query(None, gt=0),
+                                 search: str = Query("", max_length=200),
+                                 page: int = Query(1, ge=1, le=100000), db: Store = Depends(store)) -> dict:
+        return await db.call("token_stat_options", bot_id=bot_id, search=search.strip(), page=page)
+
+    @router.get("/api/admin/token-stats", dependencies=[Depends(require_admin)])
+    async def token_stats(bot_id: int | None = Query(None, gt=0),
+                          conversation_id: int | None = Query(None, gt=0),
+                          model_name: str = Query("", max_length=200),
+                          start: date | None = None, end: date | None = None,
+                          db: Store = Depends(store)) -> dict:
+        beijing = timezone(timedelta(hours=8))
+        end = end or datetime.now(beijing).date()
+        if end.year < 1970 or end.year >= 9999:
+            raise HTTPException(400, "日期须在1970至9998年之间")
+        start = start or end - timedelta(days=29)
+        if start > end or (end - start).days >= 366:
+            raise HTTPException(400, "日期范围须为1至366天，开始日期不能晚于结束日期")
+        if start.year < 1970 or end.year >= 9999:
+            raise HTTPException(400, "日期须在1970至9998年之间")
+        # 页面日期包含结束当天，查询转换为 UTC 左闭右开区间。
+        lower = datetime.combine(start, datetime.min.time(), beijing).astimezone(timezone.utc).replace(tzinfo=None)
+        upper = datetime.combine(end + timedelta(days=1), datetime.min.time(), beijing).astimezone(timezone.utc).replace(tzinfo=None)
+        result = await db.call("token_statistics", start=lower, end=upper, bot_id=bot_id,
+                               conversation_id=conversation_id, model_name=model_name)
+        return {**result, "start": start.isoformat(), "end": end.isoformat(), "timezone": "Asia/Shanghai"}
 
     @router.get("/api/admin/records", dependencies=[Depends(require_admin)])
     async def records(page: int = Query(1, ge=1, le=100000), page_size: int = Query(20, ge=1, le=100),

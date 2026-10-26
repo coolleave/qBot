@@ -1,5 +1,7 @@
 # qBot 对话智能体
 
+当前版本：**V0.5**（包版本 `0.5.0`）。本版包含 Vue 3 / Element Plus 后台、独立 Token 统计、语音输出优化及 Docker 部署配置。界面与真实平台联调仍待验收，验证范围见各模块文档。
+
 ## 模块文档导航
 
 按功能维护代码时先查 [模块文档索引](docs/README.md)：[智能体链路](docs/agent-flow.md)、[多模态处理](docs/multimodal.md)、[定时任务](docs/scheduled-tasks.md)、[QQ 接入与多机器人](docs/qq-runtime.md)、[后台与模型](docs/admin-and-models.md)、[主动发送](docs/proactive-messages.md)、[存储与记录](docs/storage.md)、[数据库迁移](docs/database-migrations.md)。AI 开发入口仍为根目录 [AGENTS.md](AGENTS.md)，其中提供按功能查阅规则。
@@ -9,7 +11,9 @@
 
 ## 聊天 Token 统计（已编写，待联调）
 
-后台「聊天记录」显示每次聊天模型的输入、输出和总 token，顶部汇总当前机器人、时间、来源、群、用户及状态筛选范围内的全部记录，不受分页限制。输入用量包含模型实际接收的提示词和历史上下文；用量在解析回复和发送 QQ 消息前保存，发送失败仍保留已返回的消耗。QQ 私聊、群聊及启用后台的本地聊天共用统计。
+后台独立菜单「Token 统计」提供输入、输出、总用量及记录覆盖率卡片、每日柱状趋势、机器人/模型 Top 10 与对话 Top 20 排行。可按机器人、对话、历史模型名及日期组合筛选，默认最近30天，最多366天，日期按北京时间。对话可按名称、用户/群 OpenID、会话 ID 搜索并分页选择，点击排行可继续筛选；未知用量与无记录分别展示。「聊天记录」保留每条用量和详情。输入用量包含模型实际接收的提示词和历史上下文；用量在解析回复和发送 QQ 消息前保存，发送失败仍保留已返回的消耗。QQ 私聊、群聊及启用后台的本地聊天共用统计。
+
+可视化模块复用 `0012_token_usage` 字段，无新迁移、依赖或环境变量；已升级该版本的环境重启后端并刷新后台即可加载新菜单。新增管理员接口 `/api/admin/token-stats` 和 `/api/admin/token-stats/options`，前端入口为 `qbot/static/token-stats.js`。本次仅做静态核对，未运行测试、浏览器或数据库验证。
 
 仅统计供应商返回的聊天模型用量，优先读取 LangChain `usage_metadata`，兼容 `response_metadata.token_usage`。总数缺失但输入和输出齐全时相加；缺失字段显示「未知」，历史记录不回填，未调用模型的记录不计入已知用量。各项汇总只累加该项已知值，因此部分字段缺失时输入与输出的汇总不一定等于总量汇总。视觉、ASR、TTS、供应商试用、问候草稿及无后台模式不在本次统计范围，无法获得用量的失败请求也无法计量；该统计不能代替供应商账单，不估算费用。
 
@@ -31,6 +35,12 @@
 
 使用 Python + LangChain + DeepSeek 开发的个人 QQ 对话机器人。默认通过 WebSocket 接收 QQ 消息，保留 Webhook 可选；FastAPI 提供轻量管理后台。启用后台后，通过 MySQL 保存聊天记录与供应商配置；模型上下文仍保存在内存，单进程运行，每个机器人独立队列按顺序处理消息。
 
+## 后台界面更新（已编写，交互待验证）
+
+后台接入 Vue 3 + Element Plus：登录、导航、聊天表格与分页、状态标签和消息提示使用组件；其他业务表单保留并统一为浅色响应式主题。依赖随 `qbot/static/` 本地分发，无需安装 Node 或运行前端构建，也不依赖浏览器访问 CDN。组件入口 `admin-ui.js`，主题 `admin-theme.css`，详见 [后台与模型](docs/admin-and-models.md)。
+
+本地沿用原启动命令，更新后强制刷新 `/admin`；Docker 部署重新构建镜像。无新增环境变量或数据库迁移。仅做静态检查，未运行测试或浏览器验证。
+
 ## 当前进度
 
 - [x] 项目骨架、环境变量配置、独立业务提示词
@@ -49,6 +59,23 @@
 完成并验证后再勾选；离线验证不代表真实平台验收通过。
 
 ## 如何运行
+
+### Docker Compose 部署（已编写，待部署验证）
+
+长期运行可使用根目录 `compose.yaml` 和 `Dockerfile`，完整步骤见 [Docker 部署说明](docs/docker-deployment.md)。使用 Python 3.13、单进程运行，镜像包含 `config/` 和 `图片/`；复用已有 MySQL 的外部网络，不创建 MySQL 容器，启动不自动迁移。
+
+保留已有 `.env`，新机器才从 `.env.example` 复制。配置 `QBOT_DOCKER_NETWORK` 为已有 MySQL 所在的用户自定义网络，`MYSQL_HOST` 为该网络上的容器名/别名，`MYSQL_PORT` 为内部端口。含 `$` 的管理员密码哈希须用单引号包裹。完成配置、停止旧服务并备份数据库后执行：
+
+```sh
+docker compose build qbot
+docker compose run --rm --no-deps qbot python -m alembic upgrade head
+docker compose up -d qbot
+docker compose logs --tail=100 -f qbot
+```
+
+迁移成功后再启动。后台默认映射到宿主机 `127.0.0.1:8092`，可通过 SSH 隧道管理；`QBOT_BIND_IP` / `QBOT_HTTP_PORT` 可调整宿主机映射。当前未构建镜像、执行迁移或启动容器，Linux 依赖兼容性待实际部署确认。
+
+### 本地 Python 运行
 
 推荐 Python 3.13，本次验证版本为 Windows / Python 3.13.9。以下 PowerShell 命令在项目根目录执行，无需激活虚拟环境：
 
@@ -72,7 +99,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m qbot serve
 ```
 
-默认监听 `127.0.0.1:8080`，访问 `/admin` 管理配置，`/health` 仅表示 HTTP 进程正常，不代表 QQ 已连接。仅运行一个进程，不启用多 worker。
+默认监听 `127.0.0.1:8092`，访问 `/admin` 管理配置，`/health` 仅表示 HTTP 进程正常，不代表 QQ 已连接。仅运行一个进程，不启用多 worker。
 
 ### QQ 接入（默认 WebSocket，无需公网 IP）
 
@@ -87,7 +114,7 @@ python -m venv .venv
 
 ### 可选 Webhook
 
-在本项目后台及 QQ 开放平台同时选择 Webhook，保存后自动重新连接对应机器人。配置公网 HTTPS 地址 `https://你的域名/qq/webhook/{bot_id}`，通过反向代理转发到 `http://127.0.0.1:8080/qq/webhook/{bot_id}`，订阅 `GROUP_AT_MESSAGE_CREATE` 和 `C2C_MESSAGE_CREATE`。此模式需要公网入口。回调验签允许时间偏差 5 分钟，请保持服务器时钟同步。WebSocket 模式拒绝 Webhook 请求，避免同时接入。
+在本项目后台及 QQ 开放平台同时选择 Webhook，保存后自动重新连接对应机器人。配置公网 HTTPS 地址 `https://你的域名/qq/webhook/{bot_id}`，通过反向代理转发到 `http://127.0.0.1:8092/qq/webhook/{bot_id}`，订阅 `GROUP_AT_MESSAGE_CREATE` 和 `C2C_MESSAGE_CREATE`。此模式需要公网入口。回调验签允许时间偏差 5 分钟，请保持服务器时钟同步。WebSocket 模式拒绝 Webhook 请求，避免同时接入。
 
 ## 配置
 
@@ -103,7 +130,7 @@ python -m venv .venv
 | `QQ_APP_ID` / `QQ_APP_SECRET` | 仅无后台模式使用；后台模式在 QQ 配置页面填写 |
 | `QQ_API_BASE_URL` / `QQ_TOKEN_URL` | 官方生产地址，见 qbot/config.py |
 | `QQ_TIMEOUT_SECONDS` | QQ HTTP 请求超时 10 秒；后台单次回复另有 25 秒总时限 |
-| `HOST` / `PORT` | `127.0.0.1` / `8080` |
+| `HOST` / `PORT` | `127.0.0.1` / `8092` |
 | `SESSION_TTL_SECONDS` / `SESSION_MAX_TURNS` | 闲置 1800 秒过期，保存最近 10 轮 |
 | `SESSION_MAX_COUNT` | 最多 1000 个会话，达到上限淘汰最久未使用的会话 |
 | `MAX_INPUT_CHARS` / `MAX_REPLY_CHARS` | 输入上限 4000 字符，回复超过 1500 字符截断 |
@@ -151,7 +178,7 @@ MySQL 5.6 不依赖 CHECK 约束，业务校验由应用负责；群标识限制
 .\.venv\Scripts\python -m qbot serve
 ```
 
-访问 [http://127.0.0.1:8080/admin](http://127.0.0.1:8080/admin) 登录。先添加供应商，填写服务地址、模型及 API Key，启用后点击“设为默认”。编辑时密钥留空表示保留。默认项必须先切换才能停用；取消默认项后需要重新选择供应商才能聊天，不再回退到环境变量。
+访问 [http://127.0.0.1:8092/admin](http://127.0.0.1:8092/admin) 登录。先添加供应商，填写服务地址、模型及 API Key，启用后点击“设为默认”。编辑时密钥留空表示保留。默认项必须先切换才能停用；取消默认项后需要重新选择供应商才能聊天，不再回退到环境变量。
 
 后台模式不要求提前填写 QQ 或模型凭证，可先登录配置供应商。在「机器人管理」填写 AppID 和 AppSecret，首次保存或更换 AppID 时必须填写密钥，后续留空保留原值。保存后自动重新连接对应机器人使 QQ 配置生效。QQ AppSecret 与模型 API Key 均使用本地加密主密钥加密后保存到 MySQL，查询接口只返回掩码；AppID 是公开标识，正常展示。已有 `.env` 凭证不会自动导入或删除，后台模式会忽略它们。QQ 入口缺少凭证时返回 503。保存模型供应商配置不调用模型，下一次聊天才使用新配置；同样支持 `chat` 模式的本地记录。`/reset` 清空上下文，不删除历史。
 

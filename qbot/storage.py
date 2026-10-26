@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import MetaData, create_engine, func, select
+from sqlalchemy import MetaData, String, cast, create_engine, func, literal_column, select
 from sqlalchemy.engine import Engine, URL
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -412,6 +412,71 @@ class Store:
             return {"items": [dict(row) for row in rows], "total": count, "page": page,
                     "page_size": page_size, "token_usage": usage}
 
+    def token_stat_options(self, bot_id: int | None = None, search: str = "", page: int = 1) -> dict:
+        """会话选项分页查询，模型使用历史快照，避免配置改名后无法筛选。"""
+        r, c, b = self.records, self.conversations, self.bots
+        filters = [c.c.bot_id == bot_id] if bot_id is not None else []
+        if search:
+            filters.append(c.c.user_id.contains(search, autoescape=True)
+                | c.c.group_id.contains(search, autoescape=True)
+                | c.c.contact_name.contains(search, autoescape=True)
+                | (cast(c.c.id, String) == search))
+        with self.engine.connect() as conn:
+            bots = conn.execute(select(b.c.id, b.c.name).order_by(b.c.id)).mappings().all()
+            models = select(r.c.model_name_snapshot).where(r.c.model_name_snapshot.is_not(None))
+            if bot_id is not None:
+                models = models.where(r.c.bot_id == bot_id)
+            model_names = conn.execute(models.distinct().order_by(r.c.model_name_snapshot)).scalars().all()
+            count = conn.execute(select(func.count()).select_from(c).where(*filters)).scalar_one()
+            conversations = conn.execute(select(c.c.id, c.c.bot_id, c.c.source, c.c.group_id,
+                c.c.user_id, c.c.contact_name).where(*filters).order_by(c.c.id.desc())
+                .offset((page - 1) * 50).limit(50)).mappings().all()
+            return {"bots": [dict(row) for row in bots], "models": model_names,
+                    "conversations": [dict(row) for row in conversations], "total": count,
+                    "page": page, "page_size": 50}
+
+    def token_statistics(self, *, start: datetime, end: datetime, bot_id: int | None = None,
+                         conversation_id: int | None = None, model_name: str = "") -> dict:
+        """在数据库内聚合，所有图表使用同一组条件及北京时间日期边界。"""
+        r, c, b = self.records, self.conversations, self.bots
+        joined = r.join(c, (r.c.conversation_id == c.c.id) & (r.c.bot_id == c.c.bot_id)).join(b, r.c.bot_id == b.c.id)
+        filters = [r.c.received_at >= start, r.c.received_at < end]
+        if bot_id is not None:
+            filters.append(r.c.bot_id == bot_id)
+        if conversation_id is not None:
+            filters.append(r.c.conversation_id == conversation_id)
+        if model_name:
+            filters.append(r.c.model_name_snapshot == model_name)
+        measures = [func.count().label("records"), func.count(r.c.total_tokens).label("known_records"),
+            *(func.sum(r.c[name]).label(name) for name in ("input_tokens", "output_tokens", "total_tokens"))]
+        day = func.date(func.timestampadd(literal_column("HOUR"), 8, r.c.received_at))
+
+        def serialize(row) -> dict:
+            result = dict(row)
+            for name in ("records", "known_records", "input_tokens", "output_tokens", "total_tokens"):
+                if result.get(name) is not None:
+                    result[name] = int(result[name])
+            if "day" in result:
+                result["day"] = str(result["day"])
+            return result
+
+        with self.engine.connect() as conn:
+            summary = conn.execute(select(*measures).select_from(joined).where(*filters)).mappings().one()
+            daily = conn.execute(select(day.label("day"), *measures).select_from(joined)
+                .where(*filters).group_by(day).order_by(day)).mappings().all()
+
+            def ranking(columns: list, limit: int) -> list[dict]:
+                rows = conn.execute(select(*columns, *measures).select_from(joined).where(*filters)
+                    .group_by(*columns).order_by(func.sum(r.c.total_tokens).desc(), *columns)
+                    .limit(limit)).mappings().all()
+                return [serialize(row) for row in rows]
+
+            return {"summary": serialize(summary), "daily": [serialize(row) for row in daily],
+                "bots": ranking([r.c.bot_id, b.c.name], 10),
+                "models": ranking([r.c.model_name_snapshot], 10),
+                "conversations": ranking([r.c.conversation_id, r.c.bot_id, c.c.source,
+                    c.c.group_id, c.c.user_id, c.c.contact_name], 20)}
+
     def send_targets(self, bot_id: int, source: str, page: int = 1) -> dict:
         """按实际投递范围去重；群内不同用户只显示一个群目标。"""
         r, c = self.records, self.conversations
@@ -461,7 +526,7 @@ class Store:
                 note = values.get("qq_number_note", "").strip()
                 if not name or len(name) > 100 or any(ord(ch) < 32 for ch in name):
                     raise ValueError("姓名需为 1 至 100 字符且不能包含控制字符")
-                if role not in ("father", "mother", "friend"):
+                if role not in ("father", "mother", "friend", "owner"):
                     raise ValueError("无效的家庭角色")
                 if len(note) > 20 or any(ch not in "0123456789" for ch in note):
                     raise ValueError("QQ 备注只能填写最多 20 位数字")

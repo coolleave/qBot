@@ -35,6 +35,14 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 
 ## 迁移定位
 
+### Token 可视化模块（已编写，待验证）
+
+后台独立「Token 统计」菜单复用现有 token 字段，不新增数据库迁移。`GET /api/admin/token-stats` 按机器人、conversation_id、历史模型名及北京时间日期范围聚合，默认最近30天，最多366天；返回概览、每日已知总量，以及机器人/模型前10、对话前20排行。所有筛选同时生效，统计在数据库聚合，不拉取全部聊天内容。未知值仍为 NULL，不计作零；无记录日期与有记录但缺少用量的日期分别显示。
+
+`GET /api/admin/token-stats/options` 提供机器人、历史模型及可搜索的会话选项，会话每页50条。对话按现有机器人＋来源＋群＋用户隔离，显示 ID 和范围，切换机器人清空会话选择。模型名来自记录快照，同名模型跨供应商合并。两接口沿用管理员鉴权。入口为 Store.token_statistics、Store.token_stat_options、admin.py 和 static/token-stats.js。统计范围沿用聊天模型，不扩展视觉/语音用量。
+
+聊天记录页保留每条 token 及详情，将可视化汇总集中到独立菜单。未运行测试、浏览器或数据库验证。
+
 | 版本 | 变化 |
 | --- | --- |
 | 0001_initial | 初始供应商、配置、会话和记录 |

@@ -7,11 +7,12 @@ function updateBotLabels() {
   document.querySelectorAll("[data-bot-label]").forEach(node => {
     node.textContent = botLabel(node.dataset.botLabel);
   });
+  ui.records = [...ui.records];
   if (detailRecord) renderDetailMeta(detailRecord);
 }
 const labels = {pending:"等待处理",processing:"处理中",replied:"已回复",model_failed:"模型失败",send_failed:"发送失败",delivery_unknown:"送达未知",expired:"已过期",rejected:"已拒绝"};
-function toast(message) { $("toast").textContent = message; $("toast").hidden = false; clearTimeout(toast.timer); toast.timer = setTimeout(() => $("toast").hidden = true, 4500); }
-function loggedOut() { $("bot-form").reset(); csrf = ""; $("workspace").hidden = true; $("login-screen").hidden = false; document.querySelectorAll("dialog[open]").forEach(d => d.close()); }
+function toast(message) { ElementPlus.ElMessage({message, duration:4500, showClose:true, grouping:true, customClass:"console-message", appendTo:document.querySelector("dialog[open]") || document.body}); }
+function loggedOut() { $("bot-form").reset(); csrf = ""; recordsRequest++; ui.records = []; ui.total = 0; ui.loading = false; ui.username = ""; $("workspace").hidden = true; $("login-screen").hidden = false; document.querySelectorAll("dialog[open]").forEach(d => d.close()); }
 async function api(path, options = {}) {
   const response = await fetch("/api/admin" + path, {credentials:"same-origin", ...options, headers:{"Content-Type":"application/json", "X-QBot-Admin":"1", "X-CSRF-Token":csrf, ...options.headers}});
   let data; try { data = await response.json(); } catch { throw new Error("服务器响应异常，请稍后重试"); }
@@ -34,7 +35,7 @@ async function generateSpeech(providerId, text, voice = "Bunny") {
 }
 async function enter() {
   const state = await api("/session"); csrf = state.csrf_token;
-  $("username").textContent = state.username; $("login-screen").hidden = true; $("workspace").hidden = false;
+  switchPage("records"); ui.username = state.username; $("login-screen").hidden = true; $("workspace").hidden = false;
   const warnings = []; if (!state.qq_configured) warnings.push("暂无运行中的机器人，请到机器人管理中配置并启动。");
 
   $("notice").textContent = warnings.join(" "); $("notice").hidden = !warnings.length;
@@ -48,32 +49,21 @@ function button(text, action) { const node = element("button", text, "row-action
 async function loadRecords() {
   const request = ++recordsRequest, params = new URLSearchParams({page:String(currentPage),page_size:"20"});
   for (const [name,value] of new FormData($("filter-form"))) if(value) params.set(name, ["start","end"].includes(name) ? new Date(value).toISOString() : value.trim());
+  ui.loading = true; ui.recordError = "";
   $("record-count").textContent = "正在加载…";
-  $("token-summary").textContent = "正在加载…";
   let data;
   try { data = await api("/records?" + params); }
   catch (error) {
     if (request === recordsRequest) {
-      $("token-summary").textContent = "统计加载失败，请刷新重试";
       $("record-count").textContent = "加载失败";
+      ui.loading = false; ui.records = []; ui.total = 0; ui.recordError = error.message;
     }
     throw error;
   }
   if(request !== recordsRequest) return;
-  const usage = data.token_usage;
-  $("token-summary").textContent = usage
-    ? `已知输入 ${tokenNumber(usage.input_tokens)} · 已知输出 ${tokenNumber(usage.output_tokens)} · 已知总计 ${tokenNumber(usage.total_tokens)} token · ${usage.known_records} / ${usage.records} 条记录有总用量`
-    : "当前服务尚未提供 Token 统计，请升级后端";
-  $("records-body").replaceChildren(); $("records-empty").hidden = data.items.length > 0;
-  $("record-count").textContent = `共 ${data.total} 条`; $("page-info").textContent = `第 ${data.page} / ${Math.max(1, Math.ceil(data.total / data.page_size))} 页`;
-  $("prev-page").disabled = currentPage <= 1; $("next-page").disabled = currentPage * data.page_size >= data.total;
-  for(const item of data.items) {
-    const row = element("tr"), timeCell = element("td", date(item.received_at)); const botName = element("small", botLabel(item.bot_id)); botName.dataset.botLabel = item.bot_id; timeCell.append(botName); timeCell.append(element("small", ({qq_group:"QQ 群聊",qq_c2c:"QQ 私聊",local:"本地聊天"}[item.source] || item.source))); row.append(timeCell);
-    const identity = element("td", item.source === "qq_c2c" ? "私聊" : item.group_id); identity.append(element("small", item.user_id)); row.append(identity, element("td", item.question), element("td", item.model_name_snapshot || "—"));
-    const status = element("td"); status.append(element("span", labels[item.status] || item.status, "badge " + item.status)); row.append(status);
-    row.insertBefore(element("td", tokenText(item)), status);
-    const action = element("td"); action.append(button("查看 →", () => showDetail(item.id))); row.append(action); $("records-body").append(row);
-  }
+  ui.records = data.items; ui.total = data.total; ui.recordPage = data.page; ui.pageSize = data.page_size; ui.loading = false;
+  $("record-count").textContent = `共 ${data.total} 条`;
+
 }
 let detailRecord = null;
 function renderDetailMeta(item) {
@@ -208,18 +198,16 @@ function editProvider(item) {
   showProviderPreset();
   $("provider-title").textContent = item ? "编辑供应商" : "添加供应商"; $("provider-dialog").showModal();
 }
-$("login-form").onsubmit = async event => {event.preventDefault(); const form = event.currentTarget, submit = form.querySelector("button"); submit.disabled = true; $("login-error").textContent = ""; try {await api("/login", {method:"POST",body:JSON.stringify(Object.fromEntries(new FormData(form)))}); form.elements.password.value = ""; await enter();} catch(e) {$("login-error").textContent = e.message; toast(e.message);} finally {submit.disabled = false;}};
-$("logout").onclick = async () => {try {await api("/logout", {method:"POST"}); loggedOut();} catch(e) {toast(e.message);}};
-document.querySelectorAll("[data-page]").forEach(node => node.onclick = () => {
-  const page = node.dataset.page;
-  document.querySelectorAll("[data-page]").forEach(n => n.classList.toggle("active", n === node));
-  for (const name of ["records", "providers", "bots", "messages", "greetings", "bindings", "identities"]) $(name + "-page").hidden = page !== name;
-  $("page-name").textContent = {records:"聊天记录",providers:"模型供应商",bots:"机器人管理",messages:"发送消息",greetings:"定时任务",bindings:"用户绑定",identities:"身份绑定"}[page];
+function switchPage(page) {
+  if (!pages.some(item => item[0] === page)) return;
+  ui.page = page;
+  for (const [name] of pages) $(name + "-page").hidden = page !== name;
+  if (page === "tokens") void openTokenStats();
   if (page === "identities") void loadIdentityBindings();
   if (page === "bindings") void loadUserBindings();
   if (page === "greetings") void loadGreetingTargets();
   if (page === "messages") void loadSendTargets().catch(e => toast(e.message));
-});
+}
 document.querySelectorAll("[data-close]").forEach(node => node.onclick = () => $(node.dataset.close).close());
 $("provider-dialog").addEventListener("close", () => $("provider-form").elements.api_key.value = "");
 $("new-provider").onclick = () => editProvider(null);
@@ -228,8 +216,6 @@ $("provider-form").onsubmit = async event => {event.preventDefault(); const form
 $("filter-form").onsubmit = event => {event.preventDefault();currentPage = 1;loadRecords().catch(e => toast(e.message));};
 $("reset-filters").onclick = () => {$("filter-form").reset();currentPage = 1;loadRecords().catch(e => toast(e.message));};
 $("refresh-records").onclick = () => loadRecords().catch(e => toast(e.message));
-$("prev-page").onclick = () => {currentPage--;loadRecords().catch(e => toast(e.message));};
-$("next-page").onclick = () => {currentPage++;loadRecords().catch(e => toast(e.message));};
 enter().catch(e => {if(!$("workspace").hidden) toast(e.message);});
 
 async function loadBots() {
@@ -845,7 +831,7 @@ async function loadIdentityBindings() {
         toast("身份已解除，下次对话生效"); await loadIdentityBindings();
       }));
       row.append(bot, element("td", item.user_id), element("td", item.member_name || "未绑定"),
-        element("td", ({father:"爸爸",mother:"妈妈",friend:"朋友"})[item.family_role] || "—"),
+        element("td", ({father:"爸爸",mother:"妈妈",friend:"朋友",owner:"主人"})[item.family_role] || "—"),
         element("td", item.qq_number_note || "—"), actions);
       $("identities-body").append(row);
     }
