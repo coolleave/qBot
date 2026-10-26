@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CATALOG_PATH = PROJECT_ROOT / "config" / "scheduled_templates.json"
+STYLE_ROOT = Path(__file__).resolve().parent / "prompts" / "greeting_styles"
 
 
 class GreetingWorkflow(BaseModel):
@@ -16,6 +17,7 @@ class GreetingWorkflow(BaseModel):
     image_source: Literal["none", "upload", "library"] = "none"
     output: Literal["text", "audio"] = "text"
     library_id: str | None = Field(default=None, max_length=80)
+    prompt_style: str | None = Field(default=None, max_length=80, pattern=r"^[a-z][a-z0-9_]*$")
 
     @model_validator(mode="after")
     def validate_library(self):
@@ -23,6 +25,8 @@ class GreetingWorkflow(BaseModel):
             raise ValueError("随机图片需选择素材库")
         if self.image_source != "library":
             self.library_id = None
+        if self.prompt_style and not (STYLE_ROOT / f"{self.prompt_style}.txt").is_file():
+            raise ValueError("问候文案风格不存在，请重新选择")
         return self
 
 
@@ -40,10 +44,17 @@ class Template(BaseModel):
     workflow: GreetingWorkflow
 
 
+class PromptStyle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(max_length=80, pattern=r"^[a-z][a-z0-9_]*$")
+    name: str = Field(min_length=1, max_length=100)
+
+
 class Catalog(BaseModel):
     model_config = ConfigDict(extra="forbid")
     libraries: list[Library]
     templates: list[Template]
+    prompt_styles: list[PromptStyle] = Field(default_factory=list)
 
 
 def load_catalog() -> Catalog:
@@ -53,7 +64,12 @@ def load_catalog() -> Catalog:
         templates = {item.id for item in catalog.templates}
         if len(libraries) != len(catalog.libraries) or len(templates) != len(catalog.templates) or "custom" in templates:
             raise ValueError("模板或素材库标识重复，custom 为保留名称")
+        styles = {item.id for item in catalog.prompt_styles}
+        if len(styles) != len(catalog.prompt_styles) or any(not (STYLE_ROOT / f"{style}.txt").is_file() for style in styles):
+            raise ValueError("文案风格重复或提示词文件不存在")
         for item in catalog.templates:
+            if item.workflow.prompt_style and item.workflow.prompt_style not in styles:
+                raise ValueError("模板引用了未注册的文案风格")
             if item.workflow.image_source == "library" and item.workflow.library_id not in libraries:
                 raise ValueError("模板引用了不存在的素材库")
         return catalog
@@ -74,5 +90,5 @@ def resolve_workflow(delivery: dict) -> GreetingWorkflow:
 
 def public_catalog() -> dict:
     catalog = load_catalog()
-    return {"templates": [item.model_dump() for item in catalog.templates],
+    return {"prompt_styles": [item.model_dump() for item in catalog.prompt_styles], "templates": [item.model_dump() for item in catalog.templates],
             "libraries": [{"id": item.id, "name": item.name} for item in catalog.libraries]}

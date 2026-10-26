@@ -403,11 +403,12 @@ function greetingWorkflow(slot) {
   const fields = $("greeting-form").elements;
   return {version:1, content_source:fields[slot + "_content_source"].value,
     image_source:fields[slot + "_image_source"].value, output:fields[slot + "_output"].value,
+    prompt_style:fields[slot + "_prompt_style"].value || null,
     library_id:fields[slot + "_image_source"].value === "library" ? fields[slot + "_library_id"].value || null : null};
 }
 function fillGreetingWorkflow(slot, workflow) {
   const fields = $("greeting-form").elements;
-  for (const key of ["content_source", "image_source", "output", "library_id"]) fields[slot + "_" + key].value = workflow[key] || "";
+  for (const key of ["content_source", "image_source", "output", "library_id", "prompt_style"]) fields[slot + "_" + key].value = workflow[key] || "";
   updateGreetingMedia(slot);
 }
 function updateGreetingMedia(slot) {
@@ -417,6 +418,7 @@ function updateGreetingMedia(slot) {
   $(slot + "-library-field").hidden = workflow.image_source !== "library";
   form.elements[slot + "_library_id"].required = workflow.image_source === "library";
   $(slot + "-preset-note").hidden = !ai;
+  $(slot + "-style-field").hidden = !ai;
   form.elements[slot + "_content"].required = !ai;
   form.elements[slot + "_content"].parentElement.hidden = ai;
   $(slot + "-preview").hidden = ai;
@@ -432,7 +434,7 @@ for (const slot of ["morning", "noon", "evening"]) {
     if (template) fillGreetingWorkflow(slot, template.workflow);
     greetingDirty = true;
   };
-  for (const key of ["content_source", "image_source", "output", "library_id"]) {
+  for (const key of ["content_source", "image_source", "output", "library_id", "prompt_style"]) {
     fields[slot + "_" + key].onchange = () => {
       fields[slot + "_delivery_mode"].value = "custom";
       greetingDirty = true;
@@ -500,6 +502,10 @@ async function openGreetings(item) {
     const librarySelect = form.elements[rule.slot + "_library_id"];
     librarySelect.replaceChildren(new Option("请选择素材库", ""), ...greetingCatalog.libraries.map(l => new Option(l.name, l.id)));
     if (rule.workflow.library_id && !greetingCatalog.libraries.some(l => l.id === rule.workflow.library_id)) librarySelect.add(new Option("原素材库不可用，请重新选择", rule.workflow.library_id));
+    const styleSelect = form.elements[rule.slot + "_prompt_style"];
+    const styles = greetingCatalog.prompt_styles || [];
+    styleSelect.replaceChildren(new Option("按机器人人设", ""), ...styles.map(s => new Option(s.name, s.id)));
+    if (rule.workflow.prompt_style && !styles.some(s => s.id === rule.workflow.prompt_style)) styleSelect.add(new Option("已保存风格：" + rule.workflow.prompt_style, rule.workflow.prompt_style));
     fillGreetingWorkflow(rule.slot, rule.workflow);
     form.elements[rule.slot + "_voice"].value = rule.voice || "Bunny";
     const tts = form.elements[rule.slot + "_tts_provider_id"];

@@ -90,7 +90,8 @@ class ProactiveSender:
                         bot = next(item for item in bots if item["id"] == bot_id)
                         record = await self.store.call("record_detail", task["record_id"])
                         task["content"] = await generate_greeting(self.settings, provider,
-                            bot.get("system_prompt") or "", record, task["slot"], description, output=workflow.output)
+                            bot.get("system_prompt") or "", record, task["slot"], description, output=workflow.output,
+                            prompt_style=workflow.prompt_style)
                         if len(task["content"]) > self.settings.max_reply_chars:
                             raise GreetingGenerationError("生成文案超过消息长度上限，未发送")
                         stage = "保存生成文案"

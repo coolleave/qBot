@@ -32,5 +32,5 @@ qbot = "qbot.__main__:main"
 include = ["qbot*"]
 
 [tool.setuptools.package-data]
-qbot = ["prompts/*.txt", "static/*"]
+qbot = ["prompts/*.txt", "prompts/greeting_styles/*.txt", "static/*"]
 

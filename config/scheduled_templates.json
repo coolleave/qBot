@@ -56,6 +56,23 @@
         "output": "audio",
         "library_id": "kittens"
       }
+    },
+    {
+      "id": "dafeiyu_greeting",
+      "name": "大肥鱼 · 两位牢弟搞怪问候",
+      "workflow": {
+        "content_source": "ai",
+        "image_source": "none",
+        "output": "text",
+        "library_id": null,
+        "prompt_style": "dafeiyu"
+      }
+    }
+  ],
+  "prompt_styles": [
+    {
+      "id": "dafeiyu",
+      "name": "大肥鱼 · 两位牢弟搞怪问候"
     }
   ]
 }
