@@ -14,7 +14,10 @@ RUN sed -i \
 RUN python -m venv /opt/venv
 COPY pyproject.toml constraints.txt ./
 COPY qbot/ ./qbot/
-RUN /opt/venv/bin/python -m pip install -c constraints.txt .
+# 环境变量同时传给 pip 的隔离构建子进程，构建依赖也使用清华源。
+RUN PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    PIP_DEFAULT_TIMEOUT=60 \
+    /opt/venv/bin/python -m pip install -c constraints.txt .
 
 FROM python:3.13-slim-bookworm AS runtime
 

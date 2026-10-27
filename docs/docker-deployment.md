@@ -2,7 +2,7 @@
 
 ## 构建下载源（已配置，实验室网络待验证）
 
-Dockerfile 的构建与运行阶段均使用清华 TUNA 的 Debian / Debian Security HTTPS 镜像，保留 Debian 官方签名校验，解决 apt 索引和软件包下载慢的问题。不修改宿主机的软件源。移除额外 Dockerfile frontend 下载，使用 Docker 自带构建语法；Python 基础镜像仍来自 Docker Hub，pip 仍使用原包源，本次不调整依赖版本。未实际构建镜像或运行测试。
+Dockerfile 的构建与运行阶段均使用清华 TUNA 的 Debian / Debian Security HTTPS 镜像，保留 Debian 官方签名校验。不修改宿主机的软件源。移除额外 Dockerfile frontend 下载，使用 Docker 自带构建语法；Python 基础镜像仍来自 Docker Hub。pip 安装阶段（含隔离构建依赖）显式使用 `https://pypi.tuna.tsinghua.edu.cn/simple`，网络超时设为 60 秒，保持 HTTPS 证书校验，不修改本地虚拟环境的 pip 配置。依赖继续由 constraints.txt 锁定；包源版本可用不代表 Linux 安装或整套依赖兼容性已经验证，需以实际镜像构建为准。未实际构建镜像或运行测试。
 
 已编写配置：Python 3.13 单实例应用容器，复用已有 MySQL，通过外部 Docker 网络连接；镜像包含后台静态文件、提示词、迁移、定时模板和图片素材。数据库升级独立执行，不随启动自动迁移。未构建镜像或进行部署联调，Linux 依赖安装与运行待验证。
 
