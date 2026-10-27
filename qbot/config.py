@@ -13,10 +13,10 @@ class Settings(BaseSettings):
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_model: str = "deepseek-flash"
     deepseek_base_url: str = "https://api.deepseek.com"
-    model_timeout_seconds: float = Field(45, gt=0, le=120)
+    model_timeout_seconds: float = Field(120, gt=0, le=120)
     model_max_retries: int = Field(1, ge=0, le=2)
     model_max_tokens: int = Field(4096, ge=1, le=8192)
-    chat_timeout_seconds: float = Field(90, gt=0, le=120)
+    chat_timeout_seconds: float = Field(120, gt=0, le=120)
     qq_transport: Literal["websocket", "webhook"] = "websocket"
     qq_app_id: str = ""
     qq_app_secret: SecretStr = SecretStr("")

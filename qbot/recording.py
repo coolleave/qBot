@@ -51,7 +51,8 @@ class RecordedChat:
                     provider_id=provider["id"] if provider else None,
                     provider_name_snapshot=provider["name"] if provider else None,
                     model_name_snapshot=provider["model_name"] if provider else None)
-                config = self.settings.model_copy(update={"model_max_retries": 0, "model_timeout_seconds": 45})
+                # 沿用配置的请求超时，仅禁止后台聊天自动重试。
+                config = self.settings.model_copy(update={"model_max_retries": 0})
                 model = provider_model(config, provider)
 
             async def deliver(value: str) -> None:
