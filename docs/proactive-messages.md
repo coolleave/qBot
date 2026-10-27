@@ -24,6 +24,8 @@ POST `/api/admin/bots/{bot_id}/records/{record_id}/send` 接收 content、UUID r
 
 ## 幂等与阶段
 
+局域网 HTTP 兼容（已编写，交互待验证）：前端统一通过 createRequestId 生成 UUID v4；优先使用 crypto.randomUUID，不支持时使用 crypto.getRandomValues 生成随机字节并设置版本位。用于文字/媒体发送及新建定时任务标识，原有重试复用 request_id 的逻辑不变；缺少安全随机数 API 时明确报错，不使用 Math.random 替代。未运行测试或浏览器验证。
+
 发送期间持有 BotManager.lock，避免启停替换凭证；手动和定时共用主动每目标/全局限流，与被动接收独立。
 
 先以 `admin-send:` 加 request_id 创建独立记录，按数据库机器人及会话范围去重。重复请求返回原结果，不再发送；同标识用于不同内容报冲突。网络出错前端保留标识，不能每次重试都换 ID。

@@ -1,4 +1,17 @@
 "use strict";
+function createRequestId() {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === "function") return cryptoApi.randomUUID();
+  // 局域网 HTTP 不提供 randomUUID，但通常仍提供安全随机数 API。
+  if (typeof cryptoApi?.getRandomValues !== "function") {
+    throw new Error("浏览器不支持安全随机数，请升级浏览器或使用 HTTPS 访问后台");
+  }
+  const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, value => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 const $ = id => document.getElementById(id);
 let csrf = "", currentPage = 1, providers = [], defaultProvider = null, recordsRequest = 0;
 const botNames = new Map();
@@ -711,7 +724,7 @@ $("send-audio-preview").onerror = () => {
 $("send-dialog").addEventListener("close", () => { clearMediaPreview(); generatedSpeech = null; $("send-form").elements.media_file.value = ""; sendPayload = null; });
 function composeMessage(item) {
   if (!item || sendPending) return;
-  sendTarget = {botId:item.bot_id, recordId:item.id, source:item.source, requestId:crypto.randomUUID()};
+  sendTarget = {botId:item.bot_id, recordId:item.id, source:item.source, requestId:createRequestId()};
   sendPayload = null;
   const form = $("send-form"); form.reset(); form.elements.content.readOnly = false;
   // 每次编写按目标机器人初始化，临时选择仅影响当前消息。
@@ -795,7 +808,7 @@ async function loadGreetingRecipients() {
       const row = element("tr"), name = element("td", item.contact_name), action = element("td");
       name.append(element("small", item.user_id));
       action.append(button("选择并新建", async () => {
-        await openGreetings({...item, task_key:crypto.randomUUID()});
+        await openGreetings({...item, task_key:createRequestId()});
         $("greeting-recipient-dialog").close();
       }));
       row.append(name, element("td", item.source === "qq_c2c" ? "私聊 · 仅此用户" : "群聊 · 整个群 " + groupDisplay(item)), action);

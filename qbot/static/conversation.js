@@ -178,7 +178,7 @@ $("chat-composer").onsubmit = async event => {
   const target = {...chatTarget}, key = chatKey(target), draft = chatDraft(target);
   if (!draft.pending) {
     const content = $("chat-text").value.trim(); if (!content) return;
-    draft.text = content; draft.pending = {requestId:crypto.randomUUID(),content};
+    draft.text = content; draft.pending = {requestId:createRequestId(),content};
   }
   const pending = draft.pending;
   chatSending = true; draft.result = "正在发送，请稍候…"; updateChatComposer();
