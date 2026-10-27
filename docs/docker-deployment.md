@@ -1,5 +1,9 @@
 # Docker Compose 部署
 
+## 构建下载源（已配置，实验室网络待验证）
+
+Dockerfile 的构建与运行阶段均使用清华 TUNA 的 Debian / Debian Security HTTPS 镜像，保留 Debian 官方签名校验，解决 apt 索引和软件包下载慢的问题。不修改宿主机的软件源。移除额外 Dockerfile frontend 下载，使用 Docker 自带构建语法；Python 基础镜像仍来自 Docker Hub，pip 仍使用原包源，本次不调整依赖版本。未实际构建镜像或运行测试。
+
 已编写配置：Python 3.13 单实例应用容器，复用已有 MySQL，通过外部 Docker 网络连接；镜像包含后台静态文件、提示词、迁移、定时模板和图片素材。数据库升级独立执行，不随启动自动迁移。未构建镜像或进行部署联调，Linux 依赖安装与运行待验证。
 
 ## 环境和配置

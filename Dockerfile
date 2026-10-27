@@ -1,11 +1,14 @@
-# syntax=docker/dockerfile:1
 FROM python:3.13-slim-bookworm AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
 WORKDIR /build
 # 音频库在没有对应平台 wheel 时需要编译；工具不进入最终镜像。
-RUN apt-get update \
+RUN sed -i \
+        -e 's|http://deb.debian.org/debian-security|https://mirrors.tuna.tsinghua.edu.cn/debian-security|g' \
+        -e 's|http://deb.debian.org/debian|https://mirrors.tuna.tsinghua.edu.cn/debian|g' \
+        /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends build-essential cmake \
     && rm -rf /var/lib/apt/lists/*
 RUN python -m venv /opt/venv
@@ -21,7 +24,11 @@ ENV PATH="/opt/venv/bin:$PATH" \
     TZ=Asia/Shanghai \
     HOST=0.0.0.0 \
     PORT=8092
-RUN apt-get update \
+RUN sed -i \
+        -e 's|http://deb.debian.org/debian-security|https://mirrors.tuna.tsinghua.edu.cn/debian-security|g' \
+        -e 's|http://deb.debian.org/debian|https://mirrors.tuna.tsinghua.edu.cn/debian|g' \
+        /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends tzdata libstdc++6 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 10001 --create-home qbot
