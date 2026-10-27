@@ -126,7 +126,7 @@ python -m venv .venv
 | `DEEPSEEK_MODEL` | `deepseek-flash`，可修改为账号可用模型 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` |
 | `MODEL_TIMEOUT_SECONDS` / `MODEL_MAX_RETRIES` | 单次请求超时 45 秒，最多重试 1 次 |
-| `CHAT_TIMEOUT_SECONDS` / `MODEL_MAX_TOKENS` | 整次生成总时限 90 秒，最多输出 1024 token |
+| `CHAT_TIMEOUT_SECONDS` / `MODEL_MAX_TOKENS` | 整次生成总时限 90 秒，最多输出 4096 token；已有 .env 需同步修改显式值 |
 | `QQ_APP_ID` / `QQ_APP_SECRET` | 仅无后台模式使用；后台模式在 QQ 配置页面填写 |
 | `QQ_API_BASE_URL` / `QQ_TOKEN_URL` | 官方生产地址，见 qbot/config.py |
 | `QQ_TIMEOUT_SECONDS` | QQ HTTP 请求超时 10 秒；后台单次回复另有 25 秒总时限 |
