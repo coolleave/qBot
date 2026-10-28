@@ -96,19 +96,20 @@ docker compose logs --tail=100 -f qbot
 
 ### 每 30 分钟自动检查更新（配置已编写，运行待验证）
 
-服务器 cron 调用 `scripts/deploy-if-updated.sh`，检查 origin/main，仅当远端提交不同于上次成功部署提交时构建并更新 qbot-prod。脚本用 flock 防止重叠部署，网络抓取最多 180 秒；先构建、再更新容器并最多等待 120 秒健康检查。构建失败不替换原容器，健康检查失败不登记成功，不自动回滚；两种失败下次都会重试。没有更新时不重启。健康只代表 HTTP 进程，不代表 QQ 已连接。未运行实际部署或安装 cron。
+服务器 cron 调用 `scripts/deploy-if-updated.sh`，检查 origin/main，仅当远端提交不同于上次成功部署提交时构建并更新 qbot-prod。脚本用 flock 防止重叠部署，网络抓取最多 180 秒；先构建、再更新容器并最多等待 120 秒健康检查。构建失败不替换原容器，健康检查失败不登记成功，不自动回滚；两种失败下次都会重试。没有更新时不重启。健康只代表 HTTP 进程，不代表 QQ 已连接。2026-10-28 已在实验室服务器执行首次检查，成功登记原运行版本基线，并验证了新增迁移时暂停的路径；未验证完整自动发布，未安装 cron。
 
 成功提交号在 `.deploy/last-success`，锁和日志也在 `.deploy/`，已加入 Git 忽略。日志按服务器日期每日一份，下一次运行时删除超过 14 天的旧部署日志。仓库必须在 main 分支且所有已跟踪文件没有本地修改；脚本不会自动 stash、reset 或覆盖环境文件。运行用户必须有 Docker 权限，并具备 Bash、Git、flock、timeout、find、Compose v2（支持 `up --wait --wait-timeout`）。脚本不依赖交互式 shell 或 conda 环境。
 
 #### 首次安装
 
-以下在实验室服务器用 zhangxiaowen 用户执行，不使用 root 的 crontab。公开仓库使用 HTTPS 拉取无需部署密钥：
+以下在实验室服务器用 zhangxiaowen 用户执行，不使用 root 的 crontab。保留服务器已经能免交互访问 GitHub 的 origin：
 
 ```sh
 cd "$HOME/qBot/qBot"
-git remote set-url origin https://github.com/coolleave/qBot.git
 git diff -- compose.yaml
 ```
+
+公开仓库可以使用 HTTPS 而无需部署密钥，但需先确认服务器能访问。2026-10-28 检查时，HTTPS 抓取长时间无响应，已有 `git@github.com:coolleave/qBot.git` 在 BatchMode 下抓取成功，因此保留该连接；这台服务器已有可用 SSH 认证，不需要额外配置或替换。
 
 此前服务器曾把 `env_file` 手动改成 `.env.production`，GitHub 现在统一使用 `${QBOT_ENV_FILE:-.env}`。如果上述差异只有这项已知修改，先备份再恢复该文件，然后拉代码；有其他修改则先人工核对，不要直接恢复：
 
