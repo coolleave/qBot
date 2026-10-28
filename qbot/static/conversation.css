@@ -18,3 +18,11 @@
 /* 图片与文字占位共用固定尺寸，避免头像加载改变消息滚动位置。 */
 .chat-session-avatar,.chat-message-avatar{overflow:hidden}
 .chat-session-avatar img,.chat-message-avatar img{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+
+/* 身份操作保持可点击，触屏用户无需依赖右键。 */
+.chat-bind-identity{padding:2px 6px;margin-top:4px;font-size:11px;border:0;background:transparent;color:#6365ce;box-shadow:none}
+.chat-bind-identity:hover{background:#eceefe}
+.chat-identity-menu{position:fixed;z-index:1000;max-width:calc(100vw - 16px);padding:6px;border:1px solid #e5e8f0;border-radius:10px;background:#fff;box-shadow:0 8px 28px #202c4c26}
+.chat-identity-menu[hidden]{display:none}
+.chat-identity-menu button{display:block;width:100%;padding:9px 14px;border:0;background:transparent;text-align:left;font-size:13px;color:#39445f}
+.chat-identity-menu button:hover,.chat-identity-menu button:focus-visible{background:#eceefe}

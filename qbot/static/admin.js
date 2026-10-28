@@ -910,10 +910,12 @@ async function loadIdentityBindings() {
     }
   } catch(e) { if (request === identitiesRequest) $("identities-empty").textContent = "加载失败：" + e.message; }
 }
-async function editIdentityBinding(item = null) {
-  const form = $("identity-form"); form.reset(); $("identity-error").textContent = "";
+async function editIdentityBinding(item = null, isCurrent = () => true) {
+  const form = $("identity-form");
   const values = item || {bot_id:$("identity-bot-filter").value, user_id:$("identity-user-filter").value.trim(), family_role:"friend"};
   if (values.bot_id) await refreshIdentityRoles(values.bot_id);
+  if (!isCurrent()) return;
+  form.reset(); $("identity-error").textContent = "";
   for (const key of ["bot_id", "user_id", "qq_number_note"]) form.elements[key].value = values[key] || "";
   setIdentityOptions(form, values.bot_id, values.family_role, values.member_name || "", values.role_id);
   form.elements.bot_id.disabled = Boolean(item); form.elements.user_id.readOnly = Boolean(item);
@@ -940,7 +942,9 @@ $("identity-form").onsubmit = async event => {
   submit.disabled = true; $("identity-error").textContent = "";
   try {
     await api(`/bots/${botId}/identity-bindings`, {method:"PUT", body:JSON.stringify(values)});
-    $("identity-dialog").close(); toast("身份已保存，所有同 OpenID 会话下次对话生效"); await loadIdentityBindings();
+    $("identity-dialog").close(); toast("身份已保存，所有同 OpenID 会话下次对话生效");
+    document.dispatchEvent(new CustomEvent("qbot-identity-saved", {detail:{botId,userId:values.user_id}}));
+    await loadIdentityBindings();
   } catch(e) { $("identity-error").textContent = e.message; }
   finally { submit.disabled = false; }
 };

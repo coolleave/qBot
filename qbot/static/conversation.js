@@ -35,7 +35,59 @@ function chatBotAvatar(botId) {
   node.dataset.chatBotAvatar = botId;
   return node;
 }
+let chatIdentityOpening = false;
+const chatIdentityMenu = element("div", undefined, "chat-identity-menu");
+chatIdentityMenu.hidden = true;
+chatIdentityMenu.setAttribute("role", "menu");
+chatIdentityMenu.setAttribute("aria-label", "发送者操作");
+document.body.append(chatIdentityMenu);
+let chatIdentityMenuTrigger = null;
+function closeChatIdentityMenu(restoreFocus = false) {
+  chatIdentityMenu.hidden = true;
+  if (restoreFocus && chatIdentityMenuTrigger?.isConnected) chatIdentityMenuTrigger.focus();
+  chatIdentityMenuTrigger = null;
+}
+async function bindChatIdentity(row) {
+  if (chatIdentityOpening || !chatTarget) return;
+  closeChatIdentityMenu();
+  const key = chatKey(chatTarget);
+  chatIdentityOpening = true;
+  try {
+    // 从记录详情重新取最新身份，不把历史列表的名称或群代表用户当作绑定对象。
+    const detail = await api("/records/" + row.id);
+    if (!chatTarget || chatKey(chatTarget) !== key || ui.page !== "messages") return;
+    if (Number(detail.bot_id) !== Number(row.bot_id) || detail.user_id !== row.user_id ||
+        !["qq_c2c", "qq_group"].includes(detail.source)) throw new Error("消息发送者信息不匹配，请刷新后重试");
+    await editIdentityBinding(detail, () => Boolean(chatTarget && chatKey(chatTarget) === key && ui.page === "messages" && !$("workspace").hidden));
+  } finally { chatIdentityOpening = false; }
+}
+function openChatIdentityMenu(event, row, trigger) {
+  event.preventDefault();
+  closeChatIdentityMenu();
+  chatIdentityMenuTrigger = trigger;
+  const action = button("绑定此发送者身份", () => bindChatIdentity(row));
+  action.setAttribute("role", "menuitem");
+  chatIdentityMenu.replaceChildren(action);
+  chatIdentityMenu.hidden = false;
+  const rect = trigger.getBoundingClientRect();
+  const x = event.type === "keydown" ? rect.left : event.clientX;
+  const y = event.type === "keydown" ? rect.bottom : event.clientY;
+  chatIdentityMenu.style.left = Math.max(8, Math.min(x, window.innerWidth - chatIdentityMenu.offsetWidth - 8)) + "px";
+  chatIdentityMenu.style.top = Math.max(8, Math.min(y, window.innerHeight - chatIdentityMenu.offsetHeight - 8)) + "px";
+  action.focus();
+}
+document.addEventListener("pointerdown", event => {
+  if (!chatIdentityMenu.contains(event.target)) closeChatIdentityMenu();
+});
+document.addEventListener("keydown", event => {
+  if (chatIdentityMenu.hidden) return;
+  if (event.key === "Escape") { event.preventDefault(); closeChatIdentityMenu(true); }
+  else if (event.key === "Tab") closeChatIdentityMenu();
+});
+document.addEventListener("scroll", () => closeChatIdentityMenu(), true);
+window.addEventListener("resize", () => closeChatIdentityMenu());
 function clearChatSelection() {
+  closeChatIdentityMenu();
   chatTarget = null; chatRows = []; chatHistoryRequest++; chatHistoryBusy = false;
   $("chat-active").hidden = true; $("chat-welcome").hidden = false;
   $("chat-message-list").replaceChildren();
@@ -53,6 +105,7 @@ function updateChatComposer() {
   $("chat-send-result").textContent = draft.result;
 }
 async function selectChat(item) {
+  closeChatIdentityMenu();
   if (chatTarget && chatKey(chatTarget) === chatKey(item)) { chatTarget = item; renderChatHeading(); return; }
   chatTarget = item; chatRows = []; chatHasMore = false; chatPollingPaused = false;
   chatHistoryRequest++; chatHistoryBusy = false;
@@ -66,6 +119,7 @@ function renderChatHeading() {
   $("chat-title").textContent = chatName(chatTarget);
   $("chat-subtitle").textContent = `${botLabel(chatTarget.bot_id)} · ${chatTarget.source === "qq_group" ? "群 " + chatTarget.group_id : "用户 " + chatTarget.user_id}`;
   $("chat-group-note").hidden = chatTarget.source !== "qq_group";
+  $("chat-bind-identity").hidden = chatTarget.source !== "qq_c2c";
   $("chat-send-scope").textContent = chatTarget.source === "qq_group" ? "以机器人身份发送给整个群" : "以机器人身份发送给该用户";
 }
 async function loadSendTargets() {
@@ -126,10 +180,21 @@ function appendChatBubble(row, outgoing, content) {
   const meta = element("small", date(outgoing ? row.updated_at : row.received_at) + status + ` · #${row.id}`, "chat-message-meta");
   if (outgoing && row.status !== "replied") meta.classList.add("chat-status-alert");
   body.append(meta);
+  if (!outgoing && row.origin === "incoming") {
+    const bind = button("绑定身份", () => bindChatIdentity(row));
+    bind.className = "chat-bind-identity";
+    bind.setAttribute("aria-label", "绑定发送者 " + sender + " 的身份");
+    body.append(bind);
+    article.addEventListener("contextmenu", event => openChatIdentityMenu(event, row, bind));
+    bind.addEventListener("keydown", event => {
+      if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) openChatIdentityMenu(event, row, bind);
+    });
+  }
   if (outgoing && row.error_message) body.append(element("p", row.error_message, "chat-message-error"));
   article.append(avatar, body); $("chat-message-list").append(article);
 }
 function renderChatRows() {
+  closeChatIdentityMenu();
   $("chat-message-list").replaceChildren();
   for (const row of chatRows) {
     if (row.origin === "incoming") appendChatBubble(row, false, row.question || "[无文字内容]");
@@ -206,6 +271,10 @@ $("chat-media").onclick = () => {
   composeMessage(chatTarget);
   $("send-form").elements.message_kind.value = "image"; updateSendKind();
 };
+$("chat-bind-identity").onclick = async () => {
+  if (!chatTarget || chatTarget.source !== "qq_c2c") return;
+  try { await bindChatIdentity({...chatTarget}); } catch(e) { toast(e.message); }
+};
 $("chat-group-note").onclick = () => { if (chatTarget) editGroupNote(chatTarget); };
 $("chat-refresh").onclick = () => { void loadChatHistory(); };
 $("chat-load-older").onclick = () => { void loadChatHistory({older:true}); };
@@ -234,6 +303,12 @@ $("chat-search-form").onsubmit = event => { event.preventDefault(); sendTargetsP
 $("refresh-send-targets").onclick = () => { void loadSendTargets(); if (chatTarget) void loadChatHistory(); };
 $("send-target-prev").onclick = () => { sendTargetsPage--; void loadSendTargets(); };
 $("send-target-next").onclick = () => { sendTargetsPage++; void loadSendTargets(); };
+document.addEventListener("qbot-identity-saved", event => {
+  if (ui.page === "messages" && chatTarget && Number(chatTarget.bot_id) === Number(event.detail.botId)) {
+    // 只刷新当前消息，不重新选择会话或清除输入草稿。
+    void loadChatHistory({poll:true});
+  }
+});
 document.addEventListener("qbot-message-sent", event => {
   if (chatTarget && Number(chatTarget.bot_id) === Number(event.detail.botId)) void loadChatHistory();
 });
@@ -244,5 +319,5 @@ document.addEventListener("qbot-profile-loaded", event => {
 });
 document.addEventListener("qbot-logout", () => { botAppIds.clear(); botAvatarUrls.clear(); chatDrafts.clear(); chatTabsState.clear(); sendTargetsRequest++; clearChatSelection(); });
 setInterval(() => {
-  if (ui.page === "messages" && !$("workspace").hidden && !document.hidden && chatTarget && !chatPollingPaused && !chatHistoryBusy && chatAtBottom()) void loadChatHistory({poll:true});
+  if (ui.page === "messages" && !$("workspace").hidden && !document.hidden && chatTarget && !chatPollingPaused && !chatHistoryBusy && !chatIdentityOpening && chatIdentityMenu.hidden && !$("identity-dialog").open && chatAtBottom()) void loadChatHistory({poll:true});
 }, 10000);
