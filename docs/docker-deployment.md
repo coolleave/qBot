@@ -105,7 +105,7 @@ docker compose logs --tail=100 -f qbot
 以下在实验室服务器用 zhangxiaowen 用户执行，不使用 root 的 crontab。公开仓库使用 HTTPS 拉取无需部署密钥：
 
 ```sh
-cd /home/zhangxiaowen/qBot/qBot
+cd "$HOME/qBot/qBot"
 git remote set-url origin https://github.com/coolleave/qBot.git
 git diff -- compose.yaml
 ```
@@ -113,7 +113,7 @@ git diff -- compose.yaml
 此前服务器曾把 `env_file` 手动改成 `.env.production`，GitHub 现在统一使用 `${QBOT_ENV_FILE:-.env}`。如果上述差异只有这项已知修改，先备份再恢复该文件，然后拉代码；有其他修改则先人工核对，不要直接恢复：
 
 ```sh
-cp -p compose.yaml /home/zhangxiaowen/qbot-compose.before-auto.yaml
+cp -p compose.yaml "$HOME/qbot-compose.before-auto.yaml"
 git restore --source=HEAD -- compose.yaml
 git pull --ff-only
 ```
@@ -131,10 +131,10 @@ bash scripts/deploy-if-updated.sh
 执行 `crontab -e`，保留现有任务，只添加下面一行（不要重复添加）：
 
 ```cron
-*/30 * * * * /bin/bash /home/zhangxiaowen/qBot/qBot/scripts/deploy-if-updated.sh /home/zhangxiaowen/qBot/qBot
+*/30 * * * * /bin/bash "$HOME/qBot/qBot/scripts/deploy-if-updated.sh" "$HOME/qBot/qBot"
 ```
 
-每小时 00、30 分执行一次，日期和时区使用服务器设置；运行跨过下一次触发时间时，新任务因锁而跳过。检查计划任务及日志：
+每小时 00、30 分执行一次，日期和时区使用服务器设置；运行跨过下一次触发时间时，新任务因锁而跳过。使用 HOME 适配服务器主目录：实验室实际仓库为 `/mnt/disk/home/zhangxiaowen/qBot/qBot`，不能假定在 `/home/zhangxiaowen`。检查计划任务及日志：
 
 ```sh
 crontab -l
