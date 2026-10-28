@@ -45,6 +45,7 @@ COPY --from=builder /opt/venv /opt/venv
 COPY qbot/ ./qbot/
 COPY config/ ./config/
 COPY 图片/ ./图片/
+COPY res/dafeiyu_100/ ./res/dafeiyu_100/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
 USER qbot

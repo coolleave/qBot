@@ -1,6 +1,11 @@
 {
   "libraries": [
     {
+      "id": "dafeiyu",
+      "name": "大肥鱼素材（100 张）",
+      "manifest": "res/dafeiyu_100/greetings.json"
+    },
+    {
       "id": "kittens",
       "name": "小猫素材（100 张）",
       "manifest": "图片/greetings.json"

@@ -13,6 +13,10 @@
 !config/**
 !图片/
 !图片/**
+!res/
+!res/dafeiyu_100/
+!res/dafeiyu_100/*.png
+!res/dafeiyu_100/greetings.json
 **/__pycache__/
 **/*.py[cod]
 **/.env

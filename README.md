@@ -64,6 +64,10 @@
 
 本次新增迁移 `0021_scheduled_templates`，升级前停服务并备份项目库，执行 `.\.venv\Scripts\python -m alembic upgrade head` 后重启、刷新后台。本次未执行迁移、测试、浏览器或真实模型验收。
 
+## 大肥鱼素材库
+
+`res/dafeiyu_100/` 保存 100 张 1254×1254 PNG，`greetings.json` 是运行素材清单，`actions.txt` 是中文动作描述，`actions.json` 保存动作及生成提示词，`validation.json` 保存文件校验记录。定时任务或自定义模板选择“图片来源 → 素材库随机图 → 大肥鱼素材（100 张）”即可复用；AI 文案参考动作描述。Docker 镜像包含图片和运行清单，更新后需重新构建；无需数据库迁移，真实发送待验收。
+
 ## 如何运行
 
 ### Docker Compose 部署（实验室服务器已部署）

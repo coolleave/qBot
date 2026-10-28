@@ -1,0 +1,508 @@
+{
+  "status": "已生成并核对100个PNG文件可读取；仅抽查画面，未逐张人工验收",
+  "reference": "res/96beb147-aba5-491b-8c97-cb24cb73c4f4.png",
+  "generation_mode": "built-in image_gen",
+  "prompt_base": "参考图仅作为角色和画风参考，必须保持同一角色。生成一张独立正方形精致日系Q版插画，大肥鱼：深蓝渐变浅蓝长发、蓝色大眼睛、鱼鳍耳、蓝白鲸尾、白色女仆头饰与深蓝白荷叶边女仆裙，圆脸红晕，与参考一致。单个角色，动作清楚，身体与相关道具完整，柔和浅蓝或奶白简洁背景。禁止文字水印，禁止拼图，保持服装端庄。动作：",
+  "items": [
+    {
+      "id": 1,
+      "file": "dafeiyu_001.png",
+      "description": "正面站立，抬起右手开心挥手打招呼，另一只手轻提裙边"
+    },
+    {
+      "id": 2,
+      "file": "dafeiyu_002.png",
+      "description": "双手在胸前比心，歪头微笑"
+    },
+    {
+      "id": 3,
+      "file": "dafeiyu_003.png",
+      "description": "一只手在脸边比耶，俏皮眨眼"
+    },
+    {
+      "id": 4,
+      "file": "dafeiyu_004.png",
+      "description": "双臂张开向前迎接拥抱，尾巴翘起"
+    },
+    {
+      "id": 5,
+      "file": "dafeiyu_005.png",
+      "description": "双手捧脸，睁大眼睛露出惊喜表情"
+    },
+    {
+      "id": 6,
+      "file": "dafeiyu_006.png",
+      "description": "双手叉腰，鼓起腮帮子假装生气"
+    },
+    {
+      "id": 7,
+      "file": "dafeiyu_007.png",
+      "description": "侧身回头，举手轻轻挥别"
+    },
+    {
+      "id": 8,
+      "file": "dafeiyu_008.png",
+      "description": "双手合十放在胸前，闭眼许愿"
+    },
+    {
+      "id": 9,
+      "file": "dafeiyu_009.png",
+      "description": "右手扶额敬礼，挺胸站直"
+    },
+    {
+      "id": 10,
+      "file": "dafeiyu_010.png",
+      "description": "抬起一根手指放在嘴边，示意安静"
+    },
+    {
+      "id": 11,
+      "file": "dafeiyu_011.png",
+      "description": "坐在软垫上抱膝，歪头发呆"
+    },
+    {
+      "id": 12,
+      "file": "dafeiyu_012.png",
+      "description": "盘腿坐着，双手放在膝盖上开心微笑"
+    },
+    {
+      "id": 13,
+      "file": "dafeiyu_013.png",
+      "description": "侧坐在地毯上，用一只手撑住身体"
+    },
+    {
+      "id": 14,
+      "file": "dafeiyu_014.png",
+      "description": "趴在软垫上，双手托腮，双腿向后翘起"
+    },
+    {
+      "id": 15,
+      "file": "dafeiyu_015.png",
+      "description": "侧躺蜷缩在靠垫边，安静闭眼休息"
+    },
+    {
+      "id": 16,
+      "file": "dafeiyu_016.png",
+      "description": "坐着伸懒腰，双臂高高举起"
+    },
+    {
+      "id": 17,
+      "file": "dafeiyu_017.png",
+      "description": "一只手揉眼睛，另一只手抱着枕头打哈欠"
+    },
+    {
+      "id": 18,
+      "file": "dafeiyu_018.png",
+      "description": "裹着小毯子坐在床边，睡眼惺忪"
+    },
+    {
+      "id": 19,
+      "file": "dafeiyu_019.png",
+      "description": "跪坐在软垫上，低头整理裙摆"
+    },
+    {
+      "id": 20,
+      "file": "dafeiyu_020.png",
+      "description": "坐在窗边，双手托腮望向窗外"
+    },
+    {
+      "id": 21,
+      "file": "dafeiyu_021.png",
+      "description": "双手抱着鲸鱼图案饭碗，满足地鼓起脸颊"
+    },
+    {
+      "id": 22,
+      "file": "dafeiyu_022.png",
+      "description": "拿小勺舀起布丁，期待地张开小嘴"
+    },
+    {
+      "id": 23,
+      "file": "dafeiyu_023.png",
+      "description": "双手捧着温热马克杯，低头轻吹热气"
+    },
+    {
+      "id": 24,
+      "file": "dafeiyu_024.png",
+      "description": "捧着一块小蛋糕，闭眼幸福微笑"
+    },
+    {
+      "id": 25,
+      "file": "dafeiyu_025.png",
+      "description": "拿起一枚小饼干放在嘴边"
+    },
+    {
+      "id": 26,
+      "file": "dafeiyu_026.png",
+      "description": "双手举起一个圆饭团，开心展示"
+    },
+    {
+      "id": 27,
+      "file": "dafeiyu_027.png",
+      "description": "坐在小桌旁，用筷子夹起面条"
+    },
+    {
+      "id": 28,
+      "file": "dafeiyu_028.png",
+      "description": "一只手托盘，另一只手递出一杯茶"
+    },
+    {
+      "id": 29,
+      "file": "dafeiyu_029.png",
+      "description": "双手抱着大面包，惊讶地睁圆眼睛"
+    },
+    {
+      "id": 30,
+      "file": "dafeiyu_030.png",
+      "description": "握着小汤勺认真搅拌碗里的汤"
+    },
+    {
+      "id": 31,
+      "file": "dafeiyu_031.png",
+      "description": "踮起脚尖，双手向上伸展够取书架上的书"
+    },
+    {
+      "id": 32,
+      "file": "dafeiyu_032.png",
+      "description": "坐在书桌前，低头认真翻开一本书"
+    },
+    {
+      "id": 33,
+      "file": "dafeiyu_033.png",
+      "description": "抱着一摞书小心向前走"
+    },
+    {
+      "id": 34,
+      "file": "dafeiyu_034.png",
+      "description": "趴在桌前，用笔在本子上写字"
+    },
+    {
+      "id": 35,
+      "file": "dafeiyu_035.png",
+      "description": "拿着放大镜俯身观察一片叶子"
+    },
+    {
+      "id": 36,
+      "file": "dafeiyu_036.png",
+      "description": "戴圆框眼镜，一手扶眼镜一手抱书"
+    },
+    {
+      "id": 37,
+      "file": "dafeiyu_037.png",
+      "description": "坐在椅子上，举起手像在回答问题"
+    },
+    {
+      "id": 38,
+      "file": "dafeiyu_038.png",
+      "description": "一只手托腮，另一只手握笔思考"
+    },
+    {
+      "id": 39,
+      "file": "dafeiyu_039.png",
+      "description": "双手展开一张地图，低头寻找路线"
+    },
+    {
+      "id": 40,
+      "file": "dafeiyu_040.png",
+      "description": "拿着画笔，在画板前画一只小鲸鱼"
+    },
+    {
+      "id": 41,
+      "file": "dafeiyu_041.png",
+      "description": "轻快向前小跑，双臂自然摆动"
+    },
+    {
+      "id": 42,
+      "file": "dafeiyu_042.png",
+      "description": "开心原地跳起，双脚离地，裙摆轻扬"
+    },
+    {
+      "id": 43,
+      "file": "dafeiyu_043.png",
+      "description": "单脚站立保持平衡，双臂向两侧展开"
+    },
+    {
+      "id": 44,
+      "file": "dafeiyu_044.png",
+      "description": "侧身跨出舞步，一手上扬一手伸向侧面"
+    },
+    {
+      "id": 45,
+      "file": "dafeiyu_045.png",
+      "description": "双手轻提裙摆，礼貌屈膝行礼"
+    },
+    {
+      "id": 46,
+      "file": "dafeiyu_046.png",
+      "description": "转身旋转跳舞，长发和鲸尾随动作摆动"
+    },
+    {
+      "id": 47,
+      "file": "dafeiyu_047.png",
+      "description": "蹲下系鞋带，低头专注"
+    },
+    {
+      "id": 48,
+      "file": "dafeiyu_048.png",
+      "description": "双手撑住膝盖，运动后微微喘气"
+    },
+    {
+      "id": 49,
+      "file": "dafeiyu_049.png",
+      "description": "抱着一个圆球，侧身准备投出"
+    },
+    {
+      "id": 50,
+      "file": "dafeiyu_050.png",
+      "description": "坐在地垫上，双腿向前伸直做拉伸"
+    },
+    {
+      "id": 51,
+      "file": "dafeiyu_051.png",
+      "description": "撑着透明雨伞，抬头看雨滴"
+    },
+    {
+      "id": 52,
+      "file": "dafeiyu_052.png",
+      "description": "双手捧着一朵小花，低头闻花香"
+    },
+    {
+      "id": 53,
+      "file": "dafeiyu_053.png",
+      "description": "蹲在花盆旁，用小水壶浇花"
+    },
+    {
+      "id": 54,
+      "file": "dafeiyu_054.png",
+      "description": "坐在草地上，伸手接住飘落的花瓣"
+    },
+    {
+      "id": 55,
+      "file": "dafeiyu_055.png",
+      "description": "站在微风中，一手按住头饰，另一手轻提裙边"
+    },
+    {
+      "id": 56,
+      "file": "dafeiyu_056.png",
+      "description": "双手堆起一个小雪人，蹲着认真整理"
+    },
+    {
+      "id": 57,
+      "file": "dafeiyu_057.png",
+      "description": "围着浅蓝围巾，捧手轻轻呵气"
+    },
+    {
+      "id": 58,
+      "file": "dafeiyu_058.png",
+      "description": "戴小草帽，坐在野餐垫上抱着篮子"
+    },
+    {
+      "id": 59,
+      "file": "dafeiyu_059.png",
+      "description": "在浅水边蹲下，伸手轻碰水面涟漪"
+    },
+    {
+      "id": 60,
+      "file": "dafeiyu_060.png",
+      "description": "抬起双手追逐一颗飘动的泡泡"
+    },
+    {
+      "id": 61,
+      "file": "dafeiyu_061.png",
+      "description": "双手抱住鲸鱼玩偶，脸颊贴着玩偶"
+    },
+    {
+      "id": 62,
+      "file": "dafeiyu_062.png",
+      "description": "举着小风车，侧身吹动叶片"
+    },
+    {
+      "id": 63,
+      "file": "dafeiyu_063.png",
+      "description": "双手拉开丝带，打开礼物盒"
+    },
+    {
+      "id": 64,
+      "file": "dafeiyu_064.png",
+      "description": "怀抱礼物盒，弯腰向前递出"
+    },
+    {
+      "id": 65,
+      "file": "dafeiyu_065.png",
+      "description": "双手捧着一颗星形灯，眼睛闪亮"
+    },
+    {
+      "id": 66,
+      "file": "dafeiyu_066.png",
+      "description": "坐在地上，认真拼搭积木"
+    },
+    {
+      "id": 67,
+      "file": "dafeiyu_067.png",
+      "description": "拿着毛线团，低头整理一根线头"
+    },
+    {
+      "id": 68,
+      "file": "dafeiyu_068.png",
+      "description": "双手举起纸飞机，侧身准备放飞"
+    },
+    {
+      "id": 69,
+      "file": "dafeiyu_069.png",
+      "description": "坐在小桌前，双手折一只纸船"
+    },
+    {
+      "id": 70,
+      "file": "dafeiyu_070.png",
+      "description": "举起一只小铃铛，开心轻轻摇动"
+    },
+    {
+      "id": 71,
+      "file": "dafeiyu_071.png",
+      "description": "一手举起手机自拍，另一手在脸边比耶"
+    },
+    {
+      "id": 72,
+      "file": "dafeiyu_072.png",
+      "description": "双手握着游戏手柄，身体微微前倾"
+    },
+    {
+      "id": 73,
+      "file": "dafeiyu_073.png",
+      "description": "戴着头戴耳机，闭眼轻轻跟随音乐摇摆"
+    },
+    {
+      "id": 74,
+      "file": "dafeiyu_074.png",
+      "description": "手握小麦克风，另一手伸向前方唱歌"
+    },
+    {
+      "id": 75,
+      "file": "dafeiyu_075.png",
+      "description": "坐在凳子上，双手轻敲小鼓"
+    },
+    {
+      "id": 76,
+      "file": "dafeiyu_076.png",
+      "description": "抱着小尤克里里，低头拨动琴弦"
+    },
+    {
+      "id": 77,
+      "file": "dafeiyu_077.png",
+      "description": "拿着相机，单眼轻闭从取景器观察"
+    },
+    {
+      "id": 78,
+      "file": "dafeiyu_078.png",
+      "description": "趴在桌前看平板，双手托住下巴"
+    },
+    {
+      "id": 79,
+      "file": "dafeiyu_079.png",
+      "description": "双手握着望远镜，踮脚看远处"
+    },
+    {
+      "id": 80,
+      "file": "dafeiyu_080.png",
+      "description": "拿着小手电，俯身好奇地照看角落"
+    },
+    {
+      "id": 81,
+      "file": "dafeiyu_081.png",
+      "description": "双手攥在胸前，害羞低头，脸颊泛红"
+    },
+    {
+      "id": 82,
+      "file": "dafeiyu_082.png",
+      "description": "双手遮住半张脸，从指缝中偷偷看"
+    },
+    {
+      "id": 83,
+      "file": "dafeiyu_083.png",
+      "description": "抱着双臂，扭头鼓腮假装赌气"
+    },
+    {
+      "id": 84,
+      "file": "dafeiyu_084.png",
+      "description": "一手挠头，歪头露出困惑表情"
+    },
+    {
+      "id": 85,
+      "file": "dafeiyu_085.png",
+      "description": "双手摊开耸肩，露出无奈的小笑容"
+    },
+    {
+      "id": 86,
+      "file": "dafeiyu_086.png",
+      "description": "双手握拳举在脸旁，为自己加油"
+    },
+    {
+      "id": 87,
+      "file": "dafeiyu_087.png",
+      "description": "一手竖起大拇指，开心露出笑容"
+    },
+    {
+      "id": 88,
+      "file": "dafeiyu_088.png",
+      "description": "双手轻捂嘴巴，惊讶地睁大眼睛"
+    },
+    {
+      "id": 89,
+      "file": "dafeiyu_089.png",
+      "description": "双臂垂在身侧，低头撇嘴露出委屈表情"
+    },
+    {
+      "id": 90,
+      "file": "dafeiyu_090.png",
+      "description": "一手轻擦眼角，另一手抱着手帕"
+    },
+    {
+      "id": 91,
+      "file": "dafeiyu_091.png",
+      "description": "双手抱着靠枕坐在沙发上，笑得眯起眼睛"
+    },
+    {
+      "id": 92,
+      "file": "dafeiyu_092.png",
+      "description": "双手捂住耳朵，鼓着脸颊做可爱鬼脸"
+    },
+    {
+      "id": 93,
+      "file": "dafeiyu_093.png",
+      "description": "低头鞠躬致谢，双手交叠放在身前"
+    },
+    {
+      "id": 94,
+      "file": "dafeiyu_094.png",
+      "description": "弯腰伸出一只手，温柔邀请对方牵手"
+    },
+    {
+      "id": 95,
+      "file": "dafeiyu_095.png",
+      "description": "抬头望着夜空，举起一只手指向星星"
+    },
+    {
+      "id": 96,
+      "file": "dafeiyu_096.png",
+      "description": "抱着月亮形靠枕，倚在软垫上闭眼"
+    },
+    {
+      "id": 97,
+      "file": "dafeiyu_097.png",
+      "description": "蹲着把一只小纸船放到浅水里"
+    },
+    {
+      "id": 98,
+      "file": "dafeiyu_098.png",
+      "description": "双手举着一串贝壳，歪头开心展示"
+    },
+    {
+      "id": 99,
+      "file": "dafeiyu_099.png",
+      "description": "双臂环抱自己的鲸尾，坐着开心微笑"
+    },
+    {
+      "id": 100,
+      "file": "dafeiyu_100.png",
+      "description": "双手向上抛出少量彩纸，开心跳起庆祝"
+    }
+  ]
+}
