@@ -453,3 +453,9 @@ interaction_greetings 新增 schedule_updated_at，DATETIME(6) 非空、UTC，�
 conversations 新增可空 `platform_nickname VARCHAR(256)`（utf8mb4），独立于管理员 contact_name/用户备注与 bot_user_identities。Store.receive 从平台事件接收非空昵称，在机器人行锁下同步同 bot_id/user_id 的 QQ 会话；过滤不可打印字符并限制长度。读取批量选择最近会话的有效昵称；空推送不清空，不推断旧昵称，不影响任务资格或模型身份。
 
 语音文本沿用 chat_records.media_details：attachments[].transcript 为 ASR 转写，tts_text 为合成正文；手动 TTS 同时保存 answer，question 中含文本快照参与原幂等比较。音频文件不入库；旧记录不补造文本。新增迁移须显式执行，应用不自动迁移。
+
+## 0020 主人绑定（已编写，待验证）
+
+bot_user_identities 新增可空 owner_slot TINYINT 与 owner_selected_at DATETIME(6)。应用只写 NULL（普通身份）或 1（主人），唯一索引 uq_identity_owner(bot_id, owner_slot) 利用 MySQL 允许多个 NULL 确保同机器人只有一位主人。选择、切换、解绑和身份编辑共用机器人行锁；选择时间用于排除认主前的同群发言。旧身份初始化为非主人，不根据角色名称自动认领。
+
+2026-10-28：认主相关代码已编写，Python/JavaScript 语法与差异静态检查通过；未运行测试、浏览器或真实模型验收。

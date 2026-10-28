@@ -895,7 +895,15 @@ async function loadIdentityBindings() {
         await api(`/bots/${item.bot_id}/records/${item.record_id}/binding`, {method:"DELETE"});
         toast("身份已解除，下次对话生效"); await loadIdentityBindings();
       }));
-      row.append(bot, element("td", item.user_id), element("td", item.member_name || "未绑定"),
+      if (item.role_id) actions.append(button(item.is_owner ? "取消主人" : "设为主人", async () => {
+        const enabled = !item.is_owner;
+        const message = enabled ? `将 ${item.member_name} 设为 ${botLabel(item.bot_id)} 的唯一主人？原主人会被替换，意见冲突时优先听从新主人。`
+          : `取消 ${item.member_name} 的主人身份？`;
+        if (!confirm(message)) return;
+        await api(`/bots/${item.bot_id}/records/${item.record_id}/owner`, {method:"PUT", body:JSON.stringify({enabled})});
+        toast("主人设置已保存，下次对话生效"); await loadIdentityBindings();
+      }));
+      row.append(bot, element("td", item.user_id), element("td", (item.member_name || "未绑定") + (item.is_owner ? " · 主人" : "")),
         element("td", identityLabel(item)),
         element("td", item.qq_number_note || "—"), actions);
       $("identities-body").append(row);

@@ -102,7 +102,7 @@
 </div>
 </section>
     <section id="identities-page" hidden>
-<div class="page-heading"><div><h1>身份绑定</h1><p class="muted">设置聊天时识别的姓名和角色。每个机器人独立，同一用户 OpenID 在所有群聊、私聊中共用身份。</p></div><button id="new-identity-binding" class="primary" type="button">按 ID 绑定身份</button></div>
+<div class="page-heading"><div><h1>身份绑定</h1><p class="muted">设置姓名和角色后，可选择一位用户设为主人；意见冲突时优先听从主人。每个机器人独立，同一 OpenID 共用身份；更换主人自动取消原主人，解除身份也会取消主人。</p></div><button id="new-identity-binding" class="primary" type="button">按 ID 绑定身份</button></div>
 <form id="identity-filter" class="filters"><label>机器人<select id="identity-bot-filter"><option value="">全部机器人</option></select></label><label>用户 OpenID<input id="identity-user-filter" maxlength="256" placeholder="精确匹配，可留空"></label><button class="primary" type="submit">查询 / 刷新</button></form>
 <div class="card"><div class="card-title"><h2>用户身份</h2><span id="identity-count" class="muted"></span></div><div class="table-scroll"><table><thead><tr><th>机器人</th><th>用户 OpenID</th><th>姓名</th><th>角色</th><th>QQ 备注</th><th>操作</th></tr></thead><tbody id="identities-body"></tbody></table></div><p id="identities-empty" class="empty" hidden></p><div class="pagination"><span id="identity-page"></span><div><button id="identity-prev" type="button">上一页</button><button id="identity-next" type="button">下一页</button></div></div></div>
 <p class="muted footnote">保存或解除后，各会话在下一次对话时更新身份并清理旧上下文。QQ 号仅作备注；不同 OpenID 不自动合并，需分别绑定。「用户与群备注」中的接收人名称与这里独立。</p>

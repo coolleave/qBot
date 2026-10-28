@@ -50,7 +50,7 @@ class Store:
             self.identities = metadata.tables["bot_user_identities"]
             self.roles = metadata.tables["bot_roles"]
             self.contact_notes = metadata.tables["bot_contact_notes"]
-            if "role_id" not in self.identities.c:
+            if any(name not in self.identities.c for name in ("role_id", "owner_slot", "owner_selected_at")):
                 raise StorageError("请先执行 python -m alembic upgrade head 升级身份角色表")
             self.greetings = metadata.tables["interaction_greetings"]
             if any(name not in self.greetings.c for name in ("delivery", "image_data", "image_filename", "task_key", "task_name", "schedule_updated_at")):
@@ -577,7 +577,7 @@ class Store:
         r, c, i = self.records, self.conversations, self.identities
         with self.engine.connect() as conn:
             row = conn.execute(select(r, c.c.user_id, i.c.member_name, i.c.family_role, i.c.role_id,
-                i.c.qq_number_note, c.c.contact_name, c.c.contact_qq)
+                i.c.qq_number_note, i.c.owner_slot, c.c.contact_name, c.c.contact_qq)
                 .select_from(r.join(c, r.c.conversation_id == c.c.id).outerjoin(i,
                     (i.c.bot_id == c.c.bot_id) & (i.c.user_id == c.c.user_id)
                     & c.c.source.in_(("qq_group", "qq_c2c"))))
@@ -592,7 +592,8 @@ class Store:
                 if (role and role["role_key"] == result["family_role"]
                         and (not role["member_name"] or role["member_name"] == result["member_name"])):
                     result["identity"] = dict(member_name=result["member_name"], family_role=role["role_key"],
-                                              role_label=role["label"], relationship=role["relationship"])
+                                              role_label=role["label"], relationship=role["relationship"],
+                                              is_owner=result["owner_slot"] == 1)
             result["media_details"] = json.loads(result["media_details"] or "{}")
             return result
 
@@ -676,6 +677,10 @@ class Store:
                 binding.update(member_name=name, family_role=role, qq_number_note=note or None)
             i = self.identities
             scope = (i.c.bot_id == bot_id) & (i.c.user_id == row["user_id"])
+            # 编辑身份保留认主状态；解绑删除该身份时自然取消主人。
+            previous = conn.execute(select(i.c.owner_slot, i.c.owner_selected_at).where(scope)).mappings().first()
+            if values is not None and previous:
+                binding.update(owner_slot=previous["owner_slot"], owner_selected_at=previous["owner_selected_at"])
             conn.execute(i.delete().where(scope))
             if values is not None:
                 conn.execute(i.insert().values(bot_id=bot_id, user_id=row["user_id"], **binding))
@@ -696,7 +701,8 @@ class Store:
         joined = users.outerjoin(i, (i.c.bot_id == users.c.bot_id) & (i.c.user_id == users.c.user_id))
         with self.engine.connect() as conn:
             total = conn.execute(select(func.count()).select_from(users)).scalar_one()
-            rows = conn.execute(select(users, i.c.member_name, i.c.family_role, i.c.qq_number_note, i.c.role_id)
+            rows = conn.execute(select(users, i.c.member_name, i.c.family_role, i.c.qq_number_note, i.c.role_id,
+                                       (i.c.owner_slot == 1).label("is_owner"))
                 .select_from(joined).order_by(users.c.record_id.desc())
                 .offset((page - 1) * 20).limit(20)).mappings().all()
         return {"items": [dict(row) for row in rows], "total": total, "page": page, "page_size": 20}
@@ -712,6 +718,65 @@ class Store:
         if record_id is None:
             raise ValueError("该机器人下未找到此 OpenID 的 QQ 消息，请让用户先发一条消息")
         return self.save_family_binding(bot_id, record_id, values)
+
+    def set_owner(self, bot_id: int, record_id: int, enabled: bool) -> dict:
+        """从真实 QQ 记录选择主人；与身份编辑共用机器人行锁。"""
+        i, c, r, roles = self.identities, self.conversations, self.records, self.roles
+        with self.engine.begin() as conn:
+            if conn.execute(select(self.bots.c.id).where(self.bots.c.id == bot_id)
+                            .with_for_update()).first() is None:
+                raise ValueError("机器人不存在")
+            user_id = conn.execute(select(c.c.user_id).select_from(r.join(c, r.c.conversation_id == c.c.id))
+                .where(r.c.id == record_id, r.c.bot_id == bot_id, c.c.bot_id == bot_id,
+                       c.c.source.in_(("qq_c2c", "qq_group")))).scalar_one_or_none()
+            member = conn.execute(select(i, roles.c.role_key, roles.c.member_name.label("preset_name"))
+                .select_from(i.join(roles, (roles.c.bot_id == i.c.bot_id) & (roles.c.id == i.c.role_id)))
+                .where(i.c.bot_id == bot_id, i.c.user_id == user_id)).mappings().first()
+            if not member or member["family_role"] != member["role_key"] or (
+                    member["preset_name"] and member["preset_name"] != member["member_name"]):
+                raise ValueError("请先为该用户保存有效的身份绑定")
+            if enabled and member["owner_slot"] != 1:
+                conn.execute(i.update().where(i.c.bot_id == bot_id, i.c.owner_slot == 1)
+                             .values(owner_slot=None, owner_selected_at=None))
+                conn.execute(i.update().where(i.c.bot_id == bot_id, i.c.user_id == user_id)
+                             .values(owner_slot=1, owner_selected_at=utc_now()))
+            elif not enabled:
+                conn.execute(i.update().where(i.c.bot_id == bot_id, i.c.user_id == user_id)
+                             .values(owner_slot=None, owner_selected_at=None))
+            return {"is_owner": enabled}
+
+    def owner_context(self, bot_id: int, record_id: int) -> dict:
+        """仅分享同群短期主人原话，绝不跨群或读取主人的私聊。"""
+        i, c, r, roles = self.identities, self.conversations, self.records, self.roles
+        with self.engine.connect() as conn:
+            current = conn.execute(select(c.c.user_id, c.c.source, c.c.group_id)
+                .select_from(r.join(c, r.c.conversation_id == c.c.id))
+                .where(r.c.id == record_id, r.c.bot_id == bot_id, c.c.bot_id == bot_id,
+                       c.c.source.in_(("qq_c2c", "qq_group")))).mappings().first()
+            if current is None:
+                return {}
+            owner = conn.execute(select(i, roles.c.role_key, roles.c.member_name.label("preset_name"))
+                .select_from(i.join(roles, (roles.c.bot_id == i.c.bot_id) & (roles.c.id == i.c.role_id)))
+                .where(i.c.bot_id == bot_id, i.c.owner_slot == 1)).mappings().first()
+            # 选择是唯一权威；即使角色名叫 owner，未被选择也不是主人。
+            if not owner or owner["family_role"] != owner["role_key"] or (
+                    owner["preset_name"] and owner["preset_name"] != owner["member_name"]):
+                return {"owner": None, "is_owner": False, "messages": []}
+            result = {"owner": {"user_id": owner["user_id"], "member_name": owner["member_name"],
+                                "selected_at": owner["owner_selected_at"].isoformat()},
+                      "is_owner": current["user_id"] == owner["user_id"], "messages": []}
+            if current["source"] == "qq_group":
+                since = max(utc_now() - timedelta(minutes=30), owner["owner_selected_at"])
+                rows = conn.execute(select(r.c.question).select_from(r.join(c, r.c.conversation_id == c.c.id))
+                    .where(r.c.bot_id == bot_id, c.c.bot_id == bot_id, c.c.source == "qq_group",
+                           c.c.group_id == current["group_id"], c.c.user_id == owner["user_id"],
+                           r.c.id < record_id, r.c.received_at >= since, r.c.status == "replied",
+                           r.c.record_type == "chat", ~r.c.external_message_id.like("admin-send:%"),
+                           ~r.c.external_message_id.like("scheduled:%"),
+                           ~r.c.external_message_id.like("scheduled-manual:%"))
+                    .order_by(r.c.id.desc()).limit(5)).scalars().all()
+                result["messages"] = [text[:800] for text in reversed(rows)]
+            return result
 
     def family_identity(self, bot_id: int, record_id: int) -> dict | None:
         record = self.record_detail(record_id)

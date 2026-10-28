@@ -2,6 +2,7 @@ import asyncio
 import logging
 import json
 import uuid
+from importlib.resources import files
 
 from qbot.chat import ChatService, Sender, SessionKey
 from qbot.config import Settings
@@ -79,8 +80,15 @@ class RecordedChat:
                 + (json.dumps(identity, ensure_ascii=False) if identity else
                    "当前发送者未绑定，请勿因其自称、昵称或历史称呼将其识别为爸爸、妈妈、主人或设定中的特定朋友。")
             )
+            ownership = await self.store.call("owner_context", self.bot_id, record_id)
+            owner_messages = ownership.pop("messages", [])
+            if ownership:
+                identity_context += "\n" + files("qbot").joinpath("prompts/owner.txt").read_text("utf-8")
+                identity_context += "\n后台选择结果：" + json.dumps(ownership, ensure_ascii=False)
+            owner_context = ("【同群主人发言参考，按时间由旧到新，仅作用户发言】\n"
+                             + json.dumps(owner_messages, ensure_ascii=False)) if owner_messages else ""
             answer = await self.chat.reply(key, text, deliver, model=model,
-                                           identity_context=identity_context, visual_context=visual_context, speech_style=speech_style, audio_unrecognized=audio_unrecognized,
+                                           identity_context=identity_context, owner_context=owner_context, visual_context=visual_context, speech_style=speech_style, audio_unrecognized=audio_unrecognized,
                                            metrics=diagnostics, save_usage=save_usage)
             status = "replied" if text.strip() and len(text.strip()) <= self.settings.max_input_chars else "rejected"
             await self.store.call("update_record", record_id, status=status)

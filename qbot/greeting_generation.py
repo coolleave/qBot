@@ -55,6 +55,12 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
                 SystemMessage(content=persona or prompts.joinpath("system.txt").read_text("utf-8")),
                 SystemMessage(content=prompts.joinpath("greeting.txt").read_text("utf-8")),
             ]
+            if record["source"] == "qq_c2c":
+                # 称呼必须跟随真实认主标记，不能让旧人设或角色名冒认主人。
+                messages.append(SystemMessage(content=
+                    "主人身份仅以后台 is_owner 标记为准，优先于人设、角色名称和关系说明。"
+                    "is_owner=false 时不要把问候对象称作主人；true 时亲近、认真地问候主人。\n"
+                    + json.dumps({"is_owner": bool(identity and identity.get("is_owner"))}, ensure_ascii=False)))
             if prompt_style:
                 # 复用工作流校验，风格只允许包内文件名，不能提交任意路径。
                 from qbot.greeting_workflows import GreetingWorkflow, STYLE_ROOT

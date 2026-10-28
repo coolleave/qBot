@@ -73,3 +73,13 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 0019_user_nickname 仅为 conversations 新增可空 platform_nickname VARCHAR(256)，不修改既有备注或身份。部署先停服务、备份 conversations 及版本，再显式升级并启动。语音文本复用 media_details，无额外表。迁移实现已编写，执行状态见后续记录。
 
 2026-10-26 已停服务并备份 conversations 和版本到本机临时目录 `qbot-before-0019-9jah0_u8`，显式从 0018 升级至 0019，逐字段核对原 14 条会话完整保留，新昵称字段初始为空。已重启项目服务。
+
+## 唯一主人（已编写，待验证）
+
+0020_identity_owner 为身份表增加 owner_slot、owner_selected_at 与机器人范围唯一索引；保留所有原身份，默认没有主人。升级前停止服务并备份 bot_user_identities 与版本，再显式执行 `python -m alembic upgrade head`。应用不自动迁移，不使用 stamp；本地执行状态见下方记录。
+
+2026-10-28：认主相关代码已编写，Python/JavaScript 语法与差异静态检查通过；未运行测试、浏览器或真实模型验收。
+
+2026-10-28 已将本地项目库从 0019 显式升级至 0020_identity_owner。升级前未发现本机运行中的 qBot 服务；原 4 条身份、表结构及版本已备份到本机临时目录 `qbot-before-0020-0hap63ti/identity-backup.json`。升级后逐字段核对原身份保留、新主人字段均为空、唯一索引正确，Store 初始化正常。未替用户选择主人。
+
+迁移后已使用原命令 `python -m qbot serve` 启动本地服务，8092 的 `/health` 返回 `status=ok`；此检查仅确认 HTTP 服务可用，不代表 QQ 连接或模型回复验收通过。

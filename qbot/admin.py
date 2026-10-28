@@ -87,6 +87,11 @@ class FamilyBindingInput(BaseModel):
     qq_number_note: str = Field(default="", max_length=20, pattern=r"^[0-9]*$")
 
 
+class OwnerInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = Field(strict=True)
+
+
 class IdentityBindingInput(FamilyBindingInput):
     user_id: str = Field(min_length=1, max_length=256, pattern=r"^[\x21-\x7e]+$")
 
@@ -455,6 +460,14 @@ def admin_router(settings: Settings) -> APIRouter:
                                 page: int = Query(1, ge=1, le=100000),
                                 db: Store = Depends(store)) -> dict:
         return await db.call("list_identity_bindings", bot_id, user_id.strip(), page)
+
+    @router.put("/api/admin/bots/{bot_id}/records/{record_id}/owner", dependencies=[Depends(require_admin)])
+    async def select_owner(bot_id: int, record_id: int, data: OwnerInput,
+                           db: Store = Depends(store)) -> dict:
+        try:
+            return await db.call("set_owner", bot_id, record_id, data.enabled)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
 
     @router.put("/api/admin/bots/{bot_id}/identity-bindings", dependencies=[Depends(require_admin)])
     async def bind_identity(bot_id: int, data: IdentityBindingInput, db: Store = Depends(store)) -> dict:
