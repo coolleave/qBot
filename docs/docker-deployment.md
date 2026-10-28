@@ -2,7 +2,11 @@
 
 ## 构建下载源（已配置，实验室网络待验证）
 
-Dockerfile 的构建与运行阶段均使用清华 TUNA 的 Debian / Debian Security HTTPS 镜像，保留 Debian 官方签名校验。不修改宿主机的软件源。移除额外 Dockerfile frontend 下载，使用 Docker 自带构建语法；Python 基础镜像仍来自 Docker Hub。pip 安装阶段（含隔离构建依赖）显式使用 `https://pypi.tuna.tsinghua.edu.cn/simple`，网络超时设为 60 秒，保持 HTTPS 证书校验，不修改本地虚拟环境的 pip 配置。依赖继续由 constraints.txt 锁定；包源版本可用不代表 Linux 安装或整套依赖兼容性已经验证，需以实际镜像构建为准。未实际构建镜像或运行测试。
+基础镜像默认使用 `m.daocloud.io/docker.io/library/python:3.13-slim-bookworm`，通过 DAOCloud 获取官方 Python 镜像，避免实验室服务器直接访问 Docker Hub 超时。2026-10-28 已在该服务器完成仅含 FROM 的基础镜像构建，镜像层下载约 39 秒；完整应用镜像仍需实际构建验收。Compose 可通过 QBOT_PYTHON_IMAGE 覆盖镜像地址，Dockerfile 对应 PYTHON_IMAGE 构建参数；不要将不同 Python 大版本、Alpine 或非 Debian 镜像直接混用。
+
+Dockerfile 的构建与运行阶段均使用清华 TUNA 的 Debian / Debian Security HTTPS 镜像，保留 Debian 官方签名校验。不修改宿主机的软件源。移除额外 Dockerfile frontend 下载，使用 Docker 自带构建语法。Python 依赖安装使用 `https://pypi.tuna.tsinghua.edu.cn/simple`，网络超时 60 秒，保持 HTTPS 证书校验，不修改本地虚拟环境的 pip 配置。依赖继续由 constraints.txt 锁定。
+
+依赖安装层只读取 pyproject.toml 和 constraints.txt（从项目声明生成临时依赖清单），业务源码随后复制并用 `--no-deps --no-build-isolation` 安装。这样修改 Python 代码、JS 或其他静态资源不会让依赖层失效。首次调整、基础镜像变化、依赖声明变化或缓存被清理时仍需重新安装；普通构建不加 --no-cache，也不主动清理缓存。未运行测试。
 
 已编写配置：Python 3.13 单实例应用容器，复用已有 MySQL，通过外部 Docker 网络连接；镜像包含后台静态文件、提示词、迁移、定时模板和图片素材。数据库升级独立执行，不随启动自动迁移。未构建镜像或进行部署联调，Linux 依赖安装与运行待验证。
 

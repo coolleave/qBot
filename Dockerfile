@@ -1,4 +1,5 @@
-FROM python:3.13-slim-bookworm AS builder
+ARG PYTHON_IMAGE=m.daocloud.io/docker.io/library/python:3.13-slim-bookworm
+FROM ${PYTHON_IMAGE} AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
@@ -13,13 +14,16 @@ RUN sed -i \
     && rm -rf /var/lib/apt/lists/*
 RUN python -m venv /opt/venv
 COPY pyproject.toml constraints.txt ./
-COPY qbot/ ./qbot/
-# 环境变量同时传给 pip 的隔离构建子进程，构建依赖也使用清华源。
-RUN PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+# 依赖层只依赖项目声明，修改业务代码或静态资源时可直接复用。
+RUN /opt/venv/bin/python -c 'import pathlib,tomllib; project=tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8")); pathlib.Path("/tmp/qbot-requirements.txt").write_text("\n".join(project["project"]["dependencies"])+"\n", encoding="utf-8")' \
+    && PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
     PIP_DEFAULT_TIMEOUT=60 \
-    /opt/venv/bin/python -m pip install -c constraints.txt .
+    /opt/venv/bin/python -m pip install -c constraints.txt 'setuptools>=75' -r /tmp/qbot-requirements.txt
+COPY qbot/ ./qbot/
+# 构建工具已在缓存层安装，本项目安装无需再次联网解析依赖。
+RUN /opt/venv/bin/python -m pip install --no-deps --no-build-isolation .
 
-FROM python:3.13-slim-bookworm AS runtime
+FROM ${PYTHON_IMAGE} AS runtime
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

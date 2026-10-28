@@ -2,6 +2,8 @@ services:
   qbot:
     build:
       context: .
+      args:
+        PYTHON_IMAGE: "${QBOT_PYTHON_IMAGE:-m.daocloud.io/docker.io/library/python:3.13-slim-bookworm}"
     image: qbot:local
     init: true
     restart: unless-stopped
