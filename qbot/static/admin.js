@@ -420,31 +420,39 @@ $("unbind-member").onclick = () => saveBinding(true);
 
 let greetingTarget = null, greetingItem = null, greetingDirty = false, greetingRunning = false;
 let greetingCatalog = {templates: [], libraries: []};
+const greetingTemplateImages = new Map();
 function greetingWorkflow(slot) {
   const fields = $("greeting-form").elements;
   return {version:1, content_source:fields[slot + "_content_source"].value,
     image_source:fields[slot + "_image_source"].value, output:fields[slot + "_output"].value,
+    custom_prompt:fields[slot + "_custom_prompt"].value.trim(),
     prompt_style:fields[slot + "_prompt_style"].value || null,
     library_id:fields[slot + "_image_source"].value === "library" ? fields[slot + "_library_id"].value || null : null};
 }
 function fillGreetingWorkflow(slot, workflow) {
   const fields = $("greeting-form").elements;
-  for (const key of ["content_source", "image_source", "output", "library_id", "prompt_style"]) fields[slot + "_" + key].value = workflow[key] || "";
+  for (const key of ["content_source", "image_source", "output", "library_id", "prompt_style", "custom_prompt"]) fields[slot + "_" + key].value = workflow[key] || "";
   updateGreetingMedia(slot);
 }
 function updateGreetingMedia(slot) {
-  const form = $("greeting-form"), workflow = greetingWorkflow(slot);
-  const ai = workflow.content_source === "ai", audio = workflow.output === "audio";
+  const form = $("greeting-form"), fields = form.elements;
+  if (fields[slot + "_output"].value === "none") {
+    fields[slot + "_content_source"].value = "fixed";
+    if (fields[slot + "_image_source"].value === "none") fields[slot + "_image_source"].value = "upload";
+  }
+  const workflow = greetingWorkflow(slot);
+  const ai = workflow.content_source === "ai", audio = ["audio", "text_audio"].includes(workflow.output), imageOnly = workflow.output === "none";
   $(slot + "-image-fields").hidden = workflow.image_source !== "upload";
   $(slot + "-library-field").hidden = workflow.image_source !== "library";
   form.elements[slot + "_library_id"].required = workflow.image_source === "library";
   $(slot + "-preset-note").hidden = !ai;
   $(slot + "-style-field").hidden = !ai;
-  form.elements[slot + "_content"].required = !ai;
-  form.elements[slot + "_content"].parentElement.hidden = ai;
-  $(slot + "-preview").hidden = ai;
+  $(slot + "-prompt-field").hidden = !ai;
+  form.elements[slot + "_content"].required = !ai && !imageOnly;
+  form.elements[slot + "_content"].parentElement.hidden = ai || imageOnly;
+  $(slot + "-preview").hidden = ai || imageOnly;
   const generate = $(slot + "-generate");
-  if (generate) generate.hidden = ai;
+  if (generate) generate.hidden = ai || imageOnly;
   $(slot + "-voice-fields").hidden = !audio;
   form.elements[slot + "_tts_provider_id"].required = audio;
 }
@@ -455,7 +463,7 @@ for (const slot of ["morning", "noon", "evening", "other"]) {
     if (template) fillGreetingWorkflow(slot, template.workflow);
     greetingDirty = true;
   };
-  for (const key of ["content_source", "image_source", "output", "library_id", "prompt_style"]) {
+  for (const key of ["content_source", "image_source", "output", "library_id", "prompt_style", "custom_prompt"]) {
     fields[slot + "_" + key].onchange = () => {
       fields[slot + "_delivery_mode"].value = "custom";
       greetingDirty = true;
@@ -465,6 +473,7 @@ for (const slot of ["morning", "noon", "evening", "other"]) {
   fields[slot + "_image_file"].onchange = event => {
     const file = event.target.files[0];
     if (file) {
+      greetingTemplateImages.delete(slot);
       $(slot + "-image-name").textContent = "待保存：" + file.name;
       fields[slot + "_remove_image"].checked = false;
     }
@@ -533,6 +542,8 @@ $("greeting-task-slot").onchange = () => {
   }
   $(to + "-image-name").textContent = $(from + "-image-name").textContent;
   $(to + "-preview").textContent = form.elements[to + "_content"].value;
+  if (greetingTemplateImages.has(from)) greetingTemplateImages.set(to, greetingTemplateImages.get(from));
+  else greetingTemplateImages.delete(to);
   greetingTarget.activeSlot = to;
   updateGreetingMedia(to); updateGreetingTaskSlot(); greetingDirty = true;
 };
@@ -545,7 +556,7 @@ async function openGreetings(item) {
   item = {...item, group_remark:data.group_remark, user_remark:data.user_remark};
   greetingItem = item; greetingDirty = Boolean(taskKey && !data.task_slot);
   $("greeting-run-result").textContent = "";
-  const form = $("greeting-form"); form.reset();
+  const form = $("greeting-form"); form.reset(); greetingTemplateImages.clear();
   $("greeting-task-fields").hidden = !taskKey;
   $("greeting-task-name").required = Boolean(taskKey);
   $("greeting-task-name").value = data.task_name || "";
@@ -633,6 +644,11 @@ $("greeting-form").onsubmit = async event => {
   greetingRunning = true; controls.forEach(node => node.disabled = true); $("greeting-error").textContent = "";
   try {
     for (const rule of rules) {
+      const templateImage = greetingTemplateImages.get(rule.slot);
+      if (templateImage && rule.workflow.image_source === "upload" && !rule.remove_image) {
+        rule.image_base64 = templateImage.image_base64;
+        rule.image_filename = templateImage.image_filename;
+      }
       const file = form.elements[rule.slot + "_image_file"].files[0];
       if (file && rule.workflow.image_source === "upload") {
         if (!file.size || file.size > 3500000) throw new Error("图片必须非空且不超过3.5 MB");

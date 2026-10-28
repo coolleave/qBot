@@ -83,3 +83,9 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 2026-10-28 已将本地项目库从 0019 显式升级至 0020_identity_owner。升级前未发现本机运行中的 qBot 服务；原 4 条身份、表结构及版本已备份到本机临时目录 `qbot-before-0020-0hap63ti/identity-backup.json`。升级后逐字段核对原身份保留、新主人字段均为空、唯一索引正确，Store 初始化正常。未替用户选择主人。
 
 迁移后已使用原命令 `python -m qbot serve` 启动本地服务，8092 的 `/health` 返回 `status=ok`；此检查仅确认 HTTP 服务可用，不代表 QQ 连接或模型回复验收通过。
+
+## 定时模板管理（已编写，待验证）
+
+0021_scheduled_templates 仅创建全局模板表，不修改已有任务或配置文件内置模板。部署先停止服务、备份项目库及版本，显式执行 `python -m alembic upgrade head` 后启动。此次不自动执行迁移。
+
+2026-10-28：完成 Python AST、JavaScript 语法、HTML ID/脚本资源及差异静态检查；未运行测试、浏览器、数据库迁移或模型/TTS/QQ 调用。需显式升级数据库、重启后端并刷新后台后使用。

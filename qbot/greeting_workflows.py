@@ -15,12 +15,16 @@ class GreetingWorkflow(BaseModel):
     version: Literal[1] = 1
     content_source: Literal["fixed", "ai"] = "fixed"
     image_source: Literal["none", "upload", "library"] = "none"
-    output: Literal["text", "audio"] = "text"
+    output: Literal["text", "audio", "text_audio", "none"] = "text"
+    custom_prompt: str = Field(default="", max_length=4000)
     library_id: str | None = Field(default=None, max_length=80)
     prompt_style: str | None = Field(default=None, max_length=80, pattern=r"^[a-z][a-z0-9_]*$")
 
     @model_validator(mode="after")
     def validate_library(self):
+        self.custom_prompt = self.custom_prompt.strip()
+        if self.output == "none" and (self.image_source == "none" or self.content_source != "fixed"):
+            raise ValueError("仅图片输出必须选择图片且不使用 AI 文案")
         if self.image_source == "library" and not self.library_id:
             raise ValueError("随机图片需选择素材库")
         if self.image_source != "library":

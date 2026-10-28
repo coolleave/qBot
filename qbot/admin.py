@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from qbot.config import Settings
 from qbot.identity_roles import IdentityRole
 from qbot.greetings import GreetingInput
+from qbot.scheduled_templates import ScheduledTemplateInput
 from qbot.security import verify_password
 from qbot.storage import Store
 from qbot.multimodal_config import MultimodalConfig
@@ -567,6 +568,40 @@ def admin_router(settings: Settings) -> APIRouter:
     @router.post("/api/admin/bots/{bot_id}/records/{record_id}/send", dependencies=[Depends(require_admin)])
     async def send_proactive(bot_id: int, record_id: int, data: ProactiveInput, request: Request) -> dict:
         return await request.app.state.proactive.send(bot_id, record_id, data.content, str(data.request_id))
+
+    @router.get("/api/admin/scheduled-templates", dependencies=[Depends(require_admin)])
+    async def list_templates(search: str = Query("", max_length=100), page: int = Query(1, ge=1, le=100000),
+                             db: Store = Depends(store)) -> dict:
+        return await db.call("list_scheduled_templates", search.strip(), page)
+
+    @router.get("/api/admin/scheduled-templates/{template_id}", dependencies=[Depends(require_admin)])
+    async def template_detail(template_id: int, db: Store = Depends(store)) -> dict:
+        try:
+            return await db.call("scheduled_template_detail", template_id)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from None
+
+    @router.post("/api/admin/scheduled-templates", dependencies=[Depends(require_admin)])
+    async def create_template(data: ScheduledTemplateInput, db: Store = Depends(store)) -> dict:
+        try:
+            return {"id": await db.call("save_scheduled_template", data.model_dump())}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.put("/api/admin/scheduled-templates/{template_id}", dependencies=[Depends(require_admin)])
+    async def update_template(template_id: int, data: ScheduledTemplateInput, db: Store = Depends(store)) -> dict:
+        try:
+            return {"id": await db.call("save_scheduled_template", data.model_dump(), template_id)}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.delete("/api/admin/scheduled-templates/{template_id}", dependencies=[Depends(require_admin)])
+    async def delete_template(template_id: int, db: Store = Depends(store)) -> dict:
+        try:
+            await db.call("delete_scheduled_template", template_id)
+            return {"ok": True}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
 
     @router.get("/api/admin/greeting-targets", dependencies=[Depends(require_admin)])
     async def greeting_targets(bot_id: int | None = Query(None, gt=0),

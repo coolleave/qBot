@@ -10,6 +10,7 @@
 
 | 文件 | 关键入口 |
 | --- | --- |
+| [scheduled_templates.py](../qbot/scheduled_templates.py)、[static/scheduled-templates.js](../qbot/static/scheduled-templates.js) | 自定义模板输入校验及后台管理、任务套用 |
 | [greetings.py](../qbot/greetings.py) | GreetingRule / GreetingInput、默认规则、时间换算 |
 | [server.py](../qbot/server.py) | lifespan 在后台模式启动并关闭调度任务 |
 | [proactive.py](../qbot/proactive.py) | ProactiveSender.run_schedules / send_scheduled |
@@ -159,3 +160,11 @@ AI 生成节点依据 workflow.output 区分文字和语音。语音文案只输
 迁移 0018_schedule_timing 增加保存时刻，旧任务初始化为迁移时刻，保留所有历史。需停服务、备份后迁移并重启。不运行测试、浏览器或真实发送。
 
 2026-10-26 已备份到本机临时目录 `qbot-before-0018-1tjql7xl`，显式迁移至 `0018_schedule_timing`，核对原 8 条任务及 14 条执行记录的既有字段全部保留，新增保存时刻非空。后端已重启，健康接口正常；Python AST、JavaScript 语法、HTML ID 唯一性及差异静态检查通过。未运行测试、打开浏览器或手动执行发送验证，自动调度效果待实际到点验收。
+
+## 后台模板管理（已编写，待验证）
+
+定时任务页增加“模板管理”，支持自定义模板列表、查看、新增、编辑、删除。模板全局复用，不包含机器人、接收人和执行时间；任务中套用后保存独立快照，模板后续变更不影响已保存任务。保留原配置文件内置模板。支持固定文字或每次执行由模型按自定义提示词生成，文字、TTS语音、文字＋语音、仅图片输出，可附上传图片或随机素材图。组合顺序为文字→语音→图片，全部准备成功后才发送，失败不补发。纯图片不调用聊天模型；语音由文案合成，不保存预录音频。
+
+模板图片复用 PNG/JPG、3.5MB 校验；列表不返回图片，详情仅管理员读取 Base64。AI 自定义提示词最多4000字，输出沿用200字限制；保存模板不调用模型。模板管理与任务使用原有管理员/CSRF 校验。新增0021迁移，应用不自动升级；此次不运行测试、浏览器或真实发送。
+
+2026-10-28：完成 Python AST、JavaScript 语法、HTML ID/脚本资源及差异静态检查；未运行测试、浏览器、数据库迁移或模型/TTS/QQ 调用。需显式升级数据库、重启后端并刷新后台后使用。

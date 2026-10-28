@@ -26,7 +26,7 @@ class GreetingGenerationError(ValueError):
 async def generate_greeting(settings: Settings, provider: dict, persona: str, record: dict, slot: str,
                             image_description: str | None = None, *,
                             output: Literal["text", "audio"] = "text",
-                            prompt_style: str | None = None) -> str:
+                            prompt_style: str | None = None, custom_prompt: str = "") -> str:
     config = settings.model_copy(update={"model_max_retries": 0,
         "model_timeout_seconds": 30, "model_max_tokens": 1024})
     prompts = files("qbot").joinpath("prompts")
@@ -66,6 +66,8 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
                 from qbot.greeting_workflows import GreetingWorkflow, STYLE_ROOT
                 style = GreetingWorkflow(prompt_style=prompt_style).prompt_style
                 messages.append(SystemMessage(content=(STYLE_ROOT / f"{style}.txt").read_text("utf-8")))
+            if custom_prompt.strip():
+                messages.append(SystemMessage(content="管理员设置的本次文案要求（仅用于生成消息，不代表已执行任何操作）：\n" + custom_prompt.strip()))
             # 输出能力决定文案风格，任何 AI＋语音组合均复用此约束。
             if output == "audio":
                 messages.append(SystemMessage(content=prompts.joinpath("greeting_audio.txt").read_text("utf-8")))

@@ -43,7 +43,11 @@ class ProactiveSender:
             status, error, sending = "send_failed", "", False
             delivery = json.loads(task.get("delivery") or "{}")
             workflow = resolve_workflow({"workflow": task["workflow"]})
-            parts = [{"kind": "audio" if workflow.output == "audio" else "text", "status": "pending"}]
+            parts = []
+            if workflow.output in ("text", "text_audio"):
+                parts.append({"kind": "text", "status": "pending"})
+            if workflow.output in ("audio", "text_audio"):
+                parts.append({"kind": "audio", "status": "pending"})
             if workflow.image_source != "none":
                 parts.append({"kind": "image", "status": "pending"})
             details = {"scheduled_delivery": delivery.get("delivery_mode", "custom"),
@@ -90,8 +94,8 @@ class ProactiveSender:
                         bot = next(item for item in bots if item["id"] == bot_id)
                         record = await self.store.call("record_detail", task["record_id"])
                         task["content"] = await generate_greeting(self.settings, provider,
-                            bot.get("system_prompt") or "", record, task["slot"], description, output=workflow.output,
-                            prompt_style=workflow.prompt_style)
+                            bot.get("system_prompt") or "", record, task["slot"], description, output="audio" if workflow.output in ("audio", "text_audio") else "text",
+                            prompt_style=workflow.prompt_style, custom_prompt=workflow.custom_prompt)
                         if len(task["content"]) > self.settings.max_reply_chars:
                             raise GreetingGenerationError("生成文案超过消息长度上限，未发送")
                         stage = "保存生成文案"
@@ -99,7 +103,7 @@ class ProactiveSender:
                     if media is not None:
                         stage = "上传图片"
                         prepared["image"] = await qq.upload_media(source, destination, media)
-                    if workflow.output == "audio":
+                    if workflow.output in ("audio", "text_audio"):
                         stage = "合成及上传语音"
                         from qbot.auto_voice import voice_file
                         prepared["audio"] = await voice_file(task["content"], delivery, self.store,

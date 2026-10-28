@@ -29,9 +29,11 @@ class GreetingRule(BaseModel):
     @model_validator(mode="after")
     def validate_rule(self):
         self.workflow = resolve_workflow(self.model_dump())
-        if self.workflow.content_source == "fixed" and not self.content:
+        if self.workflow.output == "none":
+            self.content = ""
+        if self.workflow.output != "none" and self.workflow.content_source == "fixed" and not self.content:
             raise ValueError("请填写 1 至 200 字文案")
-        if self.workflow.output == "audio" and not self.tts_provider_id:
+        if self.workflow.output in ("audio", "text_audio") and not self.tts_provider_id:
             raise ValueError("语音输出需选择 TTS 供应商")
         if self.remove_image and self.image_base64 is not None:
             raise ValueError("不能同时删除和上传图片")

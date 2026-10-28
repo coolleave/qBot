@@ -45,7 +45,8 @@ class Store:
         try:
             metadata.reflect(engine, only=["model_providers", "app_settings", "conversations", "chat_records", "bots",
                                            "interaction_greetings", "interaction_greeting_runs", "bot_user_identities",
-                                           "admin_sessions", "bot_roles", "bot_contact_notes"])
+                                           "admin_sessions", "bot_roles", "bot_contact_notes", "scheduled_templates"])
+            self.templates = metadata.tables["scheduled_templates"]
             self.admin_sessions = metadata.tables["admin_sessions"]
             self.identities = metadata.tables["bot_user_identities"]
             self.roles = metadata.tables["bot_roles"]
@@ -276,11 +277,12 @@ class Store:
                 if values.get("supports_images") and (values["model_type"] != "chat" or values["api_type"] != "openai_compatible"):
                     raise ValueError("图片输入能力仅用于兼容接口的 chat 模型")
                 if provider_id is not None:
-                    for raw in conn.execute(select(self.greetings.c.delivery)).scalars():
+                    template_configs = conn.execute(select(self.templates.c.config)).scalars().all()
+                    for raw in [*conn.execute(select(self.greetings.c.delivery)).scalars(), *template_configs]:
                         delivery = json.loads(raw or "{}")
-                        if (resolve_workflow(delivery).output == "audio" and delivery.get("tts_provider_id") == provider_id
+                        if (resolve_workflow(delivery).output in ("audio", "text_audio") and delivery.get("tts_provider_id") == provider_id
                                 and (not values["enabled"] or values["model_type"] != "tts")):
-                            raise ValueError("供应商已被定时语音任务引用，请先调整任务配置")
+                            raise ValueError("供应商已被定时语音任务或模板引用，请先调整配置")
                     for bot in conn.execute(select(self.bots)).mappings():
                         mm = json.loads(bot["multimodal"] or "{}")
                         for field, kind in (("vision_provider_id", "chat"), ("asr_provider_id", "asr"), ("tts_provider_id", "tts")):
@@ -785,6 +787,68 @@ class Store:
             return None
         return record["identity"]
 
+    def list_scheduled_templates(self, search: str = "", page: int = 1) -> dict:
+        t = self.templates
+        filters = [t.c.name.contains(search, autoescape=True)] if search else []
+        with self.engine.connect() as conn:
+            total = conn.execute(select(func.count()).select_from(t).where(*filters)).scalar_one()
+            rows = conn.execute(select(t.c.id, t.c.name, t.c.config, t.c.image_filename, t.c.updated_at)
+                .where(*filters).order_by(t.c.id.desc()).offset((page - 1) * 20).limit(20)).mappings().all()
+        return {"items": [{**dict(row), "config": json.loads(row["config"])} for row in rows],
+                "total": total, "page": page, "page_size": 20, "catalog": public_catalog()}
+
+    def scheduled_template_detail(self, template_id: int) -> dict:
+        with self.engine.connect() as conn:
+            row = conn.execute(select(self.templates).where(self.templates.c.id == template_id)).mappings().first()
+        if row is None:
+            raise ValueError("模板不存在或已删除")
+        return {"id": row["id"], "name": row["name"], **json.loads(row["config"]),
+                "image_filename": row["image_filename"] or "",
+                "image_base64": base64.b64encode(row["image_data"]).decode("ascii") if row["image_data"] else None}
+
+    def save_scheduled_template(self, values: dict, template_id: int | None = None) -> int:
+        from qbot.scheduled_templates import ScheduledTemplateInput
+        from qbot.media import validate_media
+        data = ScheduledTemplateInput.model_validate(values)
+        t = self.templates
+        with self.engine.begin() as conn:
+            # 与供应商编辑共用配置行锁，防止验证后供应商被并发停用。
+            conn.execute(select(self.settings.c.id).where(self.settings.c.id == 1).with_for_update()).one()
+            old = conn.execute(select(t).where(t.c.id == template_id).with_for_update()).mappings().first() if template_id else None
+            if template_id is not None and old is None:
+                raise ValueError("模板不存在或已删除")
+            image_data, filename = (old["image_data"], old["image_filename"]) if old else (None, None)
+            if data.remove_image:
+                image_data, filename = None, None
+            if data.image_base64 is not None:
+                try:
+                    raw = base64.b64decode(data.image_base64, validate=True)
+                except ValueError:
+                    raise ValueError("图片编码无效") from None
+                media = validate_media("image", data.image_filename, raw)
+                image_data, filename = media.data, media.filename
+            if data.workflow.image_source == "upload" and not image_data:
+                raise ValueError("请上传模板图片")
+            if data.workflow.image_source == "library" and data.workflow.library_id not in {item.id for item in load_catalog().libraries}:
+                raise ValueError("请选择有效素材库")
+            if data.workflow.output in ("audio", "text_audio"):
+                provider = conn.execute(select(self.providers).where(self.providers.c.id == data.tts_provider_id)).mappings().first()
+                if not provider or not provider["enabled"] or provider["model_type"] != "tts" or not provider["api_key_encrypted"]:
+                    raise ValueError("请选择已启用且配置密钥的 TTS 供应商")
+            config = data.model_dump(exclude={"name", "image_base64", "image_filename", "remove_image"})
+            fields = dict(name=data.name, config=json.dumps(config, ensure_ascii=False),
+                          image_data=image_data, image_filename=filename, updated_at=utc_now())
+            if old:
+                conn.execute(t.update().where(t.c.id == template_id).values(**fields))
+                return template_id
+            return conn.execute(t.insert().values(created_at=utc_now(), **fields)).inserted_primary_key[0]
+
+    def delete_scheduled_template(self, template_id: int) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(select(self.settings.c.id).where(self.settings.c.id == 1).with_for_update()).one()
+            if not conn.execute(self.templates.delete().where(self.templates.c.id == template_id)).rowcount:
+                raise ValueError("模板不存在或已删除")
+
     def greeting_settings(self, bot_id: int, record_id: int, task_key: str = "") -> dict:
         from qbot.greetings import default_rules, local_time
         record = self.record_detail(record_id)
@@ -857,7 +921,7 @@ class Store:
                     raise ValueError("组合消息需要上传图片")
                 if rule.workflow.image_source == "library" and rule.workflow.library_id not in {item.id for item in load_catalog().libraries}:
                     raise ValueError("请选择有效素材库")
-                if rule.workflow.output == "audio":
+                if rule.workflow.output in ("audio", "text_audio"):
                     provider = conn.execute(select(self.providers).where(self.providers.c.id == rule.tts_provider_id)).mappings().first()
                     if not provider or not provider["enabled"] or provider["model_type"] != "tts" or not provider["api_key_encrypted"]:
                         raise ValueError("请选择已启用且配置密钥的 TTS 供应商")

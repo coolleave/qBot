@@ -459,3 +459,9 @@ conversations 新增可空 `platform_nickname VARCHAR(256)`（utf8mb4），独�
 bot_user_identities 新增可空 owner_slot TINYINT 与 owner_selected_at DATETIME(6)。应用只写 NULL（普通身份）或 1（主人），唯一索引 uq_identity_owner(bot_id, owner_slot) 利用 MySQL 允许多个 NULL 确保同机器人只有一位主人。选择、切换、解绑和身份编辑共用机器人行锁；选择时间用于排除认主前的同群发言。旧身份初始化为非主人，不根据角色名称自动认领。
 
 2026-10-28：认主相关代码已编写，Python/JavaScript 语法与差异静态检查通过；未运行测试、浏览器或真实模型验收。
+
+## 0021 定时模板（已编写，待验证）
+
+scheduled_templates 是管理员全局模板表，不保存任何会话身份。id BIGINT UNSIGNED 主键，name VARCHAR(100)，config MEDIUMTEXT 保存文案、工作流、提示词、TTS供应商与音色，image_data MEDIUMBLOB、image_filename VARCHAR(150) 可空，created_at/updated_at DATETIME(6) UTC。任务套用后保存独立快照，无模板外键；删除模板不删除任务。
+
+2026-10-28：完成 Python AST、JavaScript 语法、HTML ID/脚本资源及差异静态检查；未运行测试、浏览器、数据库迁移或模型/TTS/QQ 调用。需显式升级数据库、重启后端并刷新后台后使用。
