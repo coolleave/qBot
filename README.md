@@ -62,6 +62,10 @@
 
 ### Docker Compose 部署（已编写，待部署验证）
 
+服务器自动更新脚本见 `scripts/deploy-if-updated.sh`：可由 cron 每 30 分钟检查 origin/main，有更新才构建部署，带互斥锁、成功提交标记、健康检查和迁移暂停。首次需手动部署并登记基线，安装命令见 [自动部署说明](docs/docker-deployment.md#每-30-分钟自动检查更新配置已编写运行待验证)。脚本已编写，未安装服务器 cron 或执行实际部署验收。
+
+测试环境沿用 `.env`；线上使用 `.env.production`，仅数据库地址和端口不同。在 Linux 线上服务器执行 `QBOT_ENV_FILE=.env.production docker compose --env-file .env.production -p qbot-prod up -d --build qbot`。真实配置不提交 Git；网络准备、迁移与环境切换详见 [部署说明](docs/docker-deployment.md)。
+
 长期运行可使用根目录 `compose.yaml` 和 `Dockerfile`，完整步骤见 [Docker 部署说明](docs/docker-deployment.md)。使用 Python 3.13、单进程运行，镜像包含 `config/` 和 `图片/`；复用已有 MySQL 的外部网络，不创建 MySQL 容器，启动不自动迁移。
 
 保留已有 `.env`，新机器才从 `.env.example` 复制。配置 `QBOT_DOCKER_NETWORK` 为已有 MySQL 所在的用户自定义网络，`MYSQL_HOST` 为该网络上的容器名/别名，`MYSQL_PORT` 为内部端口。含 `$` 的管理员密码哈希须用单引号包裹。完成配置、停止旧服务并备份数据库后执行：

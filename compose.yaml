@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     stop_grace_period: 60s
     env_file:
-      - .env
+      - "${QBOT_ENV_FILE:-.env}"
     environment:
       HOST: "0.0.0.0"
       PORT: "8092"

@@ -8,6 +8,35 @@ Dockerfile 的构建与运行阶段均使用清华 TUNA 的 Debian / Debian Secu
 
 ## 环境和配置
 
+### 测试与线上环境（配置已编写，运行待验证）
+
+保留 `.env` 作为测试环境，`.env.production` 作为线上环境。本次线上配置复制现有 `.env`，仅将 `MYSQL_HOST` 改为 `182.92.111.155`、`MYSQL_PORT` 改为 `3306`，其余账号、密码和加密主密钥保持一致。两份真实配置均被 Git 忽略，需要安全传到对应服务器，不要提交或打入镜像。
+
+Compose 的 `QBOT_ENV_FILE` 选择注入应用容器的配置文件，默认 `.env`；`--env-file` 选择 Compose 端口、网络等变量的来源。线上命令同时指定两者，避免只切换 Compose 插值而应用仍读取测试配置。以下为 Linux shell 命令：
+
+```sh
+# 测试环境（保留原有 Compose 项目名，避免另起重复实例）
+docker compose --env-file .env up -d --build qbot
+
+# 线上环境：在部署服务器执行
+QBOT_ENV_FILE=.env.production docker compose --env-file .env.production -p qbot-prod up -d --build qbot
+QBOT_ENV_FILE=.env.production docker compose --env-file .env.production -p qbot-prod logs --tail=100 -f qbot
+```
+
+线上查询迁移版本使用同样的配置选择：
+
+```sh
+QBOT_ENV_FILE=.env.production docker compose --env-file .env.production -p qbot-prod run --rm --no-deps qbot python -m alembic current
+```
+
+需要升级时，先备份并停止对应环境应用，再将 `current` 换为 `upgrade head`，成功后启动；不要不带环境参数执行线上迁移。线上停服务也使用相同命令前缀，将后续操作换成 `stop qbot`。本次没有连接或迁移线上数据库、启动容器。
+
+两套环境默认都映射 8092，适合分别部署在不同服务器；同一宿主机不能同时占用同一地址端口。若数据库复制了相同 QQ 机器人凭证，不要同时启用两套环境的同一个机器人，测试时使用独立机器人或停用对应实例。
+
+远程 MySQL 使用实际 IP 和 3306，需允许应用服务器来源连接。当前 Compose 仍要求 `QBOT_DOCKER_NETWORK` 指定的外部网络存在；若线上没有该网络，创建一次 `docker network create qbot-network`（或实际配置的网络名）即可，无需把远程 MySQL 接入本机网络。
+
+直接运行 `python -m qbot serve` 仍默认读取 `.env`，不会自动读取 `.env.production`；以上环境选择用于 Docker Compose。
+
 需要 Linux Docker Engine 或使用 Linux 容器的 Docker Desktop，以及 Docker Compose v2。在项目根目录执行命令。不要同时运行宿主机旧服务和容器，也不要扩容或开启多 worker。
 
 已有 `.env` 保留原文件，按 `.env.example` 补齐配置；新机器才复制模板为 `.env`。Compose 将 `.env` 注入容器，镜像不包含该文件。密码、密码哈希等含 `$` 或 `#` 的值请用单引号包裹，例如 `ADMIN_PASSWORD_HASH='生成的完整哈希'`，防止 Compose 插值或注释解析改变内容；不要使用 `$$` 替换真实密码。不要分享 `docker compose config` 的完整输出，其中可能包含密钥。
@@ -64,6 +93,62 @@ docker compose logs --tail=100 -f qbot
 健康检查仅请求 `/health`，不调用模型，也不代表数据库或 QQ 连接正常。自动重启仅在进程退出时触发，unhealthy 本身不会自动重启；QQ 连续失败停止重连时需排查配置后手动重启。
 
 ## 更新与数据
+
+### 每 30 分钟自动检查更新（配置已编写，运行待验证）
+
+服务器 cron 调用 `scripts/deploy-if-updated.sh`，检查 origin/main，仅当远端提交不同于上次成功部署提交时构建并更新 qbot-prod。脚本用 flock 防止重叠部署，网络抓取最多 180 秒；先构建、再更新容器并最多等待 120 秒健康检查。构建失败不替换原容器，健康检查失败不登记成功，不自动回滚；两种失败下次都会重试。没有更新时不重启。健康只代表 HTTP 进程，不代表 QQ 已连接。未运行实际部署或安装 cron。
+
+成功提交号在 `.deploy/last-success`，锁和日志也在 `.deploy/`，已加入 Git 忽略。日志按服务器日期每日一份，下一次运行时删除超过 14 天的旧部署日志。仓库必须在 main 分支且所有已跟踪文件没有本地修改；脚本不会自动 stash、reset 或覆盖环境文件。运行用户必须有 Docker 权限，并具备 Bash、Git、flock、timeout、find、Compose v2（支持 `up --wait --wait-timeout`）。脚本不依赖交互式 shell 或 conda 环境。
+
+#### 首次安装
+
+以下在实验室服务器用 zhangxiaowen 用户执行，不使用 root 的 crontab。公开仓库使用 HTTPS 拉取无需部署密钥：
+
+```sh
+cd /home/zhangxiaowen/qBot/qBot
+git remote set-url origin https://github.com/coolleave/qBot.git
+git diff -- compose.yaml
+```
+
+此前服务器曾把 `env_file` 手动改成 `.env.production`，GitHub 现在统一使用 `${QBOT_ENV_FILE:-.env}`。如果上述差异只有这项已知修改，先备份再恢复该文件，然后拉代码；有其他修改则先人工核对，不要直接恢复：
+
+```sh
+cp -p compose.yaml /home/zhangxiaowen/qbot-compose.before-auto.yaml
+git restore --source=HEAD -- compose.yaml
+git pull --ff-only
+```
+
+确认 `.env.production` 保留实际数据库、密钥及 `QBOT_BIND_IP=192.168.1.106` 等生产配置。首次先手动完成当前代码的镜像部署和所需数据库迁移，再登记基线。若当前代码不需要新迁移：
+
+```sh
+QBOT_ENV_FILE=.env.production docker compose --env-file .env.production -p qbot-prod up -d --build --wait --wait-timeout 120 qbot
+bash scripts/deploy-if-updated.sh --mark-current
+bash scripts/deploy-if-updated.sh
+```
+
+`--mark-current` 是维护者确认“当前 HEAD 已经完成部署”的操作，只额外核对现有容器健康，不会构建、迁移，也不能验证容器代码是否与 HEAD 相同。因此只能在上述手动部署成功后使用，不能用来跳过部署失败。未登记基线时定时脚本会拒绝自动发布。
+
+执行 `crontab -e`，保留现有任务，只添加下面一行（不要重复添加）：
+
+```cron
+*/30 * * * * /bin/bash /home/zhangxiaowen/qBot/qBot/scripts/deploy-if-updated.sh /home/zhangxiaowen/qBot/qBot
+```
+
+每小时 00、30 分执行一次，日期和时区使用服务器设置；运行跨过下一次触发时间时，新任务因锁而跳过。检查计划任务及日志：
+
+```sh
+crontab -l
+ls -lt .deploy/logs/
+tail -n 100 .deploy/logs/deploy-$(date +%F).log
+```
+
+#### 数据库升级与维护
+
+检测到相对成功部署版本有 `migrations/` 变更时，在拉取代码到工作区、构建或重启前暂停，日志提示人工处理。不只检查本地 HEAD，因此拉取成功但构建失败也不会丢掉后续重试。新增、修改或删除迁移均暂停；不会自动运行 Alembic 或 stamp。
+
+维护者按[数据库迁移](database-migrations.md)完成代码更新、备份、停止服务、迁移、新版本部署与健康检查后，运行 `bash scripts/deploy-if-updated.sh --mark-current` 更新基线，之后恢复自动检查。人工维护期间先在 crontab 注释该行，确认没有部署进程仍在运行；结束后再取消注释，避免和手动操作重叠。
+
+如果更新需要手动修改 `.env.production`、外部网络或其他基础设施，也应先暂停 cron 并按发布说明处理；脚本不会自动推断这些前置条件。自动构建仍会沿用当前 Dockerfile 的依赖缓存策略，并非每次只重启容器。
 
 更新代码后，先构建新镜像，再停止旧应用、备份并迁移；迁移成功后启动：
 
