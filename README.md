@@ -60,9 +60,9 @@
 
 ## 如何运行
 
-### Docker Compose 部署（已编写，待部署验证）
+### Docker Compose 部署（实验室服务器已部署）
 
-服务器自动更新脚本见 `scripts/deploy-if-updated.sh`：可由 cron 每 30 分钟检查 origin/main，有更新才构建部署，带互斥锁、成功提交标记、健康检查和迁移暂停。首次需手动部署并登记基线，安装命令见 [自动部署说明](docs/docker-deployment.md#每-30-分钟自动检查更新配置已编写运行待验证)。脚本已编写，未安装服务器 cron 或执行实际部署验收。
+服务器自动更新脚本见 `scripts/deploy-if-updated.sh`：可由 cron 每 30 分钟检查 origin/main，有更新才构建部署，带互斥锁、成功提交标记、健康检查和迁移暂停。首次需手动部署并登记基线，安装命令见 [自动部署说明](docs/docker-deployment.md#每-30-分钟自动检查更新配置已编写运行待验证)。已完成服务器初始化部署、基线登记和一次无更新检查，尚未安装 cron。
 
 测试环境沿用 `.env`；线上使用 `.env.production`，仅数据库地址和端口不同。在 Linux 线上服务器执行 `QBOT_ENV_FILE=.env.production docker compose --env-file .env.production -p qbot-prod up -d --build qbot`。真实配置不提交 Git；网络准备、迁移与环境切换详见 [部署说明](docs/docker-deployment.md)。
 
@@ -77,7 +77,7 @@ docker compose up -d qbot
 docker compose logs --tail=100 -f qbot
 ```
 
-迁移成功后再启动。后台默认映射到宿主机 `127.0.0.1:8092`，可通过 SSH 隧道管理；`QBOT_BIND_IP` / `QBOT_HTTP_PORT` 可调整宿主机映射。当前未构建镜像、执行迁移或启动容器，Linux 依赖兼容性待实际部署确认。
+迁移成功后再启动。后台默认映射到宿主机 `127.0.0.1:8092`，可通过 SSH 隧道管理；`QBOT_BIND_IP` / `QBOT_HTTP_PORT` 可调整宿主机映射。2026-10-28 已在实验室服务器完成国内镜像源构建和容器健康检查，本次未执行数据库迁移或真实模型调用。
 
 ### 本地 Python 运行
 
