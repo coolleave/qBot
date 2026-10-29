@@ -38,7 +38,7 @@ main() {
     log_file="$state_dir/logs/deploy-$(date +%F).log"
     exec >>"$log_file" 2>&1
     find "$state_dir/logs" -maxdepth 1 -type f -name 'deploy-????-??-??.log' -mtime +14 -delete
-    trap 'printf "[%s] 部署失败，退出码=%s，未更新成功标记。\n" "$(date -Is)" "$?" >&2' ERR
+    trap 'deploy_exit=$?; printf "[%s] 部署失败，退出码=%s，未更新成功标记。\n" "$(date -Is)" "$deploy_exit" >&2' ERR
 
     printf '[%s] 开始检查，模式=%s\n' "$(date -Is)" "$mode"
     [[ $(git rev-parse --show-toplevel) == "$PWD" ]] || {
@@ -97,7 +97,8 @@ main() {
     fi
 
     printf '[%s] 更新 %s -> %s\n' "$(date -Is)" "$last_success" "$target"
-    git merge --ff-only "$target"
+    # 源码需允许容器非 root 用户读取；日志和部署状态仍使用外层的 077。
+    (umask 022; git merge --ff-only "$target")
     # 先构建成功再替换容器；不用 --no-cache，尽量复用现有构建缓存。
     "${compose[@]}" --progress plain build qbot
     "${compose[@]}" up -d --no-build --wait --wait-timeout 120 qbot

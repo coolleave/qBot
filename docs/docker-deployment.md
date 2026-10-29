@@ -1,5 +1,11 @@
 # Docker Compose 部署
 
+## 自动部署文件权限修复（2026-10-29，待服务器验证）
+
+旧部署脚本对全部操作使用 umask 077，Git 更新的源码可能成为 600 权限；Docker COPY 保留权限但默认归属 root，导致非 root 的 qbot 用户无法读取源码并循环重启。修复方案：仅在 Git 快进更新的子 shell 中使用 umask 022，日志、锁与成功标记仍沿用 077；运行镜像在复制资源后为 /app 增加读取权限和目录遍历权限，兼容此前已经产生的 600 文件，不修改宿主机 .env 权限。修正失败日志退出码捕获，避免显示错误的 0。
+
+本次继续使用项目内现有镜像源和依赖缓存，不修改 Docker 全局配置；无需数据库迁移。修复仅影响源码更新和运行镜像末尾的权限层，依赖安装层可复用。部署完成后以容器 healthy、/health、/admin 和非 root 文件读取结果核对。
+
 ## 构建下载源（实验室服务器构建已通过）
 
 基础镜像默认使用 `m.daocloud.io/docker.io/library/python:3.13-slim-bookworm`，通过 DAOCloud 获取官方 Python 镜像，避免实验室服务器直接访问 Docker Hub 超时。2026-10-28 已在该服务器完成基础镜像及完整应用镜像构建，并重建生产容器，Docker 健康检查通过；基础镜像层下载约 39 秒，首次依赖安装仍受实验室网络速度影响。Compose 可通过 QBOT_PYTHON_IMAGE 覆盖镜像地址，Dockerfile 对应 PYTHON_IMAGE 构建参数；不要将不同 Python 大版本、Alpine 或非 Debian 镜像直接混用。
