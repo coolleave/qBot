@@ -2,6 +2,7 @@ from qbot.greeting_workflows import resolve_workflow, public_catalog, load_catal
 import asyncio
 import base64
 import json
+from collections import defaultdict
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
@@ -13,6 +14,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from qbot.config import Settings
 from qbot.identity_roles import IdentityRole
+from qbot.memory_store import MemoryStore
 
 
 class StorageError(RuntimeError):
@@ -35,17 +37,26 @@ def mysql_engine(settings: Settings) -> Engine:
     )
 
 
-class Store:
+class Store(MemoryStore):
     """同步事务集中管理，异步调用方通过 call 在线程池执行。"""
 
     def __init__(self, engine: Engine, encryption_key: str):
         self.engine = engine
+        self.memory_locks = defaultdict(asyncio.Lock)
+        self.memory_wakeup = asyncio.Event()
         self.cipher = Fernet(encryption_key.encode())
         metadata = MetaData()
         try:
             metadata.reflect(engine, only=["model_providers", "app_settings", "conversations", "chat_records", "bots",
                                            "interaction_greetings", "interaction_greeting_runs", "bot_user_identities",
-                                           "admin_sessions", "bot_roles", "bot_contact_notes", "scheduled_templates"])
+                                           "admin_sessions", "bot_roles", "bot_contact_notes", "scheduled_templates",
+                                           "bot_memory_settings", "memory_states",
+                                           "memory_items", "memory_sources", "memory_runs"])
+            self.memory_settings = metadata.tables["bot_memory_settings"]
+            self.memory_states = metadata.tables["memory_states"]
+            self.memory_items = metadata.tables["memory_items"]
+            self.memory_sources = metadata.tables["memory_sources"]
+            self.memory_runs = metadata.tables["memory_runs"]
             self.templates = metadata.tables["scheduled_templates"]
             self.admin_sessions = metadata.tables["admin_sessions"]
             self.identities = metadata.tables["bot_user_identities"]
@@ -81,6 +92,12 @@ class Store:
 
     async def call(self, method: str, *args, **kwargs):
         try:
+            # 身份/人设管理与在途发送串行，避免遗忘或解绑确认后继续发送旧上下文。
+            if method in {"set_owner", "save_family_binding", "bind_identity_id", "save_identity_role", "delete_identity_role", "save_bot"}:
+                bot_id = (args[1] if len(args) > 1 else kwargs.get("bot_id")) if method == "save_bot" else args[0]
+                if bot_id is not None:
+                    async with self.memory_locks[bot_id]:
+                        return await asyncio.to_thread(getattr(self, method), *args, **kwargs)
             return await asyncio.to_thread(getattr(self, method), *args, **kwargs)
         except SQLAlchemyError:
             raise StorageError("数据库操作失败，请检查连接及表结构") from None
@@ -185,6 +202,10 @@ class Store:
                     return conn.execute(self.bots.insert().values(**values)).inserted_primary_key[0]
                 if old["app_id"] != values["app_id"]:
                     conn.execute(self.greetings.update().where(self.greetings.c.bot_id == bot_id).values(enabled=False))
+                    self._memory_invalidate(conn, bot_id, owner_changed=True)
+                    conn.execute(self.memory_items.update().where(self.memory_items.c.bot_id == bot_id).values(status="superseded"))
+                elif old["system_prompt"] != values.get("system_prompt"):
+                    self._memory_invalidate(conn, bot_id)
                 conn.execute(self.bots.update().where(self.bots.c.id == bot_id).values(**values))
                 return bot_id
         except IntegrityError:
@@ -283,6 +304,7 @@ class Store:
                 if values.get("supports_images") and (values["model_type"] != "chat" or values["api_type"] != "openai_compatible"):
                     raise ValueError("图片输入能力仅用于兼容接口的 chat 模型")
                 if provider_id is not None:
+                    self.check_memory_provider_references(conn, provider_id, values)
                     template_configs = conn.execute(select(self.templates.c.config)).scalars().all()
                     for raw in [*conn.execute(select(self.greetings.c.delivery)).scalars(), *template_configs]:
                         delivery = json.loads(raw or "{}")
@@ -410,6 +432,7 @@ class Store:
                         record_type="reset" if question.strip() == "/reset" else "chat", status="pending",
                         message_sent_at=sent_at.astimezone(timezone.utc).replace(tzinfo=None) if sent_at else None,
                         received_at=now, updated_at=now)).inserted_primary_key[0]
+                    self._memory_receive(conn, bot_id, cid, rid, question, source, message_id, user_id)
                     return rid, True
             except IntegrityError:
                 if attempt == 2:
@@ -659,6 +682,7 @@ class Store:
                         raise ValueError("预设称呼与已绑定用户不一致，请先调整用户绑定")
                 conn.execute(self.roles.update().where(self.roles.c.bot_id == bot_id,
                              self.roles.c.id == role_id).values(**values))
+                self._memory_invalidate(conn, bot_id)
                 return role_id
         except IntegrityError:
             raise ValueError("该智能体的角色编号已存在或角色配置无效") from None
@@ -713,6 +737,12 @@ class Store:
             conn.execute(i.delete().where(scope))
             if values is not None:
                 conn.execute(i.insert().values(bot_id=bot_id, user_id=row["user_id"], **binding))
+            if previous and previous["owner_slot"] == 1 and values is None:
+                self._memory_invalidate(conn, bot_id, owner_changed=True)
+            else:
+                affected = list(conn.execute(select(c.c.id).where(c.c.bot_id == bot_id,
+                    c.c.user_id == row["user_id"])).scalars())
+                self._memory_invalidate(conn, bot_id, conversation_ids=affected)
             return {"bot_id": bot_id, "source": row["source"], "group_id": row["group_id"],
                     "user_id": row["user_id"], **binding}
 
@@ -765,11 +795,14 @@ class Store:
                     member["preset_name"] and member["preset_name"] != member["member_name"]):
                 raise ValueError("请先为该用户保存有效的身份绑定")
             if enabled and member["owner_slot"] != 1:
+                self._memory_invalidate(conn, bot_id, owner_changed=True)
                 conn.execute(i.update().where(i.c.bot_id == bot_id, i.c.owner_slot == 1)
                              .values(owner_slot=None, owner_selected_at=None))
                 conn.execute(i.update().where(i.c.bot_id == bot_id, i.c.user_id == user_id)
                              .values(owner_slot=1, owner_selected_at=utc_now()))
             elif not enabled:
+                if member["owner_slot"] == 1:
+                    self._memory_invalidate(conn, bot_id, owner_changed=True)
                 conn.execute(i.update().where(i.c.bot_id == bot_id, i.c.user_id == user_id)
                              .values(owner_slot=None, owner_selected_at=None))
             return {"is_owner": enabled}

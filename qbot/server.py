@@ -183,7 +183,9 @@ class Dispatcher:
                     async with asyncio.timeout_at(deadline):
                         if self.store and isinstance(self.chat, RecordedChat):
                             config = await self.store.call("multimodal_config", self.bot_id)
-                            control = message.content.strip() == "/reset" or len(message.content.strip()) > self.settings.max_input_chars
+                            from qbot.memory_config import memory_command
+                            control = (message.content.strip() == "/reset" or memory_command(message.content) is not None
+                                       or len(message.content.strip()) > self.settings.max_input_chars)
                             with measure(diagnostics, "preprocess"):
                                 prepared = await prepare_message(message.content, [] if control else message.attachments,
                                                                  config, self.store, self.bot_id, details=diagnostics)
@@ -324,12 +326,20 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
         from qbot.bot_profiles import BotProfiles
         app.state.bot_profiles = BotProfiles(settings, db)
         scheduler = None
+        memory_task = None
         try:
             await manager.start_all()
             if settings.admin_enabled:
                 scheduler = asyncio.create_task(app.state.proactive.run_schedules(), name="scheduled-messages")
+                from qbot.memory import MemoryWorker
+                app.state.memory = MemoryWorker(settings, db)
+                memory_task = asyncio.create_task(app.state.memory.run(), name="memory-worker")
             yield
         finally:
+            if memory_task is not None:
+                memory_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await memory_task
             if scheduler is not None:
                 scheduler.cancel()
                 with suppress(asyncio.CancelledError):

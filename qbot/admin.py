@@ -173,6 +173,9 @@ def admin_router(settings: Settings) -> APIRouter:
     def store(request: Request) -> Store:
         return request.app.state.store
 
+    from qbot.memory_routes import install_memory_routes
+    install_memory_routes(router, require_admin)
+
     @router.get("/admin", response_class=HTMLResponse)
     async def page() -> str:
         return files("qbot").joinpath("static/admin.html").read_text("utf-8")

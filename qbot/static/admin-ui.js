@@ -4,6 +4,7 @@ const { createApp, h, reactive } = Vue;
 const ui = reactive({ page: "records", username: "", records: [], total: 0, pageSize: 20, recordPage: 1, loading: false, recordError: "" });
 const pages = [
   ["records", "聊天记录", "对话与运行结果", "▤"], ["tokens", "Token 统计", "模型用量分析", "▥"],
+  ["memory", "记忆管理", "持久记忆与整理预算", "◉"],
   ["providers", "模型供应商", "模型与服务配置", "◇"], ["bots", "机器人管理", "连接与能力配置", "◎"],
   ["messages", "对话", "历史消息与实时沟通", "↗"], ["greetings", "定时任务", "安排每一天的问候", "◷"],
   ["bindings", "用户与群备注", "管理通讯录备注", "♧"], ["identities", "身份绑定", "对话中的身份", "◈"]

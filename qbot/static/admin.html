@@ -16,6 +16,8 @@
   <script src="/admin-assets/conversation.js" defer></script>
   <script src="/admin-assets/scheduled-templates.js" defer></script>
   <script src="/admin-assets/token-stats.js" defer></script>
+  <script src="/admin-assets/memory.js" defer></script>
+  <link rel="stylesheet" href="/admin-assets/memory.css">
 </head>
 <body>
 <noscript><p class="notice">管理后台需要启用 JavaScript 才能登录和使用。</p></noscript>
@@ -27,6 +29,7 @@
   <aside id="console-nav"></aside>
   <main><header id="console-header"></header>
     <div id="notice" class="notice" hidden></div>
+    <section id="memory-page" hidden></section>
     <section id="tokens-page" hidden>
       <div class="page-heading"><div><span class="eyebrow">TOKEN ANALYTICS</span><h1>Token 统计</h1><p class="muted">查看聊天用量趋势，定位消耗较多的机器人、模型和对话。</p></div><button id="token-refresh" type="button">↻ 刷新统计</button></div>
       <form id="token-filter" class="filters">

@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | Docker 镜像、Compose、部署网络与更新 | [Docker 部署](docker-deployment.md) | Dockerfile、compose.yaml、.env.example |
 | 智能体链路、人设、上下文、回复与 token 提取 | [智能体链路与会话](agent-flow.md) | chat.py、recording.py、model.py |
+| 持久化记忆、异步整理、成本预算、群聊主人优先 | [记忆系统（待验收）](memory-system.md) | memory.py、memory_store.py、memory_jobs.py、memory_routes.py |
 | 图片/GIF、ASR、Filetrans、TTS、自动语音 | [多模态处理](multimodal.md) | multimodal.py、vision.py、asr_filetrans.py、auto_voice.py |
 | 定时任务、可组合流程与模板、绑定用户选择、每日去重、执行一次 | [定时任务](scheduled-tasks.md) | greetings.py、greeting_workflows.py、proactive.py |
 | QQ WebSocket/Webhook、重连、多机器人启停、队列 | [QQ 接入与运行](qq-runtime.md) | gateway.py、qq.py、bots.py、server.py |

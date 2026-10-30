@@ -1,5 +1,10 @@
 # 数据库迁移
 
+## 持久化记忆（0024，已编写未执行）
+
+`0024_memory` 接续 `0023_voice_calls`，使用可重复执行的建表语句新增 `bot_memory_settings`、`memory_states`、`memory_items`、`memory_sources`、`memory_runs`，不修改既有表数据或自动回填历史。MySQL 5.6/utf8mb4兼容，JSON采用TEXT，来源去重键包含bot_id。应用启动反射五张新表，因此需先停止服务、备份、显式执行 `python -m alembic upgrade head` 后重启；该命令包含所有尚未执行的前置迁移。降级明确拒绝丢失记忆和账本。本轮未执行迁移、测试或数据库验收，详见[记忆系统](memory-system.md)。
+
+
 使用 Alembic + SQLAlchemy + PyMySQL，复用项目根目录 .env 的 MYSQL_HOST、MYSQL_PORT、MYSQL_DATABASE、MYSQL_USER、MYSQL_PASSWORD。alembic.ini 不保存凭证。所有命令在项目根目录执行；迁移只作用于配置的项目库，本项目使用 qbot。
 
 表结构、字段语义与 Agent 排查入口见 [数据库表结构指南](database-schema.md)。

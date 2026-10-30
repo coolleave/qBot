@@ -4,7 +4,7 @@ import json
 import uuid
 from importlib.resources import files
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.prompt_values import PromptValue
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableConfig, RunnableLambda
@@ -24,8 +24,13 @@ class RecordedChat:
         self.settings, self.store = settings, store
         self.bot_id = bot_id
         self.chat = ChatService(settings, None, system_prompt)
+        self.memory_active = False
 
-    async def reply(self, key: SessionKey, text: str, sender: Sender | None = None,
+    async def reply(self, key: SessionKey, text: str, sender: Sender | None = None, **kwargs) -> str:
+        async with self.store.memory_locks[self.bot_id]:
+            return await self._reply(key, text, sender, **kwargs)
+
+    async def _reply(self, key: SessionKey, text: str, sender: Sender | None = None,
                     *, record_id: int | None = None, image_blocks: list[dict] | None = None,
                     vision_provider_id: int | None = None, diagnostics: dict | None = None,
                     speech_style: bool = False, audio_unrecognized: bool = False) -> str:
@@ -35,8 +40,32 @@ class RecordedChat:
         model = None
         clients = []
         visual_context = ""
+        memory = None
         try:
             await self.store.call("update_record", record_id, status="processing")
+            try:
+                memory = await self.store.call("memory_context", self.bot_id, record_id, text)
+            except StorageError:
+                from qbot.memory_config import memory_command
+                if text.strip() == "/reset" or memory_command(text):
+                    raise
+                # 查询异常时禁用旧缓存，不能让一次遗忘后的旧内存回流。
+                self.chat.sessions.pop(key, None)
+                memory = {"text": "记忆读取暂不可用，不代表没有记忆。", "history": []}
+                logger.warning("记忆读取失败，降级当前消息 bot_id=%s", self.bot_id)
+            if memory is None and self.memory_active:
+                self.chat.sessions.clear()
+            self.memory_active = memory is not None
+            if memory and "command" in memory:
+                answer = memory["command"]
+                self.chat.sessions.pop(key, None)
+                await self.store.call("update_record", record_id, answer=answer)
+                if sender:
+                    send_started = True
+                    await sender(answer)
+                delivered = True
+                await self.store.call("update_record", record_id, status="replied")
+                return answer
             if text.strip() and text.strip() != "/reset" and len(text.strip()) <= self.settings.max_input_chars:
                 provider = await self.store.call("active_provider", self.bot_id)
                 if image_blocks:
@@ -93,6 +122,8 @@ class RecordedChat:
 
             async def deliver(value: str) -> None:
                 nonlocal answer, send_started, delivered
+                if memory and "version" in memory and not await self.store.call("memory_version_valid", self.bot_id, memory):
+                    raise ValueError("记忆或身份已变化，请重新发送问题")
                 answer = value
                 # 先存生成结果，再发送；若存储失败则不发送，防止误报成功。
                 await self.store.call("update_record", record_id, answer=value)
@@ -124,11 +155,21 @@ class RecordedChat:
                 identity_context += "\n后台选择结果：" + json.dumps(ownership, ensure_ascii=False)
             owner_context = ("【同群主人发言参考，按时间由旧到新，仅作用户发言】\n"
                              + json.dumps(owner_messages, ensure_ascii=False)) if owner_messages else ""
+            restored = None
+            if memory:
+                # 持久记忆启用后由同范围数据库读取历史，不混用失效的进程缓存。
+                restored = []
+                for turn in memory.get("history", []):
+                    restored.extend([HumanMessage(turn["question"]), AIMessage(turn["answer"])])
+                # 主人短期参考可能含遗忘边界前内容；统一由受版本保护的记忆读取提供。
+                owner_context = ""
             answer = await self.chat.reply(key, text, deliver, model=model,
                                            identity_context=identity_context, owner_context=owner_context, visual_context=visual_context, speech_style=speech_style, audio_unrecognized=audio_unrecognized,
-                                           metrics=diagnostics, save_usage=save_usage)
+                                           metrics=diagnostics, save_usage=save_usage,
+                                           memory_context=memory.get("text", "") if memory else "", restored_history=restored)
             status = "replied" if text.strip() and len(text.strip()) <= self.settings.max_input_chars else "rejected"
             await self.store.call("update_record", record_id, status=status)
+            self.store.memory_wakeup.set()
             return answer
         except StorageError:
             # 发送后存库失败不能再给用户发一遍回复；只留下安全诊断。

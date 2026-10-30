@@ -1,5 +1,11 @@
 # 存储、聊天记录与迁移定位
 
+## 记忆存储（0024，已编写未执行）
+
+新增 `bot_memory_settings`、`memory_states`、`memory_items`、`memory_sources`、`memory_runs` 五表。Store 继承 MemoryStore，异步入口仍经 Store.call；聊天接收同事务保存记忆来源，批次按来源记录维护 pending/claimed/done/blocked/cancelled/skipped 及分段位置，失败区间不会被最大ID跳过。所有记忆查询和写入限定bot_id及会话/群范围。
+
+调用前用 app_settings 全局行锁与机器人行锁串行预留额度，运行记录单独保存用量、预留和未知状态，不写入聊天token统计。UTC保存时间，预算日按北京时间计算。仅reserved批次在重启时释放预留，calling标记未知不自动重调；已持久化候选只重试数据库提交。遗忘清正文、同事实键历史版本、摘要与候选，推进恢复边界，原始审计记录保留但不再作为旧上下文使用。详见[记忆系统](memory-system.md)；未执行迁移、测试或真实调用。
+
 各表完整字段、主键、索引、外键与 Agent 修改规则见 [数据库表结构指南](database-schema.md)（原全库基线为 `0015_bot_roles`，新增备注表已核对至 `0016_contact_notes`）。本页侧重存储流程。
 
 导航见 [文档索引](README.md)，操作命令、权限和回退规则见[数据库迁移](database-migrations.md)。

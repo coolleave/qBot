@@ -1,5 +1,20 @@
 # 数据库表结构与 Agent 开发指南
 
+## 记忆表扩展（0024，代码已编写，实际结构未验证）
+
+迁移 `0024_memory` 接续0023，新增五张表，不代表目标库已执行。精确DDL见 `migrations/versions/0024_memory.py`，业务入口为 `memory_store.py` 和 `memory_jobs.py`。
+
+| 表 | 主键、主要索引和字段职责 |
+| --- | --- |
+| bot_memory_settings | bot_id主键且引用bots；TEXT配置、配置版本、递增主人版本、启用边界、暂停原因 |
+| memory_states | id主键；(bot_id,conversation_id)唯一；会话代次、历史恢复边界、摘要、连续摘要覆盖位置、冷却时间与原因 |
+| memory_items | id主键；机器人/会话/状态及机器人/群/范围/状态索引；主体、类别、事实键、正文、哈希、来源ID集合、期限、状态与替代关系 |
+| memory_sources | id主键；(bot_id,record_id)唯一；来源资格、接收时版本、处理状态、字符分段位置与批次ID |
+| memory_runs | id主键；预算日/机器人与状态索引；批次范围/版本、模型快照、预留/实际/未知用量、结果状态和短期候选 |
+
+各业务表引用bots，范围表引用conversations，来源表引用chat_records；业务事务额外验证引用对象属于同一机器人。JSON使用TEXT/MEDIUMTEXT，版本与计量使用BIGINT，UTC时间使用DATETIME(6)，预算日按北京时间保存DATE。来源/批次状态不能混同于聊天发送状态；未知调用不得自动重试，遗忘后的旧范围来源不得回填。详见[记忆系统](memory-system.md)。
+
+
 ## 适用范围与事实来源
 
 面向修改 qBot 的开发 Agent，不是机器人的业务提示词。2026-10-26 已只读核对本地项目库：最初基线版本为 `0015_bot_roles`，当时共 10 张业务表和 1 张 Alembic 版本表。当前已升级至 `0018_schedule_timing`，后续新增表和字段见本文扩展说明。字段、空值属性、主键、索引与外键来自实际数据库元数据；业务含义核对 `qbot/storage.py` 及相关调用方。本次未运行测试或真实平台调用，也未重新执行已完成的迁移。
