@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr, ValidationError
 
+from qbot.timing import measure
 from qbot.chat import ChatService
 from qbot.config import Settings
 from qbot.model import create_model
@@ -148,19 +149,23 @@ class Dispatcher:
             message = job.message
             key = (message_scope(message), message.id)
             sending = False
-            diagnostics = {"attachments": [], "reply_kind": "text"}
+            processing_started = time.monotonic()
+            diagnostics = {"attachments": [], "reply_kind": "text", "timings": {
+                "queue": {"elapsed_ms": round((processing_started - job.received_at) * 1000), "status": "success"}
+            }}
             try:
                 async def send(text: str) -> None:
                     nonlocal sending
                     sending = True
-                    try:
-                        async with asyncio.timeout(25):
-                            if message.source == "qq_c2c":
-                                await self.qq.send_private(message.author.member_openid, message.id, text)
-                            else:
-                                await self.qq.send_group(message.group_openid, message.id, text)
-                    except TimeoutError:
-                        raise QQDeliveryUnknown("QQ 发送总时限已到，送达状态未知") from None
+                    with measure(diagnostics, "send"):
+                        try:
+                            async with asyncio.timeout(25):
+                                if message.source == "qq_c2c":
+                                    await self.qq.send_private(message.author.member_openid, message.id, text)
+                                else:
+                                    await self.qq.send_group(message.group_openid, message.id, text)
+                        except TimeoutError:
+                            raise QQDeliveryUnknown("QQ 发送总时限已到，送达状态未知") from None
 
                 # 为模型和发送预留时间，不能在队列中耗尽 QQ 被动回复窗口。
                 age = (datetime.now(timezone.utc) - message.timestamp).total_seconds()
@@ -179,8 +184,9 @@ class Dispatcher:
                         if self.store and isinstance(self.chat, RecordedChat):
                             config = await self.store.call("multimodal_config", self.bot_id)
                             control = message.content.strip() == "/reset" or len(message.content.strip()) > self.settings.max_input_chars
-                            prepared = await prepare_message(message.content, [] if control else message.attachments,
-                                                             config, self.store, self.bot_id)
+                            with measure(diagnostics, "preprocess"):
+                                prepared = await prepare_message(message.content, [] if control else message.attachments,
+                                                                 config, self.store, self.bot_id, details=diagnostics)
                             diagnostics.update(prepared["details"])
                             await self.store.call("update_record", job.record_id,
                                 media_details=json.dumps(diagnostics, ensure_ascii=False))
@@ -206,7 +212,8 @@ class Dispatcher:
                                     try:
                                         # 只包围尚未发送的准备阶段；媒体发送开始后绝不回退。
                                         async with asyncio.timeout(min(65, remaining - 15)):
-                                            info = await voice_file(value, config, self.store, message.source, self.qq, target, diagnostics)
+                                            with measure(diagnostics, "voice_prepare"):
+                                                info = await voice_file(value, config, self.store, message.source, self.qq, target, diagnostics)
                                     except Exception:
                                         diagnostics.setdefault("fallback_reason", "语音准备超时或不可用")
                                         notice = "\n（语音暂不可用，已改用文字）"
@@ -216,11 +223,12 @@ class Dispatcher:
                                         return
                                     diagnostics["reply_kind"] = "audio"
                                     sending = True
-                                    try:
-                                        async with asyncio.timeout(10):
-                                            await self.qq.send_media(message.source, target, info, message.id)
-                                    except TimeoutError:
-                                        raise QQDeliveryUnknown("语音回复超时，送达未知") from None
+                                    with measure(diagnostics, "send"):
+                                        try:
+                                            async with asyncio.timeout(10):
+                                                await self.qq.send_media(message.source, target, info, message.id)
+                                        except TimeoutError:
+                                            raise QQDeliveryUnknown("语音回复超时，送达未知") from None
                                 else:
                                     if wants_voice(value, config, message.source, prepared["voice_input"]) and remaining < 80:
                                         diagnostics["fallback_reason"] = "剩余回复时间不足，改用文字"
@@ -274,6 +282,9 @@ class Dispatcher:
                         logger.error("中断状态保存失败")
                 raise
             finally:
+                finished = time.monotonic()
+                diagnostics["timings"]["processing"] = {"elapsed_ms": round((finished - processing_started) * 1000), "status": "finished"}
+                diagnostics["timings"]["total"] = {"elapsed_ms": round((finished - job.received_at) * 1000), "status": "finished"}
                 self.pending.discard(key)
                 self.seen[key] = time.monotonic()
                 self.queue.task_done()

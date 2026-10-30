@@ -15,6 +15,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 import httpx
 from pydantic import BaseModel, Field
 
+from qbot.timing import measure, measured_slot
 from qbot.asr_filetrans import NoSpeechError
 
 MEDIA_SLOTS = asyncio.Semaphore(2)
@@ -149,12 +150,14 @@ async def transcribe(provider: dict, wav: bytes, details: dict | None = None) ->
     return text.replace(provider["api_key"], "[已隐藏密钥]").strip()[:4000], usage
 
 
-async def prepare_message(text: str, attachments: list[Attachment], config: dict, store, bot_id: int) -> dict:
+async def prepare_message(text: str, attachments: list[Attachment], config: dict, store, bot_id: int, *, details: dict | None = None) -> dict:
+    details = details if details is not None else {}
+    details.update(attachments=[], warnings=[])
     result = {"text": normalize_faces(text).strip(), "blocks": [], "voice_input": False,
-              "details": {"attachments": [], "warnings": []}}
+              "details": details}
     total, image_count, audio_count = 0, 0, 0
     downloaded_seconds = 0.0
-    async with MEDIA_SLOTS:
+    async with measured_slot(MEDIA_SLOTS, details, "input_wait"):
         for index, attachment in enumerate(attachments[:4]):
             entry = {"index": index + 1, "status": "failed", **media_origin(attachment.url)}
             result["details"]["attachments"].append(entry)
@@ -178,8 +181,9 @@ async def prepare_message(text: str, attachments: list[Attachment], config: dict
                     raise ValueError("附件超过8 MB")
                 download_start = time.monotonic()
                 try:
-                    async with asyncio.timeout(max(0.01, min(10, 20 - downloaded_seconds))):
-                        data = await download_attachment(attachment.url)
+                    with measure(entry, "download"):
+                        async with asyncio.timeout(max(0.01, min(10, 20 - downloaded_seconds))):
+                            data = await download_attachment(attachment.url)
                 finally:
                     downloaded_seconds += time.monotonic() - download_start
                 total += len(data)
@@ -187,7 +191,8 @@ async def prepare_message(text: str, attachments: list[Attachment], config: dict
                     raise ValueError("每条消息附件总大小超过16 MB")
                 entry["size"] = len(data)
                 if is_image:
-                    decoded = json.loads(await decode_media(data, "gif" if config["gifs"] else "image"))
+                    with measure(entry, "decode"):
+                        decoded = json.loads(await decode_media(data, "gif" if config["gifs"] else "image"))
                     frames = decoded["frames"]
                     if sum(b["type"] == "image_url" for b in result["blocks"]) + len(frames) > 8:
                         raise ValueError("图片与动画总帧数超过8张")
@@ -199,7 +204,8 @@ async def prepare_message(text: str, attachments: list[Attachment], config: dict
                         result["blocks"].extend([{"type": "text", "text": f"相对时间 {frame['time_ms']}ms"},
                             {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + frame["data"]}}])
                 else:
-                    wav = await decode_media(data, "audio")
+                    with measure(entry, "decode"):
+                        wav = await decode_media(data, "audio")
                     # 只判定明确的全零 PCM，不用音量阈值把轻声说话误当静音。
                     with wave.open(io.BytesIO(wav), "rb") as audio:
                         if not any(audio.readframes(audio.getnframes())):
@@ -208,7 +214,8 @@ async def prepare_message(text: str, attachments: list[Attachment], config: dict
                     provider = await store.call("capability_provider", config["asr_provider_id"], "asr")
                     entry.update(model=provider["model_name"], provider=provider["name"])
                     entry["asr_attempted"] = True
-                    transcript, usage = await transcribe(provider, wav, entry)
+                    with measure(entry, "asr"):
+                        transcript, usage = await transcribe(provider, wav, entry)
                     entry.update(transcript=transcript, model=provider["model_name"], provider=provider["name"], usage=usage)
                     result["text"] += "\n[语音转写]\n" + transcript
                     result["voice_input"] = True

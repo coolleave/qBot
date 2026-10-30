@@ -3,6 +3,7 @@ import asyncio
 import re
 import time
 
+from qbot.timing import measure, measured_slot
 from qbot.audio_codec import to_private_audio
 from qbot.media import validate_media
 from qbot.multimodal import MEDIA_SLOTS
@@ -13,7 +14,7 @@ async def voice_file(text: str, config: dict, store, source: str, qq, target: st
     started = time.monotonic()
     stage = "tts"
     try:
-        async with MEDIA_SLOTS:
+        async with measured_slot(MEDIA_SLOTS, details, "voice_wait"):
             provider = await store.call("capability_provider", config["tts_provider_id"], "tts")
             details["tts_model"] = provider["model_name"]
             details["tts_provider"] = provider["name"]
@@ -21,16 +22,19 @@ async def voice_file(text: str, config: dict, store, source: str, qq, target: st
             if not speech:
                 raise ValueError("没有可朗读内容")
             details["tts_text"] = speech
-            async with asyncio.timeout(30):
-                wav = await synthesize(provider, speech, config["voice"])
+            with measure(details, "tts"):
+                async with asyncio.timeout(30):
+                    wav = await synthesize(provider, speech, config["voice"])
             details["tts_status"] = "success"
             media = validate_media("audio", "reply.wav", wav)
             stage = "convert"
             if source == "qq_c2c":
-                media = await to_private_audio(media)
+                with measure(details, "convert"):
+                    media = await to_private_audio(media)
             stage = "upload"
-            async with asyncio.timeout(20):
-                info = await qq.upload_media(source, target, media)
+            with measure(details, "upload"):
+                async with asyncio.timeout(20):
+                    info = await qq.upload_media(source, target, media)
             details["upload_status"] = "success"
             return info
     except Exception:

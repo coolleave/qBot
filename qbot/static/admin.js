@@ -113,10 +113,48 @@ function renderDetailMeta(item) {
   $("detail-meta").textContent = `${botLabel(item.bot_id)} · ${source} · ${date(item.received_at)} · ${labels[item.status] || item.status} · ${item.provider_name_snapshot || "未调用模型"} / ${item.model_name_snapshot || "—"}${item.source === "qq_group" ? " · 群 " + groupDisplay(item) : ""} · 用户 ${userDisplay(item)}`;
   $("detail-meta").append(document.createTextNode(` · 聊天 Token（输入 / 输出 / 总计）：${tokenText(item)}`));
 }
+function renderTimingDetails(item) {
+  const media = item.media_details || {}, timings = media.timings || {};
+  const host = $("detail-timing"); host.replaceChildren();
+  const table = element("table", undefined, "timing-table");
+  const head = element("thead"), heading = element("tr"), body = element("tbody");
+  for (const label of ["阶段", "耗时", "状态"]) heading.append(element("th", label));
+  head.append(heading); table.append(head, body);
+  const legacy = (value, status) => ({elapsed_ms:value, status});
+  function row(label, value) {
+    const ms = value?.elapsed_ms, available = typeof ms === "number" && Number.isFinite(ms) && ms >= 0;
+    const tr = element("tr");
+    const state = available ? ({success:"完成", failed:"失败 / 超时", cancelled:"中断 / 超时", finished:"已结束", unrecognized:"未识别", processing:"处理中"}[value.status] || "已记录") : "—";
+    tr.append(element("td", label), element("td", available ? (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} 秒`) : "未记录"), element("td", state));
+    body.append(tr);
+  }
+  row("总耗时（含排队与收尾）", timings.total);
+  row("队列等待", timings.queue);
+  row("处理总计（不含排队）", timings.processing);
+  row("附件预处理总计", timings.preprocess);
+  row("预处理名额等待", timings.input_wait);
+  for (const attachment of Array.isArray(media.attachments) ? media.attachments : []) {
+    const prefix = `附件 ${attachment.index ?? ""} · `, stages = attachment.timings || {};
+    row(prefix + "处理总计", legacy(attachment.latency_ms, attachment.status));
+    row(prefix + "下载", stages.download);
+    row(prefix + "解码", stages.decode);
+    if (attachment.kind === "audio") row(prefix + "ASR 识别", stages.asr);
+  }
+  if (media.vision) row("视觉理解总计", legacy(media.vision.latency_ms, media.vision.status));
+  row("聊天模型（含备用切换）", timings.chat || legacy(media.chat_latency_ms));
+  row("语音准备总计", timings.voice_prepare || legacy(media.voice_latency_ms));
+  row("语音准备名额等待", timings.voice_wait);
+  row("TTS 语音合成", timings.tts);
+  row("私聊音频转码", timings.convert);
+  row("语音上传", timings.upload);
+  row("QQ 发送", timings.send);
+  host.append(table, element("p", "汇总包含子阶段，请勿相加。总耗时从入队开始，截止处理收尾，不含首次入库及最终耗时保存；QQ 发送耗时不等于开始播放时间。未执行、尚未结束或历史缺失阶段显示未记录。", "muted"));
+}
 async function showDetail(id) {
   const item = await api("/records/" + id);
   await refreshIdentityRoles(item.bot_id);
   detailRecord = item;
+  renderTimingDetails(item);
   $("detail-media").textContent = item.media_details ? JSON.stringify(item.media_details, null, 2) : "无附件处理记录";
   const form = $("binding-form"); form.reset();
   form.hidden = !["qq_group", "qq_c2c"].includes(item.source);

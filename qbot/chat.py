@@ -10,6 +10,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
 
+from qbot.timing import measure
 from qbot.config import Settings
 from qbot.token_usage import extract_token_usage
 
@@ -81,7 +82,8 @@ class ChatService:
                         "output_style": [SystemMessage(content=files("qbot").joinpath("prompts/greeting_audio.txt").read_text("utf-8"))] if speech_style else []}
                     started = time.monotonic()
                     if model is not None:
-                        output = await (self.prompt | model).ainvoke(inputs)
+                        with measure(metrics, "chat"):
+                            output = await (self.prompt | model).ainvoke(inputs)
                         usage = extract_token_usage(output)
                         # 在文本解析和 QQ 发送前保存，空回复或发送失败仍可能产生用量。
                         if save_usage is not None:
@@ -90,7 +92,8 @@ class ChatService:
                         if metrics is not None:
                             metrics["chat_usage"] = usage
                     else:
-                        answer = await chain.ainvoke(inputs)
+                        with measure(metrics, "chat"):
+                            answer = await chain.ainvoke(inputs)
                     if metrics is not None:
                         metrics["chat_latency_ms"] = round((time.monotonic() - started) * 1000)
                 answer = answer.strip()
