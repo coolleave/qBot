@@ -31,7 +31,7 @@ class Login(BaseModel):
 class ProviderInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=100)
-    model_type: Literal["chat", "image", "asr", "tts"] = "chat"
+    model_type: Literal["chat", "image", "asr", "tts", "asr_realtime"] = "chat"
     supports_images: bool = False
     api_type: Literal["deepseek", "openai_compatible"]
     base_url: str = Field(max_length=2048)
@@ -173,6 +173,8 @@ def admin_router(settings: Settings) -> APIRouter:
     def store(request: Request) -> Store:
         return request.app.state.store
 
+    from qbot.voice_call_routes import install_voice_routes
+    install_voice_routes(router, settings, require_admin, sign, token_hash, auth_version)
     @router.get("/admin", response_class=HTMLResponse)
     async def page() -> str:
         return files("qbot").joinpath("static/admin.html").read_text("utf-8")

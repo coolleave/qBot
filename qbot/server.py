@@ -374,7 +374,15 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
         if request.url.path.startswith(("/admin", "/api/admin")):
             response.headers["Cache-Control"] = "no-store"
             response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: blob:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+            # 部分浏览器不会将 WebSocket 视为 CSP 的 self，显式放行当前站点。
+            socket_origin = f"{'wss' if request.url.scheme == 'https' else 'ws'}://{request.url.netloc}"
+            if any(char in socket_origin for char in "'\"; \r\n\t"):
+                socket_origin = ""
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: blob:; "
+                f"connect-src 'self' {socket_origin}; media-src 'self' blob:; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+            response.headers["Permissions-Policy"] = "microphone=(self)"
             response.headers["Referrer-Policy"] = "no-referrer"
         return response
 

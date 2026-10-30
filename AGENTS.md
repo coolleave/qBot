@@ -21,6 +21,7 @@
 | Docker 镜像、Compose、部署网络与更新 | [docs/docker-deployment.md](docs/docker-deployment.md) |
 | 智能体链路、人设、模型调用、上下文、回复 | [docs/agent-flow.md](docs/agent-flow.md) |
 | 图片/GIF、ASR/Filetrans、TTS、自动语音回复 | [docs/multimodal.md](docs/multimodal.md) |
+| 网页语音通话、实时识别、流式播报、通话配置和记录 | [docs/voice-calls.md](docs/voice-calls.md) |
 | 定时任务、早晚问候、每日去重、执行一次、文案生成 | [docs/scheduled-tasks.md](docs/scheduled-tasks.md) |
 | QQ 接入、WebSocket/Webhook、多机器人、队列与重连 | [docs/qq-runtime.md](docs/qq-runtime.md) |
 | 后台登录、供应商、模型类型、身份及接收人绑定 | [docs/admin-and-models.md](docs/admin-and-models.md) |

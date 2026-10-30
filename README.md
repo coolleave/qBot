@@ -4,6 +4,8 @@
 
 ## 模块文档导航
 
+
+新增后台「语音通话」栏目（代码已编写，真实通话待验收），方案、供应商设计和使用步骤见[网页语音通话](docs/voice-calls.md)。模型统一管理，新增 `asr_realtime` 实时识别类型，与普通录音识别分开；chat/TTS 可复用。启用前停止服务、备份项目库，执行 `python -m alembic upgrade head` 升级至 `0023_voice_calls`，再重启并刷新后台。远程麦克风需 HTTPS/WSS，localhost 可开发。无新增依赖或环境变量；本次未执行迁移、测试、浏览器或付费接口联调。
 按功能维护代码时先查 [模块文档索引](docs/README.md)：[智能体链路](docs/agent-flow.md)、[多模态处理](docs/multimodal.md)、[定时任务](docs/scheduled-tasks.md)、[QQ 接入与多机器人](docs/qq-runtime.md)、[后台与模型](docs/admin-and-models.md)、[主动发送](docs/proactive-messages.md)、[存储与记录](docs/storage.md)、[数据库迁移](docs/database-migrations.md)、[数据库表结构（Agent）](docs/database-schema.md)。AI 开发入口仍为根目录 [AGENTS.md](AGENTS.md)，其中提供按功能查阅规则。
 
 模块文档集中说明当前实现、代码入口和边界；本 README 保留启动配置、操作说明和历史更新。原方案文档保留设计背景与待验收项，不将其视为全部已实现。本次整理仅核对文档与源码，未运行测试、迁移、浏览器或真实接口验证。

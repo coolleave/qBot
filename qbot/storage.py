@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from qbot.config import Settings
 from qbot.identity_roles import IdentityRole
+from qbot.voice_call_store import VoiceCallStore
 
 
 class StorageError(RuntimeError):
@@ -35,7 +36,7 @@ def mysql_engine(settings: Settings) -> Engine:
     )
 
 
-class Store:
+class Store(VoiceCallStore):
     """同步事务集中管理，异步调用方通过 call 在线程池执行。"""
 
     def __init__(self, engine: Engine, encryption_key: str):
@@ -45,7 +46,10 @@ class Store:
         try:
             metadata.reflect(engine, only=["model_providers", "app_settings", "conversations", "chat_records", "bots",
                                            "interaction_greetings", "interaction_greeting_runs", "bot_user_identities",
-                                           "admin_sessions", "bot_roles", "bot_contact_notes", "scheduled_templates"])
+                                           "admin_sessions", "bot_roles", "bot_contact_notes", "scheduled_templates",
+                                           "voice_call_configs", "voice_calls"])
+            self.voice_configs = metadata.tables["voice_call_configs"]
+            self.voice_calls = metadata.tables["voice_calls"]
             self.templates = metadata.tables["scheduled_templates"]
             self.admin_sessions = metadata.tables["admin_sessions"]
             self.identities = metadata.tables["bot_user_identities"]
@@ -221,7 +225,7 @@ class Store:
             row = conn.execute(select(self.providers).where(self.providers.c.id == provider_id)).mappings().first()
         if row is None:
             raise ValueError("供应商不存在")
-        if row["model_type"] not in ("chat", "tts", "asr"):
+        if row["model_type"] not in ("chat", "tts", "asr", "asr_realtime"):
             raise ValueError("该类型未接入调用")
         result = dict(row)
         encrypted = result.pop("api_key_encrypted")
@@ -251,8 +255,11 @@ class Store:
         values = dict(values)
         key = values.pop("api_key", "")
         values.setdefault("model_type", "chat")
-        if values["model_type"] not in ("chat", "image", "asr", "tts"):
+        if values["model_type"] not in ("chat", "image", "asr", "tts", "asr_realtime"):
             raise ValueError("无效的模型类型")
+        if values["model_type"] == "asr_realtime":
+            from qbot.voice_call_config import validate_voice_provider
+            validate_voice_provider(values, "asr_realtime")
         try:
             with self.engine.begin() as conn:
                 # 所有默认项和启停修改先锁同一设置行，避免并发停用默认项。
@@ -283,6 +290,7 @@ class Store:
                 if values.get("supports_images") and (values["model_type"] != "chat" or values["api_type"] != "openai_compatible"):
                     raise ValueError("图片输入能力仅用于兼容接口的 chat 模型")
                 if provider_id is not None:
+                    self.check_voice_provider_references(conn, provider_id, values)
                     template_configs = conn.execute(select(self.templates.c.config)).scalars().all()
                     for raw in [*conn.execute(select(self.greetings.c.delivery)).scalars(), *template_configs]:
                         delivery = json.loads(raw or "{}")

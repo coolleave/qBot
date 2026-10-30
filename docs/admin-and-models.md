@@ -22,11 +22,14 @@ Cookie 签名且启用 HttpOnly / SameSite Strict；HTTPS 配置 ADMIN_COOKIE_SE
 | --- | --- | --- |
 | chat | 聊天；声明 supports_images 后可作独立视觉模型 | model.py、vision.py |
 | asr | 百炼同步短语音及异步 Filetrans | multimodal.py、asr_filetrans.py |
+| asr_realtime | 网页通话实时识别，Qwen3-ASR-Flash-Realtime | voice_calls.py、voice_call_config.py |
 | tts | Qwen Realtime 合成 | tts.py |
 | image | 保存图片生成配置 | 尚未接入生成调用 |
 
 api_type 与 model_type 分别表示接口和业务能力。聊天为 DeepSeek 或兼容 Chat Completions；ASR/TTS 使用专用协议，不因表单选择兼容接口就走聊天请求。
 
+
+网页「语音通话」新增独立菜单（已编写，待联调），模型仍统一在供应商菜单维护。实时识别新增 asr_realtime 类型，与录音 asr 分开；chat 和现有 Qwen Realtime TTS 可复用。每个机器人单独保存通话模型绑定、音色及限制；被通话引用的供应商不能直接停用或改成不兼容类型。需要显式升级0023，配置入口和完整边界见[语音通话](voice-calls.md)。网页访客不继承 QQ 用户身份，不自动发送 QQ 消息。
 全局默认及机器人聊天绑定只允许 chat；机器人可指定或跟随默认，视觉需独立选择。供应商保存不调用模型，下一次请求生效；密钥加密、查询掩码，留空保留。默认/绑定供应商停用或修改类型前需处理引用，后台不回退环境凭证。
 
 DeepSeek / Qwen / 自定义预设仅填表，不自动创建；地域、模型权限和图片支持需确认。更换服务域名需重新填写密钥。

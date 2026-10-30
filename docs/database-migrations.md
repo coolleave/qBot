@@ -1,5 +1,8 @@
 # 数据库迁移
 
+## 网页语音通话（0023，已编写未执行）
+
+新增 `0023_voice_calls`，依赖 `0022_fallback_provider`，创建 `voice_call_configs` 和 `voice_calls`；不修改已有消息数据或供应商配置。配置按 bot_id 唯一，聊天/实时识别/TTS 供应商引用均有外键；记录按 bot_id 和开始时间索引。现有 model_type 为 VARCHAR(16)，可保存 asr_realtime，无需改列。新代码启动反射两张表，需先停服务、备份并显式升级后重启。本次未执行迁移，降级拒绝丢弃记录。详见[语音通话](voice-calls.md)。
 使用 Alembic + SQLAlchemy + PyMySQL，复用项目根目录 .env 的 MYSQL_HOST、MYSQL_PORT、MYSQL_DATABASE、MYSQL_USER、MYSQL_PASSWORD。alembic.ini 不保存凭证。所有命令在项目根目录执行；迁移只作用于配置的项目库，本项目使用 qbot。
 
 表结构、字段语义与 Agent 排查入口见 [数据库表结构指南](database-schema.md)。
