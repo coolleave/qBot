@@ -354,6 +354,14 @@ def admin_router(settings: Settings) -> APIRouter:
             except Exception:
                 raise HTTPException(502, "媒体处理失败或超时，请检查文件、模型配置和网络") from None
 
+    @router.put("/api/admin/fallback-provider", dependencies=[Depends(require_admin)])
+    async def fallback(data: DefaultInput, db: Store = Depends(store)) -> dict:
+        try:
+            await db.call("set_fallback", data.provider_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return {"ok": True}
+
     @router.put("/api/admin/default-provider", dependencies=[Depends(require_admin)])
     async def default(data: DefaultInput, db: Store = Depends(store)) -> dict:
         try:

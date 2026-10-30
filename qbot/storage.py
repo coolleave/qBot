@@ -62,6 +62,8 @@ class Store:
             self.bots = metadata.tables["bots"]
             self.providers = metadata.tables["model_providers"]
             self.settings = metadata.tables["app_settings"]
+            if "fallback_provider_id" not in self.settings.c:
+                raise StorageError("请先执行 python -m alembic upgrade head 升级备用模型配置")
             self.conversations = metadata.tables["conversations"]
             if "platform_nickname" not in self.conversations.c:
                 raise StorageError("请先执行 python -m alembic upgrade head 升级用户昵称字段")
@@ -210,7 +212,8 @@ class Store:
                 item["has_api_key"] = bool(encrypted)
                 item["api_key_mask"] = "••••••••" if encrypted else "未配置"
                 items.append(item)
-            return {"items": items, "default_provider_id": default_id}
+            fallback_id = conn.execute(select(self.settings.c.fallback_provider_id)).scalar_one()
+            return {"items": items, "default_provider_id": default_id, "fallback_provider_id": fallback_id}
 
     def provider_for_probe(self, provider_id: int) -> dict:
         """仅供服务端显式连通性检查使用，允许检查尚未启用的供应商。"""
@@ -269,6 +272,9 @@ class Store:
                     raise ValueError("请先切换默认聊天供应商，再修改模型类型")
                 if provider_id == default_id and default_id is not None and not values["enabled"]:
                     raise ValueError("请先切换默认供应商，再停用该供应商")
+                fallback_id = conn.execute(select(self.settings.c.fallback_provider_id)).scalar_one()
+                if provider_id is not None and provider_id == fallback_id and (not values["enabled"] or values["model_type"] != "chat"):
+                    raise ValueError("请先取消或切换备用模型，再停用或修改模型类型")
                 # 已绑定机器人的模型必须保持可用的聊天类型。
                 if provider_id is not None and (not values["enabled"] or values["model_type"] != "chat"):
                     bound = conn.execute(select(self.bots.c.id).where(self.bots.c.provider_id == provider_id).limit(1)).first()
@@ -315,8 +321,29 @@ class Store:
                     raise ValueError("只能选择已启用且已配置密钥的供应商")
                 if provider["model_type"] != "chat":
                     raise ValueError("默认聊天供应商必须是 chat 类型")
+            fallback_id = conn.execute(select(self.settings.c.fallback_provider_id)).scalar_one()
+            if provider_id is not None and provider_id == fallback_id:
+                raise ValueError("默认模型不能与备用模型相同，请先取消或切换备用模型")
             conn.execute(self.settings.update().where(self.settings.c.id == 1).values(
                 default_provider_id=provider_id, updated_at=utc_now()))
+
+    def set_fallback(self, provider_id: int | None) -> None:
+        with self.engine.begin() as conn:
+            settings = conn.execute(select(self.settings).where(self.settings.c.id == 1).with_for_update()).mappings().one()
+            if provider_id is not None:
+                if provider_id == settings["default_provider_id"]:
+                    raise ValueError("备用模型不能与默认模型相同")
+                provider = conn.execute(select(self.providers).where(self.providers.c.id == provider_id)).mappings().first()
+                if not provider or not provider["enabled"] or not provider["api_key_encrypted"] or provider["model_type"] != "chat":
+                    raise ValueError("备用模型必须是已启用且已配置密钥的 chat 供应商")
+            conn.execute(self.settings.update().where(self.settings.c.id == 1).values(
+                fallback_provider_id=provider_id, updated_at=utc_now()))
+
+    def fallback_provider_id(self, primary_id: int) -> int | None:
+        with self.engine.connect() as conn:
+            provider_id = conn.execute(select(self.settings.c.fallback_provider_id).where(self.settings.c.id == 1)).scalar_one()
+        # 机器人可以独立绑定全局备用模型，此时不重复调用相同供应商。
+        return provider_id if provider_id != primary_id else None
 
     def active_provider(self, bot_id: int | None = None) -> dict | None:
         with self.engine.connect() as conn:

@@ -89,3 +89,7 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 0021_scheduled_templates 仅创建全局模板表，不修改已有任务或配置文件内置模板。部署先停止服务、备份项目库及版本，显式执行 `python -m alembic upgrade head` 后启动。此次不自动执行迁移。
 
 2026-10-28：完成 Python AST、JavaScript 语法、HTML ID/脚本资源及差异静态检查；未运行测试、浏览器、数据库迁移或模型/TTS/QQ 调用。需显式升级数据库、重启后端并刷新后台后使用。
+
+## 0022 备用聊天模型（已编写，未执行）
+
+`0022_fallback_provider` 接续 `0021_scheduled_templates`，为 app_settings 增加可空 BIGINT UNSIGNED 的 fallback_provider_id、索引和指向 model_providers 的外键；已有行保持 NULL。默认与备用的互斥、启用状态及类型校验由应用在同一设置行锁下完成。不修改历史迁移，不自动选择模型。先停止服务并备份项目库，再执行 `python -m alembic upgrade head`，成功后重启服务并刷新后台；运行账号需要读取新字段，迁移账号需要 ALTER、INDEX、REFERENCES 权限。本次未运行数据库迁移或测试。

@@ -131,6 +131,8 @@ async function showDetail(id) {
 async function loadProviders() {
   const data = await api("/providers"); providers = data.items; defaultProvider = data.default_provider_id;
   $("default-label").textContent = providers.find(p => p.id === defaultProvider)?.name || "尚未选择，请添加并启用默认供应商";
+  const fallbackProvider = data.fallback_provider_id;
+  $("fallback-label").textContent = providers.find(p => p.id === fallbackProvider)?.name || "未设置备用模型";
   $("providers-list").querySelectorAll("audio").forEach(player => { player.pause(); if (player.dataset.url) URL.revokeObjectURL(player.dataset.url); });
   $("providers-list").replaceChildren(); $("providers-empty").hidden = providers.length > 0;
   for (const item of providers) {
@@ -138,7 +140,16 @@ async function loadProviders() {
     top.append(element("h2", item.name), element("span", item.id === defaultProvider ? "默认使用" : item.enabled ? "已启用" : "已停用", "badge " + (item.enabled ? "replied" : "")));
     card.append(top, element("p", `${({chat:"chat · 聊天",image:"图片生成",asr:"asr · 语音识别",tts:"tts · 语音合成"})[item.model_type]} · ${item.api_type === "deepseek" ? "DeepSeek" : "兼容接口"} · ${item.model_name}`), element("p", item.base_url, "muted"), element("p", "API Key  " + item.api_key_mask, "muted"));
     const actions = element("div", undefined, "actions"); actions.append(button("编辑配置", () => editProvider(item)));
-    if(item.model_type === "chat" && item.enabled && item.id !== defaultProvider) actions.append(button("设为默认", async () => { await api("/default-provider", {method:"PUT",body:JSON.stringify({provider_id:item.id})}); await loadProviders(); toast("默认供应商已更新"); }));
+    if(item.model_type === "chat" && item.enabled && item.id !== defaultProvider && item.id !== fallbackProvider) actions.append(button("设为默认", async () => { await api("/default-provider", {method:"PUT",body:JSON.stringify({provider_id:item.id})}); await loadProviders(); toast("默认供应商已更新"); }));
+    if (item.id === fallbackProvider) top.append(element("span", "备用模型", "badge replied"));
+    if (item.model_type === "chat" && item.enabled && item.has_api_key && item.id !== defaultProvider) {
+      actions.append(button(item.id === fallbackProvider ? "取消备用" : "设为备用", async () => {
+        try {
+          await api("/fallback-provider", {method:"PUT", body:JSON.stringify({provider_id:item.id === fallbackProvider ? null : item.id})});
+          await loadProviders(); toast("备用模型已更新，下次聊天请求生效");
+        } catch (e) { toast(e.message); }
+      }));
+    }
     const outcome = element("p", "", "muted"); outcome.setAttribute("role", "status");
     const probe = button("测试连接", async () => {
       outcome.textContent = "正在发送“你好”，请稍候…";

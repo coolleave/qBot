@@ -4,6 +4,11 @@ import json
 import uuid
 from importlib.resources import files
 
+from langchain_core.messages import BaseMessage
+from langchain_core.prompt_values import PromptValue
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnableConfig, RunnableLambda
+
 from qbot.chat import ChatService, Sender, SessionKey
 from qbot.config import Settings
 from qbot.model import provider_model
@@ -28,6 +33,7 @@ class RecordedChat:
             record_id, _ = await self.store.call("receive", "local", "local", key[1], str(uuid.uuid4()), text, bot_id=self.bot_id)
         status, answer, send_started, delivered = "processing", None, False, False
         model = None
+        clients = []
         visual_context = ""
         try:
             await self.store.call("update_record", record_id, status="processing")
@@ -52,9 +58,38 @@ class RecordedChat:
                     provider_id=provider["id"] if provider else None,
                     provider_name_snapshot=provider["name"] if provider else None,
                     model_name_snapshot=provider["model_name"] if provider else None)
-                # 沿用配置的请求超时，仅禁止后台聊天自动重试。
-                config = self.settings.model_copy(update={"model_max_retries": 0})
-                model = provider_model(config, provider)
+                if provider is None:
+                    raise ValueError("请先配置机器人的聊天模型")
+                fallback_id = await self.store.call("fallback_provider_id", provider["id"])
+
+                async def invoke_chat(prompt: PromptValue, config: RunnableConfig) -> BaseMessage:
+                    # 只包围模型调用；记录保存、解析后的发送和上下文更新不重试。
+                    async def invoke(selected: dict, timeout: float) -> BaseMessage:
+                        async with asyncio.timeout(timeout):
+                            client = provider_model(self.settings.model_copy(update={"model_max_retries": 0}), selected)
+                            clients.append(client)
+                            output = await client.ainvoke(prompt, config=config)
+                            if fallback_id is not None and selected["id"] == provider["id"] and not StrOutputParser().invoke(output).strip():
+                                raise ValueError("模型返回了空文本")
+                            return output
+
+                    budget = min(self.settings.model_timeout_seconds, self.settings.chat_timeout_seconds)
+                    try:
+                        return await invoke(provider, min(budget, self.settings.chat_timeout_seconds / 2) if fallback_id else budget)
+                    except Exception as exc:
+                        if fallback_id is None:
+                            raise
+                        # 不输出供应商异常原文，避免响应中含密钥等敏感内容。
+                        logger.warning("聊天主模型失败，切换备用模型 primary_id=%s fallback_id=%s error=%s",
+                                       provider["id"], fallback_id, type(exc).__name__)
+                    fallback = await self.store.call("capability_provider", fallback_id, "chat")
+                    await self.store.call("update_record", record_id, provider_id=fallback["id"],
+                                          provider_name_snapshot=fallback["name"], model_name_snapshot=fallback["model_name"])
+                    if diagnostics is not None:
+                        diagnostics["fallback_provider_id"] = fallback_id
+                    return await invoke(fallback, budget)
+
+                model = RunnableLambda(invoke_chat)
 
             async def deliver(value: str) -> None:
                 nonlocal answer, send_started, delivered
@@ -108,10 +143,10 @@ class RecordedChat:
             raise
         finally:
             # 每次读取最新配置创建客户端，调用结束后释放其连接池。
-            if model is not None and hasattr(model, "root_async_client"):
+            for client in clients:
                 try:
                     async with asyncio.timeout(5):
-                        await model.root_async_client.close()
-                        await asyncio.to_thread(model.root_client.close)
+                        await client.root_async_client.close()
+                        await asyncio.to_thread(client.root_client.close)
                 except Exception as exc:
                     logger.warning("模型连接池关闭失败：%s", type(exc).__name__)

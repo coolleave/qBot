@@ -91,6 +91,7 @@ erDiagram
 | --- | --- | --- | --- |
 | `id` | `TINYINT(3) UNSIGNED` | 否 | 固定单例键 1，不自增 |
 | `default_provider_id` | `BIGINT(20) UNSIGNED` | 是 | 默认聊天供应商；NULL 表示未选择 |
+| `fallback_provider_id` | `BIGINT(20) UNSIGNED` | 是 | 全局备用聊天供应商；NULL 不启用（0022，待迁移验证） |
 | `updated_at` | `DATETIME(6)` | 否 | 最后更新时间，UTC |
 | `qq_app_id` | `VARCHAR(64) COLLATE utf8mb4_unicode_ci` | 是 | 旧单机器人 AppID，仅兼容保留 |
 | `qq_app_secret_encrypted` | `TEXT COLLATE utf8mb4_unicode_ci` | 是 | 旧单机器人密文，仅兼容保留 |
@@ -101,8 +102,10 @@ erDiagram
 | 索引名 | 列（顺序敏感） | 类型 |
 | --- | --- | --- |
 | `idx_settings_provider` | `default_provider_id` | 普通 |
+| `idx_settings_fallback_provider` | `fallback_provider_id` | 普通 |
 
 - `fk_settings_provider`：`(default_provider_id)` → `model_providers(id)`。
+- `fk_settings_fallback_provider`：`(fallback_provider_id)` → `model_providers(id)`（0022）。
 
 维护要点：当前运行 QQ 配置来源是 bots。供应商、默认项及机器人相关写操作使用该行锁协调，管理员会话创建和任务配置也使用此锁；扩展事务时维持一致锁顺序。后台无默认供应商时不会自动回退环境模型凭证。
 

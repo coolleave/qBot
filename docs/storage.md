@@ -13,7 +13,7 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 | 表 | 职责 |
 | --- | --- |
 | model_providers | 模型、协议、类型、图片声明和加密密钥 |
-| app_settings | 全局默认；旧 QQ 字段保留但不再运行读取 |
+| app_settings | 全局默认及备用聊天模型；旧 QQ 字段保留但不再运行读取 |
 | bots | 多机器人凭证、启用、人设、绑定及多模态 JSON |
 | conversations | 机器人、来源、群、用户范围及接收人名称 |
 | chat_records | 问答、状态、模型快照、用量和媒体详情 |
@@ -114,3 +114,7 @@ ASR 继续保存 media_details.attachments[].transcript；自动/定时 TTS 增�
 新增 scheduled_templates 保存管理员全局可复用消息模板；读取列表不加载图片。套用时客户端取得完整详情，将图片、文案及工作流一同保存到任务，执行器无需再次读取模板，删除或修改模板不影响已保存任务。新迁移0021，未执行。
 
 2026-10-28：完成 Python AST、JavaScript 语法、HTML ID/脚本资源及差异静态检查；未运行测试、浏览器、数据库迁移或模型/TTS/QQ 调用。需显式升级数据库、重启后端并刷新后台后使用。
+
+### 备用模型记录（0022，已编写待联调）
+
+app_settings.fallback_provider_id 保存全局备用供应商。普通聊天切换后，chat_records 的供应商及模型快照指向备用；Token 字段只保存最终返回模型的用量，不把主模型失败或空白产生的费用归给备用，不能代替供应商账单。QQ 诊断 media_details 保存 fallback_provider_id；日志只记录模型 ID 和异常类型，不保存原始异常响应或密钥。无新增聊天记录字段。
