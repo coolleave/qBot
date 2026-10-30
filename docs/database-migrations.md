@@ -93,3 +93,9 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 ## 0022 备用聊天模型（已编写，未执行）
 
 `0022_fallback_provider` 接续 `0021_scheduled_templates`，为 app_settings 增加可空 BIGINT UNSIGNED 的 fallback_provider_id、索引和指向 model_providers 的外键；已有行保持 NULL。默认与备用的互斥、启用状态及类型校验由应用在同一设置行锁下完成。不修改历史迁移，不自动选择模型。先停止服务并备份项目库，再执行 `python -m alembic upgrade head`，成功后重启服务并刷新后台；运行账号需要读取新字段，迁移账号需要 ALTER、INDEX、REFERENCES 权限。本次未运行数据库迁移或测试。
+
+## 2026-10-30 备用模型部署记录
+
+实验室服务器已部署功能提交 `5552181`。持有 `.deploy/deploy.lock`，构建新镜像后停服；生产环境配置和项目库的13张表、438行数据备份于服务器 `.deploy/backups/before-0022-20261030-151756/`，文件仅部署用户可读，数据库备份为包含表结构及类型标记的 JSON，并保存 SHA-256。
+
+显式升级 `0021_scheduled_templates` 至 `0022_fallback_provider` 后，逐表比较原数据一致（除版本表及新增字段），fallback_provider_id 初始为 NULL，外键、索引和 Store 初始化正常。新容器 running healthy、重启次数0，/health与/admin均返回200；recording.py、storage.py及admin.js与服务器仓库SHA-256一致。未运行测试、浏览器或真实模型调用，未替用户选择备用供应商。更新自动部署基线后继续沿用原定时更新。
