@@ -159,7 +159,7 @@ class RealtimeVoiceCall(VoiceCall):
             event = json.loads(raw)
             kind = event.get("type")
             if kind in ("error", "conversation.item.input_audio_transcription.failed"):
-                raise ValueError("实时对话接口错误")
+                raise self.provider_error(event)
             if kind == "input_audio_buffer.speech_started":
                 await self.interrupt(automatic=True)
                 self.activity = self.speaking_since = time.monotonic()

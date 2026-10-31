@@ -11,6 +11,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from qbot.model import provider_model
 from qbot.token_usage import extract_token_usage
@@ -18,6 +19,10 @@ from qbot.voice_call_audio import send_event, stream_speech
 from qbot.voice_call_config import realtime_endpoint
 
 logger = logging.getLogger(__name__)
+
+
+class VoiceProviderError(RuntimeError):
+    """仅携带已脱敏的供应商错误摘要。"""
 
 
 class VoiceCall:
@@ -258,12 +263,25 @@ class VoiceCall:
     def background_jobs(self) -> list:
         return []
 
+    def provider_error(self, event: dict) -> VoiceProviderError:
+        error = event.get("error")
+        if not isinstance(error, dict):
+            return VoiceProviderError("供应商返回错误，但未提供具体说明")
+        detail = " · ".join(str(error.get(key) or "") for key in ("code", "message"))
+        # 先脱敏再截断，避免截断后的密钥片段无法匹配。
+        for kind in ("realtime", "asr", "chat", "tts"):
+            key = (self.bundle.get(kind) or {}).get("api_key")
+            if key:
+                detail = detail.replace(key, "[已隐藏密钥]")
+        detail = re.sub(r"(?i)Bearer\s+\S+|sk-[A-Za-z0-9_-]+", "[已隐藏密钥]", detail)
+        return VoiceProviderError("供应商返回错误：" + " ".join(detail.split())[:300])
+
     async def receive_asr(self, upstream) -> None:
         async for raw in upstream:
             event = json.loads(raw)
             kind = event.get("type")
             if kind in ("error", "conversation.item.input_audio_transcription.failed"):
-                raise ValueError("实时语音识别失败，请检查模型、密钥、地域与额度")
+                raise self.provider_error(event)
             if kind == "input_audio_buffer.speech_started":
                 self.activity = self.speaking_since = time.monotonic()
                 await self.interrupt()
@@ -308,11 +326,13 @@ class VoiceCall:
 
     async def run(self) -> None:
         jobs = []
+        stage = "连接语音供应商"
         try:
             asr = self.bundle.get("realtime") or self.bundle["asr"]
             async with connect(realtime_endpoint(asr), additional_headers={"Authorization": "Bearer " + asr["api_key"]},
                                open_timeout=10, close_timeout=2, max_size=1_000_000, max_queue=8) as upstream:
                 self.upstream = upstream
+                stage = "配置语音会话"
                 await send_event(upstream, "session.update", session=await self.session_config())
                 async with asyncio.timeout(15):
                     while True:
@@ -320,10 +340,11 @@ class VoiceCall:
                         if event.get("type") == "session.updated":
                             break
                         if event.get("type") == "error":
-                            raise ValueError("实时识别配置被拒绝")
+                            raise self.provider_error(event)
                 self.status = "active"
                 await self.persist()
                 await self.emit("ready", sample_rate=16000, output_rate=24000)
+                stage = "语音收发"
                 jobs = [asyncio.create_task(self.receive_browser(upstream)), asyncio.create_task(self.receive_asr(upstream)),
                         asyncio.create_task(self.watchdog()), asyncio.create_task(self.stop.wait())]
                 jobs.extend(asyncio.create_task(job) for job in self.background_jobs())
@@ -333,9 +354,20 @@ class VoiceCall:
         except (WebSocketDisconnect, asyncio.CancelledError):
             self.reason = "通话连接已关闭"
         except Exception as exc:
-            logger.warning("网页通话终止：%s", type(exc).__name__)
             self.status = "failed"
-            self.reason = "通话服务异常，请检查供应商配置、音频格式和网络"
+            if isinstance(exc, VoiceProviderError):
+                detail = str(exc)
+            elif isinstance(exc, InvalidStatus):
+                detail = f"供应商拒绝连接（HTTP {exc.response.status_code}），请检查密钥、地域及模型权限"
+            elif isinstance(exc, ConnectionClosed):
+                code = exc.rcvd.code if exc.rcvd else "未收到关闭帧"
+                detail = f"供应商连接已关闭（{code}），请检查供应商服务状态和网络"
+            elif isinstance(exc, TimeoutError):
+                detail = "等待供应商响应超时"
+            else:
+                detail = f"处理异常（{type(exc).__name__}），请检查供应商配置、音频格式和网络"
+            self.reason = f"{stage}失败：{detail}"
+            logger.warning("网页通话终止 call_id=%s：%s", self.id, self.reason)
         finally:
             for task in jobs:
                 task.cancel()
