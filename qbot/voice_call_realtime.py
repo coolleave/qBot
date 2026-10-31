@@ -221,12 +221,14 @@ class RealtimeVoiceCall(VoiceCall):
                         self.audio_queue.put_nowait((turn, "audio", pcm[offset:offset + 9600]))
                 elif kind == "response.done":
                     if response.get("status") != "completed":
-                        await self.interrupt(automatic=True)
+                        # 失败响应后上游可能已关闭，先保留根因，交由 run 的 finally 本地清理。
+                        # 不能先发送 item.delete，否则关闭异常会覆盖供应商返回的具体错误。
                         if response.get("status") == "failed":
                             details = response.get("status_details") or {}
                             if isinstance(details, dict) and details.get("error"):
                                 raise self.provider_error(details)
                             raise VoiceCallError("实时模型回复失败")
+                        await self.interrupt(automatic=True)
                         continue
                     turn["status"] = "playing"
                     self.audio_queue.put_nowait((turn, "end", None))
