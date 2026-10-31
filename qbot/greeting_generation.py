@@ -4,7 +4,6 @@ import json
 import logging
 import re
 from datetime import datetime, timezone
-from urllib.parse import urlsplit
 from typing import Literal
 from importlib.resources import files
 
@@ -56,11 +55,7 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
                 if forecast and forecast.get("日期") != now.date().isoformat():
                     context["天气参考"] = {"状态": "不可用", "说明": "跨日后不沿用昨日天气"}
             model = provider_model(config, provider)
-            generator = model
-            host = urlsplit(provider["base_url"]).hostname or ""
-            if provider["model_name"].startswith("qwen") and (host in ("dashscope.aliyuncs.com", "dashscope-intl.aliyuncs.com") or host.endswith(".maas.aliyuncs.com")):
-                # 短草稿不需要思考模式，避免输出预算被推理占满而没有正文。
-                generator = model.bind(extra_body={"enable_thinking": False})
+            # 沿用模型默认思考设置，兼容不允许关闭思考的千问模型。
             messages = [
                 SystemMessage(content=persona or prompts.joinpath("system.txt").read_text("utf-8")),
                 SystemMessage(content=prompts.joinpath("greeting.txt").read_text("utf-8")),
@@ -83,7 +78,7 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
             if output == "audio":
                 messages.append(SystemMessage(content=prompts.joinpath("greeting_audio.txt").read_text("utf-8")))
             messages.append(HumanMessage(content=json.dumps(context, ensure_ascii=False)))
-            response = await generator.ainvoke(messages, config={"callbacks": []})
+            response = await model.ainvoke(messages, config={"callbacks": []})
             text = StrOutputParser().invoke(response).strip()
             if provider.get("api_key"):
                 text = text.replace(provider["api_key"], "[已隐藏密钥]")
