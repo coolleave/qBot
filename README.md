@@ -78,7 +78,7 @@
 
 ### Docker Compose 部署（实验室服务器已部署）
 
-服务器自动更新脚本见 `scripts/deploy-if-updated.sh`：可由 cron 每 30 分钟检查 origin/main，有更新才构建部署，带互斥锁、成功提交标记、健康检查和迁移暂停。首次需手动部署并登记基线，安装命令见 [自动部署说明](docs/docker-deployment.md#每-30-分钟自动检查更新配置已编写运行待验证)。已完成服务器初始化部署、基线登记和一次无更新检查，尚未安装 cron。
+服务器自动更新脚本见 `scripts/deploy-if-updated.sh`：可由 cron 每 30 分钟检查 origin/main，有更新才构建部署，带互斥锁、成功提交标记、健康检查和迁移暂停。首次需手动部署并登记基线，安装命令见 [自动部署说明](docs/docker-deployment.md#每-30-分钟自动检查更新配置已编写运行待验证)。已安装每30分钟执行的cron；2026-10-31已确认cron服务正常，使用精简环境运行脚本返回“无新提交，跳过”，部署成功基线已同步。
 
 测试环境沿用 `.env`；线上使用 `.env.production`，仅数据库地址和端口不同。在 Linux 线上服务器执行 `QBOT_ENV_FILE=.env.production docker compose --env-file .env.production -p qbot-prod up -d --build qbot`。真实配置不提交 Git；网络准备、迁移与环境切换详见 [部署说明](docs/docker-deployment.md)。
 
