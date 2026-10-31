@@ -194,7 +194,7 @@ class Store(VoiceCallStore, MemoryStore):
                     selected = conn.execute(select(self.providers).where(self.providers.c.id == pid)).mappings().first()
                     if not selected or not selected["enabled"] or not selected["api_key_encrypted"] or selected["model_type"] != kind:
                         raise ValueError("多模态供应商类型不匹配或未启用")
-                    if field == "vision_provider_id" and (not selected["supports_images"] or selected["api_type"] != "openai_compatible"):
+                    if field == "vision_provider_id" and (not selected["supports_images"] or selected["api_type"] not in ("openai_compatible", "openai_chat")):
                         raise ValueError("视觉供应商需要支持图片输入的兼容聊天接口")
                 values["multimodal"] = json.dumps(mm, ensure_ascii=False)
                 if secret:
@@ -267,7 +267,7 @@ class Store(VoiceCallStore, MemoryStore):
         provider = self.provider_for_probe(provider_id)
         if not provider["enabled"] or provider["model_type"] != kind:
             raise ValueError("供应商未启用或用途不匹配")
-        if vision and (not provider["supports_images"] or provider["api_type"] != "openai_compatible"):
+        if vision and (not provider["supports_images"] or provider["api_type"] not in ("openai_compatible", "openai_chat")):
             raise ValueError("供应商不支持图片输入")
         return provider
 
@@ -307,7 +307,9 @@ class Store(VoiceCallStore, MemoryStore):
                     bound = conn.execute(select(self.bots.c.id).where(self.bots.c.provider_id == provider_id).limit(1)).first()
                     if bound:
                         raise ValueError("该供应商已绑定机器人，请先调整机器人配置")
-                if values.get("supports_images") and (values["model_type"] != "chat" or values["api_type"] != "openai_compatible"):
+                if values["api_type"] == "openai_chat" and values["model_type"] != "chat":
+                    raise ValueError("OpenAI 兼容聊天接口仅支持 chat 模型")
+                if values.get("supports_images") and (values["model_type"] != "chat" or values["api_type"] not in ("openai_compatible", "openai_chat")):
                     raise ValueError("图片输入能力仅用于兼容接口的 chat 模型")
                 if provider_id is not None:
                     self.check_memory_provider_references(conn, provider_id, values)
@@ -324,7 +326,7 @@ class Store(VoiceCallStore, MemoryStore):
                             bound_id = mm.get(field)
                             if bound_id == provider_id and (not values["enabled"] or values["model_type"] != kind
                                     or (field == "vision_provider_id" and (not values.get("supports_images")
-                                        or values["api_type"] != "openai_compatible"))):
+                                        or values["api_type"] not in ("openai_compatible", "openai_chat")))):
                                 raise ValueError("供应商已被多模态配置引用，请先调整机器人配置")
                 values.update(api_key_encrypted=encrypted, updated_at=utc_now())
                 if provider_id is None:

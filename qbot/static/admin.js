@@ -176,7 +176,7 @@ async function loadProviders() {
   for (const item of providers) {
     const card = element("article", undefined, "provider-card"), top = element("div", undefined, "top");
     top.append(element("h2", item.name), element("span", item.id === defaultProvider ? "默认使用" : item.enabled ? "已启用" : "已停用", "badge " + (item.enabled ? "replied" : "")));
-    card.append(top, element("p", `${({chat:"chat · 聊天",image:"图片生成",asr:"asr · 录音识别",asr_realtime:"实时语音识别 · 通话",tts:"tts · 语音合成"})[item.model_type]} · ${item.api_type === "deepseek" ? "DeepSeek" : "兼容接口"} · ${item.model_name}`), element("p", item.base_url, "muted"), element("p", "API Key  " + item.api_key_mask, "muted"));
+    card.append(top, element("p", `${({chat:"chat · 聊天",image:"图片生成",asr:"asr · 录音识别",asr_realtime:"实时语音识别 · 通话",tts:"tts · 语音合成"})[item.model_type]} · ${item.api_type === "deepseek" ? "DeepSeek" : item.api_type === "openai_chat" ? "OpenAI 兼容 · Chat Completions" : "兼容聊天 / 千问原生语音接口"} · ${item.model_name}`), element("p", item.base_url, "muted"), element("p", "API Key  " + item.api_key_mask, "muted"));
     const actions = element("div", undefined, "actions"); actions.append(button("编辑配置", () => editProvider(item)));
     if(item.model_type === "chat" && item.enabled && item.id !== defaultProvider && item.id !== fallbackProvider) actions.append(button("设为默认", async () => { await api("/default-provider", {method:"PUT",body:JSON.stringify({provider_id:item.id})}); await loadProviders(); toast("默认供应商已更新"); }));
     if (item.id === fallbackProvider) top.append(element("span", "备用模型", "badge replied"));
@@ -242,6 +242,7 @@ async function loadProviders() {
 }
 // 预设仅填写表单，不创建数据库记录或替换已有供应商。
 function providerPreset(item) {
+  if (item.api_type === "openai_chat") return "custom";
   try {
     const host = new URL(item.base_url).hostname;
     if (host === "api.deepseek.com") return "deepseek";
@@ -276,6 +277,15 @@ function applyProviderPreset() {
   showProviderPreset();
 }
 $("provider-preset").onchange = applyProviderPreset;
+// 独立兼容聊天选项切换为自定义，保留已填写的地址、模型及密钥。
+$("provider-form").elements.api_type.onchange = () => {
+  const form = $("provider-form");
+  if (form.elements.api_type.value === "openai_chat") {
+    form.elements.model_type.value = "chat";
+    $("provider-preset").value = "custom";
+    showProviderPreset();
+  }
+};
 $("provider-form").elements.model_type.onchange = () => {
   if ($("provider-preset").value === "deepseek" && $("provider-form").elements.model_type.value !== "chat") $("provider-preset").value = "custom";
   applyProviderPreset();
@@ -413,7 +423,7 @@ async function editBot(item) {
   for (const kind of ["vision", "asr", "tts"]) {
     const key = kind + "_provider_id", select = form.elements["mm_" + key];
     select.replaceChildren(new Option(kind === "vision" ? "请选择独立视觉理解模型" : "请选择", ""));
-    for (const provider of data.items.filter(p => (p.enabled || p.id === mm[key]) && (kind === "vision" ? p.model_type === "chat" && p.supports_images && p.api_type === "openai_compatible" : p.model_type === kind))) {
+    for (const provider of data.items.filter(p => (p.enabled || p.id === mm[key]) && (kind === "vision" ? p.model_type === "chat" && p.supports_images && ["openai_compatible", "openai_chat"].includes(p.api_type) : p.model_type === kind))) {
       select.add(new Option(provider.name, provider.id));
     }
     select.value = mm[key] || "";

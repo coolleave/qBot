@@ -33,7 +33,7 @@ class ProviderInput(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     model_type: Literal["chat", "image", "asr", "tts", "asr_realtime"] = "chat"
     supports_images: bool = False
-    api_type: Literal["deepseek", "openai_compatible"]
+    api_type: Literal["deepseek", "openai_compatible", "openai_chat"]
     base_url: str = Field(max_length=2048)
     model_name: str = Field(min_length=1, max_length=200)
     api_key: SecretStr = SecretStr("")
@@ -327,7 +327,7 @@ def admin_router(settings: Settings) -> APIRouter:
                 async with asyncio.timeout(80), MEDIA_SLOTS:
                     provider = await db.call("provider_for_probe", provider_id)
                     if kind == "image" and (provider["model_type"] != "chat" or not provider.get("supports_images")
-                                             or provider["api_type"] != "openai_compatible"):
+                                             or provider["api_type"] not in ("openai_compatible", "openai_chat")):
                         raise ValueError("请选择支持图片输入的聊天模型")
                     if kind == "audio" and provider["model_type"] != "asr":
                         raise ValueError("请选择 ASR 模型")
