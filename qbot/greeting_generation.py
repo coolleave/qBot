@@ -8,7 +8,6 @@ from typing import Literal
 from importlib.resources import files
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.output_parsers import StrOutputParser
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from qbot.config import Settings
@@ -28,7 +27,8 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
                             output: Literal["text", "audio"] = "text",
                             prompt_style: str | None = None, custom_prompt: str = "", realtime: bool = False) -> str:
     config = settings.model_copy(update={"model_max_retries": 0,
-        "model_timeout_seconds": 120, "model_max_tokens": 1024})
+        # 思考过程可能计入输出额度，不能按最终200字文案限制模型预算。
+        "model_timeout_seconds": 120, "model_max_tokens": 4096})
     prompts = files("qbot").joinpath("prompts")
     now = local_time(datetime.now(timezone.utc))
     context = {**time_context(now),
@@ -79,11 +79,28 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
                 messages.append(SystemMessage(content=prompts.joinpath("greeting_audio.txt").read_text("utf-8")))
             messages.append(HumanMessage(content=json.dumps(context, ensure_ascii=False)))
             response = await model.ainvoke(messages, config={"callbacks": []})
-            text = StrOutputParser().invoke(response).strip()
+            # 只提取正式文本，不将结构化思考块转换成待发送文案。
+            content = response.content
+            text = content if isinstance(content, str) else "".join(
+                part.get("text", "") for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+                and isinstance(part.get("text"), str)
+            )
+            text = text.strip()
             if provider.get("api_key"):
                 text = text.replace(provider["api_key"], "[已隐藏密钥]")
             if not text:
-                raise GreetingGenerationError("模型未返回文案正文，请检查该模型的思考模式和输出支持")
+                finish_reason = response.response_metadata.get("finish_reason")
+                if finish_reason == "length":
+                    raise GreetingGenerationError("模型已用完4096 token输出额度，但未生成正文；思考过程可能已耗尽额度，请改用适合短文案的模型")
+                if finish_reason == "content_filter":
+                    raise GreetingGenerationError("模型回复被供应商内容过滤，未返回正文，请调整文案要求")
+                if response.additional_kwargs.get("reasoning_content") or (
+                    isinstance(content, list) and any(isinstance(part, dict)
+                        and part.get("type") in {"reasoning", "thinking"} for part in content)
+                ):
+                    raise GreetingGenerationError("模型仅返回思考内容，没有正式文案；请检查模型输出额度或更换模型")
+                raise GreetingGenerationError("模型请求已完成但未返回文案正文，请检查接口是否支持Chat Completions文本响应")
             # 保留可用草稿：超长时优先在完整句末裁剪，不再整段丢弃。
             if len(text) > 200:
                 endings = list(re.finditer(r"[。！？!?]", text[:200]))
