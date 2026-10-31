@@ -23,7 +23,7 @@
 | 持久化记忆、异步整理、成本预算、群聊主人优先（待验收） | [docs/memory-system.md](docs/memory-system.md) |
 | 图片/GIF、ASR/Filetrans、TTS、自动语音回复 | [docs/multimodal.md](docs/multimodal.md) |
 | 网页语音通话、实时识别、流式播报、通话配置和记录 | [docs/voice-calls.md](docs/voice-calls.md) |
-| 定时任务、早晚问候、每日去重、执行一次、文案生成 | [docs/scheduled-tasks.md](docs/scheduled-tasks.md) |
+| 定时任务、早晚问候、每日去重、执行一次、文案生成、实际时间与天气 | [docs/scheduled-tasks.md](docs/scheduled-tasks.md) |
 | QQ 接入、WebSocket/Webhook、多机器人、队列与重连 | [docs/qq-runtime.md](docs/qq-runtime.md) |
 | 后台登录、供应商、模型类型、身份及接收人绑定 | [docs/admin-and-models.md](docs/admin-and-models.md) |
 | 对话页面、私聊/群聊历史、主动发送、图片/语音上传、发送幂等 | [docs/proactive-messages.md](docs/proactive-messages.md)、[docs/storage.md](docs/storage.md) |

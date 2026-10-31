@@ -23,7 +23,7 @@ Docker 仅打包 `res/dafeiyu_100/` 中的 PNG 与运行清单，部署需重新
 | [server.py](../qbot/server.py) | lifespan 在后台模式启动并关闭调度任务 |
 | [proactive.py](../qbot/proactive.py) | ProactiveSender.run_schedules / send_scheduled |
 | [storage.py](../qbot/storage.py) | due_greetings、claim_scheduled_greeting、规则和历史 |
-| [greeting_generation.py](../qbot/greeting_generation.py) | 按人设生成草稿 |
+| [greeting_generation.py](../qbot/greeting_generation.py)、[greeting_context.py](../qbot/greeting_context.py) | 文案生成、实际时间与石家庄天气参考 |
 | [admin.py](../qbot/admin.py)、[admin.js](../qbot/static/admin.js) | 配置、执行一次、生成文案 |
 
 ## 扫描与每日领取
@@ -176,3 +176,13 @@ AI 生成节点依据 workflow.output 区分文字和语音。语音文案只输
 模板图片复用 PNG/JPG、3.5MB 校验；列表不返回图片，详情仅管理员读取 Base64。AI 自定义提示词最多4000字，输出沿用200字限制；保存模板不调用模型。模板管理与任务使用原有管理员/CSRF 校验。新增0021迁移，应用不自动升级；此次不运行测试、浏览器或真实发送。
 
 2026-10-28：完成 Python AST、JavaScript 语法、HTML ID/脚本资源及差异静态检查；未运行测试、浏览器、数据库迁移或模型/TTS/QQ 调用。需显式升级数据库、重启后端并刷新后台后使用。
+
+## 实际时间与石家庄天气（已编写，待联调）
+
+执行时 AI 文案将参考北京时间完整日期、星期、细分实际时段和石家庄市区天气，不只围绕早午晚问候；可自然选择出门、用餐、补水、休息等关心话题，不断言用户正在上班或已经下班。日期只表示公历与星期，不推断法定节假日、调休或用户日程。实际时间优先于任务标签和模板例句；每次择要提一两项，不机械报时或播报全部天气。
+
+天气使用 Open-Meteo forecast API，默认石家庄市中心坐标38.0428/114.5149，时区Asia/Shanghai；读取当前气温、体感、天气状况和当日温度范围、降水概率。当前天气必须在45分钟内且不超过当前时间10分钟，预报日期必须为当天。只向天气服务提交固定城市坐标及气象字段，不发送用户身份、聊天内容或模型密钥。单次查询最多5秒，不重试；成功缓存10分钟，失败缓存1分钟且明确标记不可用，不拿旧天气冒充当前结果。失败仅在日志记录异常类型，继续生成不含具体天气的文案。天气为市区参考，不能推断用户位置或所有群成员都在该城市。
+
+只在定时/“执行一次”的AI生成阶段获取天气；固定文案不改写、纯图片不查询，后台“生成固定草稿”保持可复用，不注入当日天气避免保存后长期发送过期预报。时间与天气规则独立于人设和自定义模板提示词，适用于文字及TTS组合。不新增数据库迁移、依赖或环境变量；未运行测试或真实接口验收。
+
+天气规则为 `qbot/prompts/greeting_context.txt`，数据获取为 `qbot/greeting_context.py`；接口说明见 https://open-meteo.com/en/docs 。本次仅做Python AST与差异静态检查，未运行测试、天气/模型真实调用、发送或部署。更新代码后重启服务生效，无需数据库升级。

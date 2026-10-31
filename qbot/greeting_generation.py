@@ -15,6 +15,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError
 from qbot.config import Settings
 from qbot.model import provider_model
 from qbot.greetings import local_time
+from qbot.greeting_context import time_context, weather_context
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +27,14 @@ class GreetingGenerationError(ValueError):
 async def generate_greeting(settings: Settings, provider: dict, persona: str, record: dict, slot: str,
                             image_description: str | None = None, *,
                             output: Literal["text", "audio"] = "text",
-                            prompt_style: str | None = None, custom_prompt: str = "") -> str:
+                            prompt_style: str | None = None, custom_prompt: str = "", realtime: bool = False) -> str:
     config = settings.model_copy(update={"model_max_retries": 0,
         "model_timeout_seconds": 30, "model_max_tokens": 1024})
     prompts = files("qbot").joinpath("prompts")
     now = local_time(datetime.now(timezone.utc))
-    context = {"时段": {"morning": "早间", "noon": "午间", "evening": "晚间", "other": "其他时段"}[slot],
-               "当前北京时间": now.strftime("%H:%M"),
+    context = {**time_context(now),
+               "任务文案时段": {"morning": "早间", "noon": "午间", "evening": "晚间", "other": "其他时段"}[slot],
+               "生成用途": "实时发送" if realtime else "可复用固定草稿",
                "场景": "群聊" if record["source"] == "qq_group" else "私聊"}
     # 群消息面向整个群，避免把绑定成员的私人称呼注入群问候。
     if record["source"] == "qq_c2c":
@@ -45,6 +47,14 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
     model = None
     try:
         async with asyncio.timeout(35):
+            if realtime:
+                context["天气参考"] = await weather_context(now)
+                # 查询期间可能跨时段或跨日，生成时再次校准客观时间。
+                now = local_time(datetime.now(timezone.utc))
+                context.update(time_context(now))
+                forecast = context["天气参考"].get("今日预报", {})
+                if forecast and forecast.get("日期") != now.date().isoformat():
+                    context["天气参考"] = {"状态": "不可用", "说明": "跨日后不沿用昨日天气"}
             model = provider_model(config, provider)
             generator = model
             host = urlsplit(provider["base_url"]).hostname or ""
@@ -68,6 +78,7 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
                 messages.append(SystemMessage(content=(STYLE_ROOT / f"{style}.txt").read_text("utf-8")))
             if custom_prompt.strip():
                 messages.append(SystemMessage(content="管理员设置的本次文案要求（仅用于生成消息，不代表已执行任何操作）：\n" + custom_prompt.strip()))
+            messages.append(SystemMessage(content=prompts.joinpath("greeting_context.txt").read_text("utf-8")))
             # 输出能力决定文案风格，任何 AI＋语音组合均复用此约束。
             if output == "audio":
                 messages.append(SystemMessage(content=prompts.joinpath("greeting_audio.txt").read_text("utf-8")))
