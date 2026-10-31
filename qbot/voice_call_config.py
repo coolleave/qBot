@@ -1,5 +1,6 @@
 """网页通话的配置和供应商协议边界。"""
 from urllib.parse import urlencode, urlsplit, urlunsplit
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -7,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 class VoiceCallConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     enabled: bool = False
+    mode: Literal["pipeline", "realtime"] = "pipeline"
+    realtime_provider_id: int | None = Field(default=None, gt=0)
+    realtime_voice: str = Field(default="longanqian_v3.1", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_. -]+$")
     chat_provider_id: int | None = Field(default=None, gt=0)
     asr_provider_id: int | None = Field(default=None, gt=0)
     tts_provider_id: int | None = Field(default=None, gt=0)
@@ -20,7 +24,8 @@ def validate_voice_provider(provider: dict, kind: str) -> None:
         raise ValueError("通话供应商类型不匹配")
     if kind == "chat":
         return
-    prefix = {"asr_realtime": "qwen3-asr-flash-realtime", "tts": "qwen3-tts-flash-realtime"}[kind]
+    prefix = {"asr_realtime": "qwen3-asr-flash-realtime", "tts": "qwen3-tts-flash-realtime",
+              "realtime": "qwen-audio-3.1-realtime-flash"}[kind]
     model = provider["model_name"]
     if provider["api_type"] != "openai_compatible" or not (model == prefix or model.startswith(prefix + "-")):
         raise ValueError(f"通话当前仅支持 {prefix} 及其快照模型，请选择千问原生语音接口")

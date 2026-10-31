@@ -1,5 +1,6 @@
 """Store 的通话事务；所有调用仍经 Store.call 进入线程池。"""
 import json
+import hashlib
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -27,18 +28,25 @@ class VoiceCallStore:
             bot = conn.execute(select(self.bots.c.id, self.bots.c.provider_id).where(self.bots.c.id == bot_id)).mappings().first()
             if bot is None:
                 raise ValueError("机器人不存在")
-            if config["enabled"] and config["chat_provider_id"] is None:
+            realtime = config["mode"] == "realtime"
+            if config["enabled"] and not realtime and config["chat_provider_id"] is None:
                 pid = bot["provider_id"]
                 if pid is None:
                     pid = conn.execute(select(self.settings.c.default_provider_id).where(self.settings.c.id == 1)).scalar_one()
                 row = conn.execute(select(self.providers).where(self.providers.c.id == pid)).mappings().first()
                 if not row or not row["enabled"] or not row["api_key_encrypted"] or row["model_type"] != "chat":
                     raise ValueError("启用通话前请配置机器人聊天模型，或单独选择通话聊天模型")
-            for field, kind in (("chat_provider_id", "chat"), ("asr_provider_id", "asr_realtime"), ("tts_provider_id", "tts")):
+            bindings = (("realtime_provider_id", "realtime"),) if realtime else (
+                ("chat_provider_id", "chat"), ("asr_provider_id", "asr_realtime"), ("tts_provider_id", "tts"))
+            # 非当前模式的引用清空，避免隐藏配置阻止供应商维护。
+            for field in ("chat_provider_id", "asr_provider_id", "tts_provider_id", "realtime_provider_id"):
+                if field not in {name for name, _ in bindings}:
+                    config[field] = None
+            for field, kind in bindings:
                 pid = config[field]
                 if pid is None:
                     if config["enabled"] and kind != "chat":
-                        raise ValueError("启用通话前请选择实时识别和语音合成模型")
+                        raise ValueError("启用通话前请选择当前模式所需模型")
                     continue
                 row = conn.execute(select(self.providers).where(self.providers.c.id == pid)).mappings().first()
                 if not row or not row["enabled"] or not row["api_key_encrypted"]:
@@ -52,11 +60,45 @@ class VoiceCallStore:
                 conn.execute(self.voice_configs.insert().values(bot_id=bot_id, **config))
 
     def check_voice_provider_references(self, conn, provider_id: int, values: dict) -> None:
-        for field, kind in (("chat_provider_id", "chat"), ("asr_provider_id", "asr_realtime"), ("tts_provider_id", "tts")):
+        for field, kind in (("chat_provider_id", "chat"), ("asr_provider_id", "asr_realtime"), ("tts_provider_id", "tts"),
+                            ("realtime_provider_id", "realtime")):
             if conn.execute(select(self.voice_configs.c.bot_id).where(self.voice_configs.c[field] == provider_id).limit(1)).first():
                 if not values["enabled"]:
                     raise ValueError("供应商已被语音通话引用，请先调整通话配置")
                 validate_voice_provider(values, kind)
+
+    def voice_memory_list(self, bot_id: int, owner_hash: str, query: str = "", limit: int = 8) -> list[dict]:
+        """只读取服务端确定的网页身份；不接收模型提供的身份或机器人范围。"""
+        table = self.voice_memories
+        statement = select(table.c.id, table.c.content, table.c.created_at).where(
+            table.c.bot_id == bot_id, table.c.owner_hash == owner_hash)
+        if query.strip():
+            statement = statement.where(table.c.content.contains(query.strip()[:100], autoescape=True))
+        with self.engine.connect() as conn:
+            return [dict(row) for row in conn.execute(statement.order_by(table.c.id.desc()).limit(min(limit, 100))).mappings()]
+
+    def save_voice_memory(self, bot_id: int, owner_hash: str, content: str) -> None:
+        content = content.strip()
+        if not 1 <= len(content) <= 600:
+            raise ValueError("记忆内容需为1～600字")
+        table = self.voice_memories
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        with self.engine.begin() as conn:
+            if conn.execute(select(self.bots.c.id).where(self.bots.c.id == bot_id).with_for_update()).first() is None:
+                raise ValueError("机器人不存在")
+            scope = (table.c.bot_id == bot_id, table.c.owner_hash == owner_hash)
+            if conn.execute(select(table.c.id).where(*scope, table.c.content_hash == digest)).first():
+                return
+            if len(conn.execute(select(table.c.id).where(*scope).limit(100)).all()) >= 100:
+                raise ValueError("网页记忆最多100条，请先删除不再需要的条目")
+            conn.execute(table.insert().values(bot_id=bot_id, owner_hash=owner_hash, content=content,
+                                               content_hash=digest, created_at=now_utc()))
+
+    def delete_voice_memory(self, bot_id: int, owner_hash: str, memory_id: int) -> None:
+        table = self.voice_memories
+        with self.engine.begin() as conn:
+            conn.execute(table.delete().where(table.c.bot_id == bot_id, table.c.owner_hash == owner_hash,
+                                              table.c.id == memory_id))
 
     def create_voice_call(self, call_id: str, bot_id: int, snapshot: dict) -> None:
         with self.engine.begin() as conn:

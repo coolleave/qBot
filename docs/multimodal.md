@@ -44,8 +44,8 @@
 
 ## ASR 协议
 
-
 网页通话使用独立 `asr_realtime` 类型和流式 TTS 接口（已编写，待联调），不复用本节录音上传/Filetrans 流程。现有 WAV 合成保持原行为，实时输出不逐块加静音；详见[语音通话](voice-calls.md)。
+
 同步支持 Qwen-Audio-3.0/3.1-ASR-Flash、Fun-ASR-Flash 系列，走百炼原生 multimodal-generation 接口，25 秒预算，不是兼容聊天接口。
 
 Filetrans 支持 qwen-audio-3.0-asr-flash-filetrans 和 qwen-audio-3.1-asr-flash-filetrans：申请临时上传 → 上传 WAV → 提交 transcription 异步任务 → 每 2 秒轮询最多 20 次 → 检查主/子任务 → 下载 JSON。总预算 55 秒，不重试提交；超时上游可能继续运行和计费，不自动补发。详情记录任务 ID、阶段与状态，不保存签名地址。

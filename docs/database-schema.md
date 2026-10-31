@@ -19,6 +19,7 @@
 `voice_call_configs`：bot_id 为主键和 bots 外键；enabled；chat_provider_id/asr_provider_id/tts_provider_id 为可空 model_providers 外键；voice、max_seconds、idle_seconds、updated_at。实时识别引用 asr_realtime，类型校验在服务端执行。
 
 `voice_calls`：id 为32位ASCII主键；bot_id 外键；started_at/ended_at 为UTC微秒时间（结束时间可空）；status、reason；model_snapshot TEXT 保存模型ID/名称及音色；turns MEDIUMTEXT 保存最多100轮的用户转写、完整生成文本、已播片段、状态、错误和实际聊天用量。索引 idx_voice_bot_started(bot_id, started_at)。不保存音频、密钥或 QQ OpenID，不并入 chat_records；通话重启不恢复，异常中断时结束时间保持未知。结构依据手写迁移0023，尚未核对真实数据库执行状态。详见[语音通话](voice-calls.md)。
+
 ## 适用范围与事实来源
 
 面向修改 qBot 的开发 Agent，不是机器人的业务提示词。2026-10-26 已只读核对本地项目库：最初基线版本为 `0015_bot_roles`，当时共 10 张业务表和 1 张 Alembic 版本表。当前已升级至 `0018_schedule_timing`，后续新增表和字段见本文扩展说明。字段、空值属性、主键、索引与外键来自实际数据库元数据；业务含义核对 `qbot/storage.py` 及相关调用方。本次未运行测试或真实平台调用，也未重新执行已完成的迁移。
@@ -487,3 +488,7 @@ bot_user_identities 新增可空 owner_slot TINYINT 与 owner_selected_at DATETI
 scheduled_templates 是管理员全局模板表，不保存任何会话身份。id BIGINT UNSIGNED 主键，name VARCHAR(100)，config MEDIUMTEXT 保存文案、工作流、提示词、TTS供应商与音色，image_data MEDIUMBLOB、image_filename VARCHAR(150) 可空，created_at/updated_at DATETIME(6) UTC。任务套用后保存独立快照，无模板外键；删除模板不删除任务。
 
 2026-10-28：完成 Python AST、JavaScript 语法、HTML ID/脚本资源及差异静态检查；未运行测试、浏览器、数据库迁移或模型/TTS/QQ 调用。需显式升级数据库、重启后端并刷新后台后使用。
+
+## 0025 实时通话增量（迁移未执行）
+
+`voice_call_configs` 新增 mode、realtime_provider_id（model_providers 外键）、realtime_voice。`voice_memories` 保存 id、bot_id（bots 外键）、owner_hash、content（最多600字）、content_hash、created_at；唯一键为 bot_id＋owner_hash＋content_hash。owner_hash 为服务端管理员账号摘要，与 QQ 用户 OpenID 无关；更换管理员账号不继承旧账号记忆。每范围最多100条，工具查询最多8条/2400字，不存音频。

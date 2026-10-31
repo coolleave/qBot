@@ -7,6 +7,7 @@
 ## 网页语音通话（0023，已编写未执行）
 
 新增 `0023_voice_calls`，依赖 `0022_fallback_provider`，创建 `voice_call_configs` 和 `voice_calls`；不修改已有消息数据或供应商配置。配置按 bot_id 唯一，聊天/实时识别/TTS 供应商引用均有外键；记录按 bot_id 和开始时间索引。现有 model_type 为 VARCHAR(16)，可保存 asr_realtime，无需改列。新代码启动反射两张表，需先停服务、备份并显式升级后重启。本次未执行迁移，降级拒绝丢弃记录。详见[语音通话](voice-calls.md)。
+
 使用 Alembic + SQLAlchemy + PyMySQL，复用项目根目录 .env 的 MYSQL_HOST、MYSQL_PORT、MYSQL_DATABASE、MYSQL_USER、MYSQL_PASSWORD。alembic.ini 不保存凭证。所有命令在项目根目录执行；迁移只作用于配置的项目库，本项目使用 qbot。
 
 表结构、字段语义与 Agent 排查入口见 [数据库表结构指南](database-schema.md)。
@@ -97,6 +98,8 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 
 2026-10-28：完成 Python AST、JavaScript 语法、HTML ID/脚本资源及差异静态检查；未运行测试、浏览器、数据库迁移或模型/TTS/QQ 调用。需显式升级数据库、重启后端并刷新后台后使用。
 
+2026-10-28 已按用户确认，本地与实验室服务器测试环境共用同一数据库，仅执行一次 `alembic upgrade 0021_scheduled_templates`。执行前版本为0020，模板表不存在；12张既有表结构和数据已备份到本机临时目录 `qbot-before-0021-nfsjxddr`（每表JSON，二进制以Base64保存，manifest.json记录行数）。执行后确认版本0021、模板表7个字段正确、初始0条模板及Store初始化正常。服务器新容器内 `alembic current` 同样返回0021 (head)，未重复执行迁移；未运行测试或真实发送。
+
 ## 0022 备用聊天模型（已编写，未执行）
 
 `0022_fallback_provider` 接续 `0021_scheduled_templates`，为 app_settings 增加可空 BIGINT UNSIGNED 的 fallback_provider_id、索引和指向 model_providers 的外键；已有行保持 NULL。默认与备用的互斥、启用状态及类型校验由应用在同一设置行锁下完成。不修改历史迁移，不自动选择模型。先停止服务并备份项目库，再执行 `python -m alembic upgrade head`，成功后重启服务并刷新后台；运行账号需要读取新字段，迁移账号需要 ALTER、INDEX、REFERENCES 权限。本次未运行数据库迁移或测试。
@@ -116,3 +119,9 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 数据库版本已超出服务器旧代码和语音独立分支的迁移头；后续Alembic维护需使用包含0024_memory的完整迁移链，不使用stamp或降级规避版本差异。
 
 服务恢复确认：原qbot-prod容器running healthy，重启次数0；容器内查询共享库为0024_memory，/health和/admin均返回HTTP 200。部署锁随后释放，未改动自动部署成功基线。健康结果仅证明服务可用，不代表真实语音或记忆功能验收。
+
+## 实时通话与网页记忆（0025，已编写未执行）
+
+`0025_realtime_calls` 接续 `0024_memory`，向 `voice_call_configs` 增加 `mode`（旧行默认 pipeline）、`realtime_provider_id` 外键和 `realtime_voice`；新增 `voice_memories`。`model_type` 原 VARCHAR(16) 足以保存 realtime。启动会反射新表，需先停应用、备份项目库、使用含完整0024链的代码显式 `python -m alembic upgrade head`，再启动新代码。不修改已执行迁移，不 stamp，不自动迁移；本轮尚未执行升级。
+
+本轮静态检查：修改涉及的9个Python文件AST解析、2个JavaScript文件语法检查、通话DOM引用/ID和 `git diff --check` 通过。未运行测试、数据库迁移、浏览器或付费通话；运行效果待验收。

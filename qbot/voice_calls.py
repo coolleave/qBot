@@ -244,6 +244,19 @@ class VoiceCall:
                     await self.interrupt()
                 elif kind == "played" and self.expected_ack == (event.get("turn_id"), event.get("sentence_id")):
                     self.ack.set()
+                elif kind == "played":
+                    await self.played(event)
+
+    async def played(self, event: dict) -> None:
+        """实时模式覆盖此入口，按响应记录播放完成。"""
+
+    async def session_config(self) -> dict:
+        return {"input_audio_format": "pcm", "sample_rate": 16000,
+                "input_audio_transcription": {"language": "zh"},
+                "turn_detection": {"type": "server_vad", "threshold": 0.0, "silence_duration_ms": 600}}
+
+    def background_jobs(self) -> list:
+        return []
 
     async def receive_asr(self, upstream) -> None:
         async for raw in upstream:
@@ -296,12 +309,11 @@ class VoiceCall:
     async def run(self) -> None:
         jobs = []
         try:
-            asr = self.bundle["asr"]
+            asr = self.bundle.get("realtime") or self.bundle["asr"]
             async with connect(realtime_endpoint(asr), additional_headers={"Authorization": "Bearer " + asr["api_key"]},
                                open_timeout=10, close_timeout=2, max_size=1_000_000, max_queue=8) as upstream:
-                await send_event(upstream, "session.update", session={"input_audio_format": "pcm", "sample_rate": 16000,
-                    "input_audio_transcription": {"language": "zh"},
-                    "turn_detection": {"type": "server_vad", "threshold": 0.0, "silence_duration_ms": 600}})
+                self.upstream = upstream
+                await send_event(upstream, "session.update", session=await self.session_config())
                 async with asyncio.timeout(15):
                     while True:
                         event = json.loads(await upstream.recv())
@@ -314,6 +326,7 @@ class VoiceCall:
                 await self.emit("ready", sample_rate=16000, output_rate=24000)
                 jobs = [asyncio.create_task(self.receive_browser(upstream)), asyncio.create_task(self.receive_asr(upstream)),
                         asyncio.create_task(self.watchdog()), asyncio.create_task(self.stop.wait())]
+                jobs.extend(asyncio.create_task(job) for job in self.background_jobs())
                 done, _ = await asyncio.wait(jobs, return_when=asyncio.FIRST_COMPLETED)
                 for task in done:
                     task.result()
@@ -330,6 +343,9 @@ class VoiceCall:
             if self.turn_task:
                 self.turn_task.cancel()
                 await asyncio.gather(self.turn_task, return_exceptions=True)
+            for turn in self.turns:
+                if turn["status"] in ("generating", "playing"):
+                    turn["status"] = "interrupted"
             if self.status != "failed":
                 self.status = "ended"
             try:

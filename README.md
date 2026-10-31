@@ -1,5 +1,7 @@
 # qBot 对话智能体
 
+新增实时通话模式（代码已编写，待联调）：供应商选择 `realtime`，推荐 `qwen-audio-3.1-realtime-flash`，在「语音通话」选择实时语音对话和音色 `longanqian_v3.1`，无需独立 ASR/TTS。支持接通时加载网页记忆及通话中按需查询，页面可显式保存。部署前需停服务、备份并显式升级到 `0025_realtime_calls`；本轮未迁移或部署。详见[网页通话](docs/voice-calls.md)。
+
 当前版本：**V0.5**（包版本 `0.5.0`）。本版包含 Vue 3 / Element Plus 后台、独立 Token 统计、语音输出优化及 Docker 部署配置。当前开发主线为 Memory 模块，并持续优化现有功能。
 
 ## 模块文档导航
@@ -7,6 +9,7 @@
 新增后台「记忆管理」（代码已编写，运行待验收），使用步骤与边界见[记忆系统](docs/memory-system.md)。默认关闭；启用后支持持久化近期上下文、显式记忆命令、群聊主人优先和独立模型异步整理，受每日次数/token配额约束。先停服务、备份项目库，显式执行 `python -m alembic upgrade head` 至 `0024_memory`（包含尚未执行的前置迁移），再重启并刷新后台。无新增依赖或环境变量；本次未执行迁移、测试、浏览器或付费调用。
 
 新增后台「语音通话」栏目（代码已编写，真实通话待验收），方案、供应商设计和使用步骤见[网页语音通话](docs/voice-calls.md)。模型统一管理，新增 `asr_realtime` 实时识别类型，与普通录音识别分开；chat/TTS 可复用。启用前停止服务、备份项目库，执行 `python -m alembic upgrade head` 升级至 `0023_voice_calls`，再重启并刷新后台。远程麦克风需 HTTPS/WSS，localhost 可开发。无新增依赖或环境变量；本次未执行迁移、测试、浏览器或付费接口联调。
+
 按功能维护代码时先查 [模块文档索引](docs/README.md)：[智能体链路](docs/agent-flow.md)、[多模态处理](docs/multimodal.md)、[定时任务](docs/scheduled-tasks.md)、[QQ 接入与多机器人](docs/qq-runtime.md)、[后台与模型](docs/admin-and-models.md)、[主动发送](docs/proactive-messages.md)、[存储与记录](docs/storage.md)、[数据库迁移](docs/database-migrations.md)、[数据库表结构（Agent）](docs/database-schema.md)。AI 开发入口仍为根目录 [AGENTS.md](AGENTS.md)，其中提供按功能查阅规则。
 
 模块文档集中说明当前实现、代码入口和边界；本 README 保留启动配置、操作说明和历史更新。原方案文档保留设计背景与待验收项，不将其视为全部已实现。本次整理仅核对文档与源码，未运行测试、迁移、浏览器或真实接口验证。

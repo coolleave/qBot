@@ -14,8 +14,8 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from qbot.config import Settings
 from qbot.identity_roles import IdentityRole
-from qbot.memory_store import MemoryStore
 from qbot.voice_call_store import VoiceCallStore
+from qbot.memory_store import MemoryStore
 
 
 class StorageError(RuntimeError):
@@ -51,7 +51,7 @@ class Store(VoiceCallStore, MemoryStore):
             metadata.reflect(engine, only=["model_providers", "app_settings", "conversations", "chat_records", "bots",
                                            "interaction_greetings", "interaction_greeting_runs", "bot_user_identities",
                                            "admin_sessions", "bot_roles", "bot_contact_notes", "scheduled_templates",
-                                           "voice_call_configs", "voice_calls", "bot_memory_settings", "memory_states",
+                                           "voice_call_configs", "voice_calls", "voice_memories", "bot_memory_settings", "memory_states",
                                            "memory_items", "memory_sources", "memory_runs"])
             self.memory_settings = metadata.tables["bot_memory_settings"]
             self.memory_states = metadata.tables["memory_states"]
@@ -59,6 +59,7 @@ class Store(VoiceCallStore, MemoryStore):
             self.memory_sources = metadata.tables["memory_sources"]
             self.memory_runs = metadata.tables["memory_runs"]
             self.voice_configs = metadata.tables["voice_call_configs"]
+            self.voice_memories = metadata.tables["voice_memories"]
             self.voice_calls = metadata.tables["voice_calls"]
             self.templates = metadata.tables["scheduled_templates"]
             self.admin_sessions = metadata.tables["admin_sessions"]
@@ -245,7 +246,7 @@ class Store(VoiceCallStore, MemoryStore):
             row = conn.execute(select(self.providers).where(self.providers.c.id == provider_id)).mappings().first()
         if row is None:
             raise ValueError("供应商不存在")
-        if row["model_type"] not in ("chat", "tts", "asr", "asr_realtime"):
+        if row["model_type"] not in ("chat", "tts", "asr", "asr_realtime", "realtime"):
             raise ValueError("该类型未接入调用")
         result = dict(row)
         encrypted = result.pop("api_key_encrypted")
@@ -275,11 +276,11 @@ class Store(VoiceCallStore, MemoryStore):
         values = dict(values)
         key = values.pop("api_key", "")
         values.setdefault("model_type", "chat")
-        if values["model_type"] not in ("chat", "image", "asr", "tts", "asr_realtime"):
+        if values["model_type"] not in ("chat", "image", "asr", "tts", "asr_realtime", "realtime"):
             raise ValueError("无效的模型类型")
-        if values["model_type"] == "asr_realtime":
+        if values["model_type"] in ("asr_realtime", "realtime"):
             from qbot.voice_call_config import validate_voice_provider
-            validate_voice_provider(values, "asr_realtime")
+            validate_voice_provider(values, values["model_type"])
         try:
             with self.engine.begin() as conn:
                 # 所有默认项和启停修改先锁同一设置行，避免并发停用默认项。
@@ -312,8 +313,8 @@ class Store(VoiceCallStore, MemoryStore):
                 if values.get("supports_images") and (values["model_type"] != "chat" or values["api_type"] not in ("openai_compatible", "openai_chat")):
                     raise ValueError("图片输入能力仅用于兼容接口的 chat 模型")
                 if provider_id is not None:
-                    self.check_memory_provider_references(conn, provider_id, values)
                     self.check_voice_provider_references(conn, provider_id, values)
+                    self.check_memory_provider_references(conn, provider_id, values)
                     template_configs = conn.execute(select(self.templates.c.config)).scalars().all()
                     for raw in [*conn.execute(select(self.greetings.c.delivery)).scalars(), *template_configs]:
                         delivery = json.loads(raw or "{}")

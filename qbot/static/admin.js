@@ -176,7 +176,7 @@ async function loadProviders() {
   for (const item of providers) {
     const card = element("article", undefined, "provider-card"), top = element("div", undefined, "top");
     top.append(element("h2", item.name), element("span", item.id === defaultProvider ? "默认使用" : item.enabled ? "已启用" : "已停用", "badge " + (item.enabled ? "replied" : "")));
-    card.append(top, element("p", `${({chat:"chat · 聊天",image:"图片生成",asr:"asr · 录音识别",asr_realtime:"实时语音识别 · 通话",tts:"tts · 语音合成"})[item.model_type]} · ${item.api_type === "deepseek" ? "DeepSeek" : item.api_type === "openai_chat" ? "OpenAI 兼容 · Chat Completions" : "兼容聊天 / 千问原生语音接口"} · ${item.model_name}`), element("p", item.base_url, "muted"), element("p", "API Key  " + item.api_key_mask, "muted"));
+    card.append(top, element("p", `${({chat:"chat · 聊天",image:"图片生成",asr:"asr · 录音识别",realtime:"实时通话 · 语音对话",asr_realtime:"实时语音识别 · 通话",tts:"tts · 语音合成"})[item.model_type]} · ${item.api_type === "deepseek" ? "DeepSeek" : item.api_type === "openai_chat" ? "OpenAI 兼容 · Chat Completions" : "兼容聊天 / 千问原生语音接口"} · ${item.model_name}`), element("p", item.base_url, "muted"), element("p", "API Key  " + item.api_key_mask, "muted"));
     const actions = element("div", undefined, "actions"); actions.append(button("编辑配置", () => editProvider(item)));
     if(item.model_type === "chat" && item.enabled && item.id !== defaultProvider && item.id !== fallbackProvider) actions.append(button("设为默认", async () => { await api("/default-provider", {method:"PUT",body:JSON.stringify({provider_id:item.id})}); await loadProviders(); toast("默认供应商已更新"); }));
     if (item.id === fallbackProvider) top.append(element("span", "备用模型", "badge replied"));
@@ -217,7 +217,8 @@ async function loadProviders() {
         } catch(e) { outcome.textContent = "合成失败：" + e.message; }
         finally { probe.disabled = false; }
       };
-    } else if (item.model_type === "asr_realtime") outcome.textContent = "已接入网页实时识别，请在「语音通话」选择并拨号验证；不使用录音上传试用。";
+    } else if (item.model_type === "realtime") outcome.textContent = "请在「语音通话」选择实时对话模式并拨号；此模型直接输出语音，无需单独 TTS。";
+    else if (item.model_type === "asr_realtime") outcome.textContent = "已接入网页实时识别，请在「语音通话」选择并拨号验证；不使用录音上传试用。";
     else if (item.model_type !== "chat") outcome.textContent = "已保存模型配置，暂未接入调用及连接测试。";
     if (item.model_type === "asr" || (item.model_type === "chat" && item.supports_images)) {
       const kind = item.model_type === "asr" ? "audio" : "image", upload = element("input");
@@ -256,7 +257,7 @@ function showProviderPreset() {
   $("provider-preset-hint").textContent = preset === "qwen"
     ? (kind === "asr" ? "千问 ASR 默认 Filetrans：先上传 WAV，再异步转写。临时文件保留48小时，仅供开发试用；正式部署请使用自有 OSS。" : "千问默认北京地域；切换类型会重新填写推荐模型和地址。其他地域可手动修改，API Key 须匹配地域。")
     : preset === "deepseek" ? "DeepSeek 预设用于聊天，默认 deepseek-flash。填写自己的 API Key 后保存。" : "自行填写 HTTPS 地址、模型和接口。自定义不会自动适配未知的 ASR / TTS 协议。";
-  const names = preset === "qwen" ? ({chat:["qwen3.8-flash", "qwen3-vl-plus"], asr:["qwen-audio-3.0-asr-flash-filetrans", "qwen-audio-3.1-asr-flash-filetrans", "qwen-audio-3.0-asr-flash", "qwen-audio-3.1-asr-flash"], asr_realtime:["qwen3-asr-flash-realtime"], tts:["qwen3-tts-flash-realtime"]}[kind] || []) : preset === "deepseek" ? ["deepseek-flash", "deepseek-v4-pro"] : [];
+  const names = preset === "qwen" ? ({chat:["qwen3.8-flash", "qwen3-vl-plus"], asr:["qwen-audio-3.0-asr-flash-filetrans", "qwen-audio-3.1-asr-flash-filetrans", "qwen-audio-3.0-asr-flash", "qwen-audio-3.1-asr-flash"], realtime:["qwen-audio-3.1-realtime-flash"], asr_realtime:["qwen3-asr-flash-realtime"], tts:["qwen3-tts-flash-realtime"]}[kind] || []) : preset === "deepseek" ? ["deepseek-flash", "deepseek-v4-pro"] : [];
   $("provider-model-suggestions").replaceChildren(...names.map(name => new Option(name, name)));
 }
 function applyProviderPreset() {
@@ -271,7 +272,7 @@ function applyProviderPreset() {
   } catch { form.elements.api_key.value = ""; }
   form.elements.api_type.value = preset === "deepseek" ? "deepseek" : "openai_compatible";
   form.elements.base_url.value = base;
-  form.elements.model_name.value = preset === "deepseek" ? "deepseek-flash" : {chat:"qwen3.8-flash", asr:"qwen-audio-3.0-asr-flash-filetrans", asr_realtime:"qwen3-asr-flash-realtime", tts:"qwen3-tts-flash-realtime"}[kind];
+  form.elements.model_name.value = preset === "deepseek" ? "deepseek-flash" : {chat:"qwen3.8-flash", asr:"qwen-audio-3.0-asr-flash-filetrans", realtime:"qwen-audio-3.1-realtime-flash", asr_realtime:"qwen3-asr-flash-realtime", tts:"qwen3-tts-flash-realtime"}[kind];
   form.elements.supports_images.checked = preset === "qwen" && kind === "chat";
   if (!form.elements.name.value.trim()) form.elements.name.value = (preset === "qwen" ? "千问" : "DeepSeek") + " " + kind;
   showProviderPreset();
