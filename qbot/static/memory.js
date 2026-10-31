@@ -3,31 +3,31 @@
   const section = $("memory-page");
   section.innerHTML = `
     <div class="page-heading"><div><h1>记忆管理</h1><p class="muted">保留有用的信息，按预算异步整理。群聊默认以主人发言为主要来源。</p></div></div>
-    <div class="memory-controls"><label>机器人<select id="memory-bot"></select></label><button id="memory-refresh" type="button">刷新</button></div>
+    <div class="memory-controls memory-toolbar"><label>机器人<select id="memory-bot"></select></label><button id="memory-refresh" type="button">刷新</button></div>
     <p id="memory-error" class="error" role="alert"></p>
-    <div class="memory-layout"><aside><form id="memory-config" class="memory-panel"><fieldset id="memory-config-fields">
-      <h2>记忆设置</h2><label class="checkbox"><input name="enabled" type="checkbox">启用持久化记忆</label>
+    <div class="memory-layout"><aside class="memory-sidebar" aria-label="记忆配置与用量"><form id="memory-config" class="memory-panel"><fieldset id="memory-config-fields">
+      <div class="memory-panel-heading"><h2>记忆设置</h2><p class="muted">控制记忆的保存方式与整理节奏</p></div><div class="memory-form-section"><h3>保存与整理</h3><label class="checkbox"><input name="enabled" type="checkbox">启用持久化记忆</label>
       <label class="checkbox"><input name="automatic" type="checkbox">启用自动整理（产生模型费用）</label>
       <label>独立整理模型<select name="provider_id"></select></label>
       <label class="checkbox"><input name="budget_compatible" type="checkbox">已确认模型采用字节级分词并支持输出上限</label>
       <p class="muted">输入按 UTF-8 字节保守预留，实际用量另行统计。不会切换到聊天或备用模型。</p>
-      <label>每天最多调用次数<input name="daily_calls" type="number" min="1" max="60" required></label>
+      </div><div class="memory-form-section"><h3>每日预算</h3><label>每天最多调用次数<input name="daily_calls" type="number" min="1" max="60" required></label>
       <label>每天 token 配额<input name="daily_tokens" type="number" min="1000" max="180000" required></label>
-      <label>每批触发消息数<input name="batch_messages" type="number" min="2" max="20" required></label>
+      </div><div class="memory-form-section"><h3>整理频率</h3><label>每批触发消息数<input name="batch_messages" type="number" min="2" max="20" required></label>
       <label>同会话冷却（分钟）<input name="cooldown_minutes" type="number" min="5" max="1440" required></label>
       <label>闲置整理（分钟）<input name="idle_minutes" type="number" min="5" max="1440" required></label>
-      <p class="muted">全局每天最多60次、180000 token。未知调用保留预算，不自动重试。保存设置会使旧整理任务和近期摘要失效，已有长期记忆保留。</p>
+      </div><p class="muted memory-hint">全局每天最多60次、180000 token。未知调用保留预算，不自动重试。保存设置会使旧整理任务和近期摘要失效，已有长期记忆保留。</p>
       <button class="primary" type="submit">保存设置</button></fieldset></form>
-      <div class="memory-panel"><h2>今日用量</h2><p id="memory-budget" class="memory-budget"></p><p id="memory-paused" class="error"></p></div>
-    </aside><div>
-      <div class="memory-panel"><div class="memory-controls"><label>会话<select id="memory-conversation"></select></label>
+      <div class="memory-panel"><div class="memory-panel-heading"><h2>今日用量</h2><p class="muted">预算占用与模型实际返回量分开展示</p></div><div id="memory-budget" class="memory-budget" aria-live="polite"></div><p id="memory-paused" class="error"></p></div>
+    </aside><div class="memory-main">
+      <div class="memory-panel"><div class="memory-panel-heading"><h2>记忆条目</h2><p class="muted">查找、确认和维护每个会话的长期记忆</p></div><div class="memory-controls memory-filters"><label>会话<select id="memory-conversation"></select></label>
         <label>状态<select id="memory-status"><option value="active">有效</option><option value="pending">待确认</option><option value="superseded">已替代</option><option value="forgotten">已遗忘</option><option value="">全部</option></select></label>
-        <label>关键词<input id="memory-query" maxlength="100"></label><button id="memory-search" type="button">查询</button></div>
+        <label>关键词<input id="memory-query" maxlength="100" placeholder="搜索记忆内容"></label><button id="memory-search" type="button">查询</button></div>
         <div class="memory-actions"><button id="memory-new" type="button" class="primary">新增记忆</button><button id="memory-organize" type="button">请求整理</button><button id="memory-backfill" type="button">历史回填</button></div>
         <p class="muted">新增、整理和回填需选择具体会话。回填仅处理最多100条，不绕过遗忘边界或日预算。</p>
-        <div id="memory-items"></div><div class="memory-actions"><button id="memory-prev" type="button">上一页</button><span id="memory-page-info"></span><button id="memory-next" type="button">下一页</button></div>
+        <div id="memory-items" aria-live="polite"></div><div class="memory-actions memory-pagination"><button id="memory-prev" type="button">上一页</button><span id="memory-page-info"></span><button id="memory-next" type="button">下一页</button></div>
       </div>
-      <div class="memory-panel"><h2>整理运行记录</h2><p id="memory-backlog" class="muted"></p><div id="memory-runs" class="memory-table-wrap"></div><div id="memory-states"></div></div>
+      <div class="memory-panel"><div class="memory-panel-heading"><h2>整理运行记录</h2><p class="muted">查看最近批次、模型用量与待处理状态</p></div><p id="memory-backlog" class="muted"></p><div id="memory-runs" class="memory-table-wrap"></div><div id="memory-states"></div></div>
     </div></div>`;
   const dialog = document.createElement("dialog");
   dialog.id = "memory-item-dialog";
@@ -82,16 +82,24 @@
     if (seq !== generation || section.hidden) return;
     items = result.items; total = result.total;
     const list = $("memory-items"); list.replaceChildren();
-    if (!items.length) list.append(node("p", "当前筛选下暂无记忆", "muted"));
+    if (!items.length) list.append(node("p", "当前筛选下暂无记忆。可调整筛选，或选择具体会话后新增记忆。", "memory-empty"));
     for (const item of items) {
       const card = node("article", null, "memory-card");
-      card.append(node("div", `#${item.id} · 会话 ${item.conversation_id} · ${item.scope === "group" ? "群共享" : "个人"} · ${statusNames[item.status] || item.status} · ${date(item.updated_at)}`, "memory-meta"));
+      const heading = node("div", null, "memory-card-heading");
+      const tags = node("div", null, "memory-tags");
+      const categoryNames = {note:"笔记", preference:"偏好", fact:"事实", goal:"目标", event:"事件", request:"长期要求"};
+      tags.append(node("span", statusNames[item.status] || item.status, `memory-tag memory-status-${item.status}`));
+      tags.append(node("span", item.scope === "group" ? "群共享" : "个人记忆", "memory-tag"));
+      tags.append(node("span", categoryNames[item.category] || item.category || "笔记", "memory-tag"));
+      heading.append(tags, node("span", `#${item.id} · 会话 ${item.conversation_id}`, "memory-meta"));
+      card.append(heading);
+      card.append(node("div", `更新于 ${date(item.updated_at)}`, "memory-meta"));
       card.append(node("p", item.content || "正文已清除"));
       card.append(node("div", `主体：${item.subject_id}；来源：${item.origin}；到期：${item.expires_at ? date(item.expires_at) : "长期"}`, "memory-meta"));
       const actions = node("div", null, "memory-actions");
       if (item.status !== "forgotten") {
         const edit = node("button", item.status === "pending" ? "确认 / 编辑" : "编辑"); edit.type = "button"; edit.onclick = () => editItem(item); actions.append(edit);
-        const remove = node("button", "遗忘"); remove.type = "button"; remove.onclick = async () => {
+        const remove = node("button", "遗忘", "memory-danger"); remove.type = "button"; remove.onclick = async () => {
           try { await ElementPlus.ElMessageBox.confirm("将清除记忆正文并重新开始相关近期对话；群共享记忆会影响全群会话。原始审计聊天记录保留。", "遗忘记忆", {type:"warning"}); }
           catch { return; }
           remove.disabled = true;
@@ -103,7 +111,21 @@
     }
     $("memory-page-info").textContent = `第 ${page} 页 · 共 ${total} 条`;
     $("memory-prev").disabled = page <= 1; $("memory-next").disabled = page * 20 >= total;
-    $("memory-budget").textContent = `${stats.date}（北京时间）\n本机器人：${stats.bot.calls} 次，预算占用 ${stats.bot.budget_used} token\n实际返回总量：${stats.bot.actual_tokens ?? "未知"}，未知调用 ${stats.bot.unknown_calls} 次\n全局：${stats.global.calls}/60 次，${stats.global.budget_used}/180000 token`;
+    const budget = $("memory-budget");
+    budget.replaceChildren(node("p", `${stats.date} · 北京时间`, "memory-meta"));
+    const metrics = node("div", null, "memory-metrics");
+    const number = value => value == null ? "未知" : Number(value).toLocaleString("zh-CN");
+    for (const [label, value, detail] of [
+      ["今日调用", number(stats.bot.calls), "本机器人 · 次"],
+      ["预算占用", number(stats.bot.budget_used), "包含未结算预留 · token"],
+      ["实际返回", number(stats.bot.actual_tokens), "供应商返回 · token"],
+      ["未知调用", number(stats.bot.unknown_calls), "保留预算 · 次"],
+    ]) {
+      const metric = node("div", null, "memory-metric");
+      metric.append(node("span", label), node("strong", value), node("small", detail));
+      metrics.append(metric);
+    }
+    budget.append(metrics, node("p", `全局调用 ${number(stats.global.calls)} / 60 次 · 预算 ${number(stats.global.budget_used)} / 180,000 token`, "memory-global-budget"));
     $("memory-backlog").textContent = stats.sources.map(entry => `${entry.status}: ${entry.count}`).join(" · ") || "暂无待处理消息";
     const table = node("table"), head = node("tr");
     for (const label of ["批次 / 会话", "时间", "模型", "状态", "实际 token", "说明", "操作"]) head.append(node("th", label));
@@ -121,7 +143,7 @@
       }
       row.append(action); table.append(row);
     }
-    $("memory-runs").replaceChildren(table);
+    $("memory-runs").replaceChildren(stats.runs.length ? table : node("p", "暂无整理运行记录。启用自动整理或请求整理后，可在这里查看处理结果。", "memory-empty"));
     $("memory-states").replaceChildren(...stats.states.filter(entry => entry.reason).map(entry => node("p", `会话 #${entry.conversation_id}：${entry.reason}${entry.next_run_at ? "；下次检查 " + date(entry.next_run_at) : ""}`, "muted")));
   }
   function editItem(item) {

@@ -1,14 +1,54 @@
-#memory-page .memory-layout { display:grid; grid-template-columns:minmax(240px,320px) minmax(0,1fr); gap:20px; }
-#memory-page .memory-panel { background:var(--surface,#fff); border:1px solid #e4e7ed; border-radius:14px; padding:20px; margin-bottom:18px; }
-#memory-page .memory-controls { display:flex; align-items:end; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
-#memory-page .memory-controls label { margin:0; min-width:160px; }
-#memory-page .memory-card { padding:14px 0; border-bottom:1px solid #e4e7ed; }
-#memory-page .memory-card p { white-space:pre-wrap; overflow-wrap:anywhere; margin:8px 0; }
-#memory-page .memory-actions { display:flex; flex-wrap:wrap; gap:8px; }
-#memory-page .memory-meta { font-size:12px; color:#606978; }
-#memory-page .memory-budget { padding:12px; background:#f3f6fc; border-radius:10px; white-space:pre-wrap; }
-#memory-page .memory-table-wrap { overflow:auto; }
-#memory-page table { width:100%; font-size:13px; border-collapse:collapse; }
-#memory-page td, #memory-page th { padding:8px; text-align:left; border-bottom:1px solid #e4e7ed; }
+/* 记忆管理局部样式，避免继承导航 aside 的深色背景和留白。 */
+#memory-page .memory-layout { display:grid; grid-template-columns:minmax(290px,340px) minmax(0,1fr); gap:24px; align-items:start; }
+#memory-page .memory-sidebar { display:grid; gap:24px; padding:0; background:transparent; color:var(--ink); min-width:0; }
+#memory-page .memory-main { display:grid; gap:24px; min-width:0; }
+#memory-page .memory-panel { background:#fff; border:1px solid var(--border); border-radius:16px; padding:24px; min-width:0; box-shadow:0 3px 15px #22345b04; }
+#memory-page .memory-panel-heading { padding-bottom:18px; margin-bottom:20px; border-bottom:1px solid var(--border); }
+#memory-page .memory-panel-heading h2 { font-size:17px; margin:0 0 6px; }
+#memory-page .memory-panel-heading p { font-size:12px; margin:0; }
+#memory-page .memory-controls { display:flex; align-items:end; gap:14px; flex-wrap:wrap; margin-bottom:20px; }
+#memory-page .memory-controls label { margin:0; min-width:0; flex:1 1 160px; }
+#memory-page .memory-toolbar { padding:20px 24px; background:#fff; border:1px solid var(--border); border-radius:14px; }
+#memory-page .memory-toolbar label { flex:0 1 320px; }
+#memory-page .memory-filters { display:grid; grid-template-columns:minmax(0,2fr) minmax(100px,1fr); padding:18px; border-radius:12px; background:#f7f8fc; }
+#memory-page .memory-filters button { justify-self:start; }
+#memory-config-fields { border:0; padding:0; margin:0; min-width:0; }
+#memory-page .memory-form-section { display:grid; gap:16px; padding-bottom:20px; margin-bottom:20px; border-bottom:1px solid var(--border); }
+#memory-page .memory-form-section h3 { margin:0; color:var(--ink); font-size:13px; }
+#memory-page .memory-form-section .muted { font-size:12px; margin:0; }
+#memory-page .checkbox { align-items:flex-start; gap:10px; line-height:1.8; }
+#memory-page .checkbox input { flex-shrink:0; margin-top:4px; }
+#memory-page .memory-hint { padding:12px 14px; background:#f7f8fc; border-radius:10px; font-size:12px; }
+#memory-config-fields > button { width:100%; margin-top:4px; }
+#memory-page .memory-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+#memory-page .memory-actions + .muted { font-size:12px; margin:12px 0 20px; }
+#memory-items { display:grid; gap:16px; margin-top:20px; }
+#memory-page .memory-card { padding:20px; border:1px solid var(--border); border-radius:12px; background:#fff; }
+#memory-page .memory-card-heading { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; }
+#memory-page .memory-tags { display:flex; gap:6px; flex-wrap:wrap; }
+#memory-page .memory-tag { padding:4px 9px; border-radius:6px; font-size:11px; background:#f0f2f8; color:#637089; }
+#memory-page .memory-status-active { color:#287754; background:#eaf6ef; }
+#memory-page .memory-status-pending { color:#996616; background:#fff4df; }
+#memory-page .memory-card p { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.85; margin:16px 0; font-size:14px; }
+#memory-page .memory-meta { font-size:12px; color:var(--muted); line-height:1.8; overflow-wrap:anywhere; }
+#memory-page .memory-card .memory-actions { border-top:1px solid #edf0f6; padding-top:14px; margin-top:16px; }
+#memory-page .memory-card button { padding:7px 12px; font-size:12px; }
+#memory-page .memory-danger { color:#b44750; border-color:#efdade; }
+#memory-page .memory-pagination { justify-content:flex-end; border-top:1px solid var(--border); padding-top:20px; margin-top:24px; }
+#memory-page #memory-page-info { color:var(--muted); font-size:12px; }
+#memory-page .memory-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+#memory-page .memory-metric { padding:14px; border-radius:10px; background:#f6f7fd; min-width:0; }
+#memory-page .memory-metric span { font-size:12px; color:#64708a; }
+#memory-page .memory-metric strong { display:block; color:var(--accent); font-size:23px; font-variant-numeric:tabular-nums; margin:10px 0 6px; overflow-wrap:anywhere; }
+#memory-page .memory-metric small { font-size:11px; color:var(--muted); }
+#memory-page .memory-global-budget { margin:16px 0 0; font-size:12px; line-height:1.8; color:var(--muted); }
+#memory-page .memory-table-wrap { overflow:auto; border:1px solid var(--border); border-radius:10px; }
+#memory-page table { width:100%; min-width:680px; font-size:12px; border-collapse:collapse; }
+#memory-page td, #memory-page th { padding:14px 16px; text-align:left; border-bottom:1px solid var(--border); }
+#memory-page .memory-empty { margin:0; padding:36px 24px; border-radius:12px; background:#f8f9fc; color:var(--muted); text-align:center; line-height:1.9; font-size:13px; }
+#memory-page .error:empty { display:none; }
+#memory-page #memory-paused:not(:empty) { padding:12px; background:#fff2ef; border-radius:8px; margin:16px 0 0; }
 #memory-item-dialog { width:min(600px,90vw); }
-@media(max-width:1000px){ #memory-page .memory-layout { grid-template-columns:1fr; } }
+@media(max-width:1100px) { #memory-page .memory-layout { grid-template-columns:1fr; } #memory-page .memory-sidebar { grid-template-columns:minmax(0,1fr) minmax(0,1fr); align-items:start; } }
+@media(max-width:760px) { #memory-page .memory-sidebar { grid-template-columns:1fr; } #memory-page .memory-panel, #memory-page .memory-toolbar { padding:18px; } #memory-page .memory-card { padding:16px; } #memory-page .memory-layout, #memory-page .memory-sidebar, #memory-page .memory-main { gap:18px; } }
+@media(max-width:480px) { #memory-page .memory-filters { grid-template-columns:1fr; } #memory-page .memory-pagination { justify-content:center; } }
