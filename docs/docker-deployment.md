@@ -183,3 +183,9 @@ docker compose up -d qbot
 部署中发现服务器I/O压力较高，无条件 `chmod -R` 对已满足权限的大量素材重复写入元数据，导致最后构建层长时间阻塞。改为先用find检查权限，仅对缺少公共读取或目录/原可执行文件执行权限的路径调用chmod，保持a+rX效果。不修改宿主机配置或其他服务。
 
 已完成部署 `899d01f`，服务器恢复main分支及自动更新成功基线。镜像 `sha256:a6d4c7c9d484c01dc6d9137ca8afc34f5cf866c578a740ea2d03d90caecd8aee`；容器 running healthy、重启次数0。`/health`、`/admin`、记忆和语音JS资源均返回200，Store初始化成功，106个源码/迁移文件SHA-256与仓库一致，启动日志无Traceback/ERROR标记。数据库保持0024_memory，未重复迁移。配置和原部署信息备份保存于服务器 `.deploy/backups/memory-voice-*`，旧镜像保留为 `qbot:before-memory-voice`。未运行测试、浏览器或真实模型/通话验收。
+
+## 2026-10-31 OpenAI 兼容接口发布
+
+2026-10-31 实验室服务器已部署功能提交 `778e1b6`：容器 running healthy、重启次数 0，/health 正常、/admin 返回 200；admin.py、storage.py、admin.js、admin.html 的 SHA-256 与服务器仓库一致。未执行数据库迁移、测试、浏览器验证或付费模型调用，第三方接口真实兼容性待验收。
+
+持有 `.deploy/deploy.lock` 完成构建及更新，保留原生产配置和其他服务。配置、原镜像 ID、原提交及成功基线备份于 `.deploy/backups/openai-release-20261031-104251/`。本次未发布本地尚未提交的实时语音模型等改动。

@@ -163,4 +163,4 @@ OpenID 依据：[QQ 官方 API 调用指南 · 唯一身份机制](https://bot.q
 
 供应商接口类型新增 `openai_chat`，页面显示“OpenAI 兼容 · Chat Completions”，仅允许 chat 模型，可按实际模型能力开启图片输入。复用现有 ChatOpenAI 调用、超时、重试、Token 统计和视觉链路。服务地址填写供应商提供的 HTTPS API 基础地址（通常以 /v1 结尾），不填写 /chat/completions；模型名与 API Key 由供应商提供。不自动适配 Responses、ASR、TTS 或实时语音协议。原 `openai_compatible` 配置与千问预设保持兼容。字段为 VARCHAR，无需新增数据库迁移、依赖或环境变量。
 
-仅核对代码改动；未运行测试、浏览器验证或真实模型调用，尚未部署。
+2026-10-31 实验室服务器已部署功能提交 `778e1b6`：容器 running healthy、重启次数 0，/health 正常、/admin 返回 200；admin.py、storage.py、admin.js、admin.html 的 SHA-256 与服务器仓库一致。未执行数据库迁移、测试、浏览器验证或付费模型调用，第三方接口真实兼容性待验收。
