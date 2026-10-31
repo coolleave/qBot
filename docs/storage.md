@@ -29,6 +29,8 @@ API Key 和 QQ AppSecret 用本地 PROVIDER_ENCRYPTION_KEY 加密，查询掩码
 | interaction_greetings | 会话早午晚任务规则（end_time 仅兼容保留，不参与调度） |
 | interaction_greeting_runs | 每日领取与发送记录关联 |
 | admin_sessions | 登录摘要、CSRF、配置指纹及有效期 |
+| voice_call_configs | 0023：机器人独立通话模型、音色及限制 |
+| voice_calls | 0023：通话状态、模型快照、轮次文字、播放确认及聊天用量 |
 | alembic_version | 当前迁移版本 |
 
 初始四张业务表不代表当前完整结构；旧会话家庭字段保留核对，运行身份来源已迁到独立表。

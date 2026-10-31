@@ -4,7 +4,9 @@
 
 `0024_memory` 接续 `0023_voice_calls`，使用可重复执行的建表语句新增 `bot_memory_settings`、`memory_states`、`memory_items`、`memory_sources`、`memory_runs`，不修改既有表数据或自动回填历史。MySQL 5.6/utf8mb4兼容，JSON采用TEXT，来源去重键包含bot_id。应用启动反射五张新表，因此需先停止服务、备份、显式执行 `python -m alembic upgrade head` 后重启；该命令包含所有尚未执行的前置迁移。降级明确拒绝丢失记忆和账本。本轮未执行迁移、测试或数据库验收，详见[记忆系统](memory-system.md)。
 
+## 网页语音通话（0023，已编写未执行）
 
+新增 `0023_voice_calls`，依赖 `0022_fallback_provider`，创建 `voice_call_configs` 和 `voice_calls`；不修改已有消息数据或供应商配置。配置按 bot_id 唯一，聊天/实时识别/TTS 供应商引用均有外键；记录按 bot_id 和开始时间索引。现有 model_type 为 VARCHAR(16)，可保存 asr_realtime，无需改列。新代码启动反射两张表，需先停服务、备份并显式升级后重启。本次未执行迁移，降级拒绝丢弃记录。详见[语音通话](voice-calls.md)。
 使用 Alembic + SQLAlchemy + PyMySQL，复用项目根目录 .env 的 MYSQL_HOST、MYSQL_PORT、MYSQL_DATABASE、MYSQL_USER、MYSQL_PASSWORD。alembic.ini 不保存凭证。所有命令在项目根目录执行；迁移只作用于配置的项目库，本项目使用 qbot。
 
 表结构、字段语义与 Agent 排查入口见 [数据库表结构指南](database-schema.md)。
@@ -104,3 +106,13 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 实验室服务器已部署功能提交 `5552181`。持有 `.deploy/deploy.lock`，构建新镜像后停服；生产环境配置和项目库的13张表、438行数据备份于服务器 `.deploy/backups/before-0022-20261030-151756/`，文件仅部署用户可读，数据库备份为包含表结构及类型标记的 JSON，并保存 SHA-256。
 
 显式升级 `0021_scheduled_templates` 至 `0022_fallback_provider` 后，逐表比较原数据一致（除版本表及新增字段），fallback_provider_id 初始为 NULL，外键、索引和 Store 初始化正常。新容器 running healthy、重启次数0，/health与/admin均返回200；recording.py、storage.py及admin.js与服务器仓库SHA-256一致。未运行测试、浏览器或真实模型调用，未替用户选择备用供应商。更新自动部署基线后继续沿用原定时更新。
+
+## 2026-10-30 共享远程库升级记录
+
+按用户授权，共享远程 qbot 库仅升级一次：0022_fallback_provider → 0023_voice_calls → 0024_memory。升级前取得服务器部署锁并停止 qbot-prod 应用容器，确认本机没有 qBot 服务。停服后的13张表、464行数据及表结构备份于维护机临时目录 `qbot-stopped-before-0024-lnfz6ln6`，每表JSON保留类型标记，manifest记录SHA-256，另保留迁移源码快照。
+
+显式升级后逐表核对原12张业务表结构和数据不变（版本表按预期更新）；新增7张表为空，字段、索引、外键可读取，当前工作区Store初始化正常。未运行测试、浏览器或付费接口。此操作只更新数据库；服务器仍使用原8386877应用版本，语音通话代码保留在独立codex/voice-calls分支，未合并部署。
+
+数据库版本已超出服务器旧代码和语音独立分支的迁移头；后续Alembic维护需使用包含0024_memory的完整迁移链，不使用stamp或降级规避版本差异。
+
+服务恢复确认：原qbot-prod容器running healthy，重启次数0；容器内查询共享库为0024_memory，/health和/admin均返回HTTP 200。部署锁随后释放，未改动自动部署成功基线。健康结果仅证明服务可用，不代表真实语音或记忆功能验收。

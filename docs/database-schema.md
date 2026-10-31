@@ -14,7 +14,11 @@
 
 各业务表引用bots，范围表引用conversations，来源表引用chat_records；业务事务额外验证引用对象属于同一机器人。JSON使用TEXT/MEDIUMTEXT，版本与计量使用BIGINT，UTC时间使用DATETIME(6)，预算日按北京时间保存DATE。来源/批次状态不能混同于聊天发送状态；未知调用不得自动重试，遗忘后的旧范围来源不得回填。详见[记忆系统](memory-system.md)。
 
+## 网页语音通话增量（0023，未执行）
 
+`voice_call_configs`：bot_id 为主键和 bots 外键；enabled；chat_provider_id/asr_provider_id/tts_provider_id 为可空 model_providers 外键；voice、max_seconds、idle_seconds、updated_at。实时识别引用 asr_realtime，类型校验在服务端执行。
+
+`voice_calls`：id 为32位ASCII主键；bot_id 外键；started_at/ended_at 为UTC微秒时间（结束时间可空）；status、reason；model_snapshot TEXT 保存模型ID/名称及音色；turns MEDIUMTEXT 保存最多100轮的用户转写、完整生成文本、已播片段、状态、错误和实际聊天用量。索引 idx_voice_bot_started(bot_id, started_at)。不保存音频、密钥或 QQ OpenID，不并入 chat_records；通话重启不恢复，异常中断时结束时间保持未知。结构依据手写迁移0023，尚未核对真实数据库执行状态。详见[语音通话](voice-calls.md)。
 ## 适用范围与事实来源
 
 面向修改 qBot 的开发 Agent，不是机器人的业务提示词。2026-10-26 已只读核对本地项目库：最初基线版本为 `0015_bot_roles`，当时共 10 张业务表和 1 张 Alembic 版本表。当前已升级至 `0018_schedule_timing`，后续新增表和字段见本文扩展说明。字段、空值属性、主键、索引与外键来自实际数据库元数据；业务含义核对 `qbot/storage.py` 及相关调用方。本次未运行测试或真实平台调用，也未重新执行已完成的迁移。
