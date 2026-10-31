@@ -506,7 +506,6 @@ function updateGreetingMedia(slot) {
   $(slot + "-image-fields").hidden = workflow.image_source !== "upload";
   $(slot + "-library-field").hidden = workflow.image_source !== "library";
   form.elements[slot + "_library_id"].required = workflow.image_source === "library";
-  $(slot + "-preset-note").hidden = !ai;
   $(slot + "-style-field").hidden = !ai;
   $(slot + "-prompt-field").hidden = !ai;
   form.elements[slot + "_content"].required = !ai && !imageOnly;
@@ -549,7 +548,6 @@ function greetingImageBase64(file) {
   });
 }
 
-$("greeting-target").after(element("p", "生成文案会调用此机器人配置的聊天模型，可能产生费用。按最新保存的人设生成，替换当前时段的草稿；确认后请保存设置。", "muted"));
 for (const slot of ["morning", "noon", "evening", "other"]) {
   const generate = button("按人设生成文案", async () => {
     const form = $("greeting-form");
