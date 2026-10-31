@@ -10,6 +10,7 @@ from fastapi import HTTPException
 
 from qbot.qq import QQAPIError, QQDeliveryUnknown
 from qbot.media import MediaUpload
+from qbot.storage import StorageError
 from qbot.greeting_workflows import resolve_workflow
 from qbot.greeting_generation import generate_greeting, GreetingGenerationError
 
@@ -20,7 +21,7 @@ class ProactiveSender:
         self.requests: deque[tuple[float, int, str, str]] = deque()
 
     async def run_schedules(self) -> None:
-        """单进程调度，逐条发送；数据库领取成功后不自动重试。"""
+        """单进程调度，逐条执行；安全失败在同一次领取内按任务配置重试。"""
         logger = logging.getLogger(__name__)
         while True:
             try:
@@ -34,139 +35,192 @@ class ProactiveSender:
             await asyncio.sleep(10)
 
     async def send_scheduled(self, greeting_id: int, manual: bool = False) -> dict | None:
-        async with self.manager.lock:
-            task = await self.store.call("claim_scheduled_greeting", greeting_id, manual)
-            if task is None:
-                return
-            bot_id, source = task["bot_id"], task["source"]
-            destination = task["group_id"] if source == "qq_group" else task["user_id"]
-            status, error, sending = "send_failed", "", False
-            delivery = json.loads(task.get("delivery") or "{}")
-            workflow = resolve_workflow({"workflow": task["workflow"]})
-            parts = []
-            if workflow.output in ("text", "text_audio"):
-                parts.append({"kind": "text", "status": "pending"})
-            if workflow.output in ("audio", "text_audio"):
-                parts.append({"kind": "audio", "status": "pending"})
-            if workflow.image_source != "none":
-                parts.append({"kind": "image", "status": "pending"})
-            details = {"scheduled_delivery": delivery.get("delivery_mode", "custom"),
-                       "workflow": workflow.model_dump(), "parts": parts}
-            sent_count = 0
-            current_part = None
-            stage = "检查执行条件"
+        task, runtime = None, None
+        attempts: list[dict] = []
+        while True:
+            async with self.manager.lock:
+                if task is None:
+                    task = await self.store.call("claim_scheduled_greeting", greeting_id, manual)
+                    if task is None:
+                        return None
+                    runtime = self.manager.runtimes.get(task["bot_id"])
+                    delivery = json.loads(task.get("delivery") or "{}")
+                    retry_count = delivery.get("retry_count", 3)
+                    if type(retry_count) is not int or not 0 <= retry_count <= 10:
+                        retry_count = 0
+                elif (self.manager.runtimes.get(task["bot_id"]) is not runtime
+                      or not await self.store.call("scheduled_retry_valid", task, manual)):
+                    result.update(status="send_failed", message="任务配置、接收人或机器人状态已变化，停止重试")
+                    details["retry_stopped"] = result["message"]
+                    await self.store.call("update_record", task["record_id"], status=result["status"],
+                        error_message=result["message"], media_details=json.dumps(details, ensure_ascii=False))
+                    return result
+                result = await self._scheduled_attempt(task, retry_count, attempts)
+                retry = result.pop("_retry")
+                details = result.pop("_details")
+            if not retry:
+                return result
+            # 不持有机器人管理锁等待；期间允许管理员停用机器人或修改任务。
             try:
-                runtime = self.manager.runtimes.get(bot_id)
-                if runtime is None or not runtime.accepting:
-                    raise HTTPException(409, "机器人未启动，定时消息未发送")
-                if workflow.content_source == "fixed" and len(task["content"]) > self.settings.max_reply_chars:
-                    raise HTTPException(400, "定时文案超过消息长度上限，未发送")
-                now = time.monotonic()
-                while self.requests and now - self.requests[0][0] >= 60:
-                    self.requests.popleft()
-                if (len(self.requests) + len(parts) > self.settings.global_rate_limit_per_minute
-                        or sum(entry[1:] == (bot_id, source, destination) for entry in self.requests)
-                        + len(parts) > self.settings.rate_limit_per_minute):
-                    raise HTTPException(429, "主动发送达到频率限制，定时消息未发送")
-                self.requests.extend((now, bot_id, source, destination) for _ in parts)
-                qq = runtime.dispatcher.qq
-                prepared = {}
-                # 先准备全部媒体，再开始发送；准备失败不会发出半组消息。
-                # AI 文案最多等待120秒，另为天气、语音合成及上传保留准备时间。
-                preparation_timeout = 190 if workflow.content_source == "ai" else 100
-                async with asyncio.timeout(preparation_timeout):
-                    stage = "读取图片"
-                    media, description = None, None
-                    if workflow.image_source == "library":
-                        from qbot.greeting_presets import choose_library_image
-                        media, description = await asyncio.to_thread(choose_library_image, workflow.library_id)
-                    elif workflow.image_source == "upload":
-                        from qbot.media import validate_media
-                        media = validate_media("image", task["image_filename"] or "", task["image_data"] or b"")
-                    if media is not None:
-                        details["image"] = {"filename": media.filename, "sha256": media.fingerprint}
-                        await self.store.call("update_record", task["record_id"],
-                            media_details=json.dumps(details, ensure_ascii=False))
-                    if workflow.content_source == "ai":
-                        stage = "生成 AI 文案"
-                        provider = await self.store.call("active_provider", bot_id)
-                        if provider is None:
-                            raise GreetingGenerationError("请配置聊天模型供应商")
-                        bots = await self.store.call("list_bots")
-                        bot = next(item for item in bots if item["id"] == bot_id)
-                        record = await self.store.call("record_detail", task["record_id"])
-                        task["content"] = await generate_greeting(self.settings, provider,
-                            bot.get("system_prompt") or "", record, task["slot"], description, output="audio" if workflow.output in ("audio", "text_audio") else "text",
-                            prompt_style=workflow.prompt_style, custom_prompt=workflow.custom_prompt, realtime=True)
-                        if len(task["content"]) > self.settings.max_reply_chars:
-                            raise GreetingGenerationError("生成文案超过消息长度上限，未发送")
-                        stage = "保存生成文案"
-                        await self.store.call("save_scheduled_content", bot_id, task["record_id"], task["content"])
-                    if media is not None:
-                        stage = "上传图片"
-                        prepared["image"] = await qq.upload_media(source, destination, media)
-                    if workflow.output in ("audio", "text_audio"):
-                        stage = "合成及上传语音"
-                        from qbot.auto_voice import voice_file
-                        prepared["audio"] = await voice_file(task["content"], delivery, self.store,
-                                                              source, qq, destination, details)
-                for part in parts:
-                    stage = "发送" + {"text": "文字", "audio": "语音", "image": "图片"}[part["kind"]]
-                    current_part = part
-                    part["status"] = "sending"
-                    await self.store.call("update_record", task["record_id"],
-                        media_details=json.dumps(details, ensure_ascii=False))
-                    sending = True
-                    async with asyncio.timeout(25):
-                        if part["kind"] == "text":
-                            await qq.send_proactive(source, destination, task["content"])
-                        else:
-                            await qq.send_media(source, destination, prepared[part["kind"]])
-                    part["status"] = "replied"
-                    sent_count += 1
-                    sending = False
-                    await self.store.call("update_record", task["record_id"],
-                        media_details=json.dumps(details, ensure_ascii=False))
-                status = "replied"
-            except HTTPException as exc:
-                error = str(exc.detail)
-            except (TimeoutError, QQDeliveryUnknown):
-                status = "delivery_unknown" if sending else "send_failed"
-                error = "QQ 发送超时，当前部分可能已送达" if sending else f"{stage}超时，未执行发送"
-            except QQAPIError as exc:
-                error = str(exc)
-                details["failed_stage"] = stage
-                logging.getLogger(__name__).warning("QQ 定时发送失败 record=%s stage=%s error=%s",
-                    task["record_id"], stage, error)
-            except GreetingGenerationError as exc:
-                error = "AI 文案生成失败：" + str(exc)
-            except ValueError as exc:
-                error = "流程准备失败，请检查素材、聊天模型及 TTS 配置"
-                logging.getLogger(__name__).warning("定时媒体准备失败：%s", type(exc).__name__)
+                await asyncio.sleep(10)
             except asyncio.CancelledError:
-                if current_part and current_part["status"] == "sending":
-                    current_part["status"] = "delivery_unknown" if sending else "send_failed"
-                await self.store.call("update_record", task["record_id"],
-                    status="delivery_unknown" if sending else "send_failed", error_message=f"服务停止，已确认发送{sent_count}/{len(parts)}部分，任务中断不自动重发",
+                details["retry_stopped"] = "服务停止或请求取消"
+                await self.store.call("update_record", task["record_id"], status="send_failed",
+                    error_message="重试等待期间任务中断，不自动恢复",
                     media_details=json.dumps(details, ensure_ascii=False))
                 raise
-            except Exception as exc:
-                # 仅保留栈位置，不记录异常正文、局部变量或供应商响应。
-                frames = traceback.extract_tb(exc.__traceback__)
-                locations = " > ".join(f"{frame.name}:{frame.lineno}" for frame in frames[-6:])
-                logging.getLogger(__name__).error("定时发送异常 record=%s stage=%s type=%s stack=%s",
-                    task["record_id"], stage, type(exc).__name__, locations)
-                details["failed_stage"] = stage
-                details["error_type"] = type(exc).__name__
-                status = "delivery_unknown" if sending else "send_failed"
-                error = f"{stage}失败（{type(exc).__name__}），请核对服务日志"
-            if status != "replied":
-                if current_part and current_part["status"] == "sending":
-                    current_part["status"] = status
-                error += f"；已确认发送 {sent_count}/{len(parts)} 部分，不自动重发"
-            await self.store.call("update_record", task["record_id"], status=status, error_message=error,
+
+    async def _scheduled_attempt(self, task: dict, retry_count: int, attempts: list[dict]) -> dict:
+        """调用方持有管理锁；一次尝试的全部发送完成后才决定能否重试。"""
+        bot_id, source = task["bot_id"], task["source"]
+        destination = task["group_id"] if source == "qq_group" else task["user_id"]
+        status, error, sending = "send_failed", "", False
+        retry_allowed = False
+        delivery = json.loads(task.get("delivery") or "{}")
+        workflow = resolve_workflow({"workflow": task["workflow"]})
+        parts = []
+        if workflow.output in ("text", "text_audio"):
+            parts.append({"kind": "text", "status": "pending"})
+        if workflow.output in ("audio", "text_audio"):
+            parts.append({"kind": "audio", "status": "pending"})
+        if workflow.image_source != "none":
+            parts.append({"kind": "image", "status": "pending"})
+        details = {"scheduled_delivery": delivery.get("delivery_mode", "custom"),
+                   "workflow": workflow.model_dump(), "parts": parts,
+                   "retry_count": retry_count, "attempts": attempts, "attempt_number": len(attempts) + 1}
+        sent_count = 0
+        current_part = None
+        stage = "检查执行条件"
+        try:
+            runtime = self.manager.runtimes.get(bot_id)
+            if runtime is None or not runtime.accepting:
+                raise HTTPException(409, "机器人未启动，定时消息未发送")
+            if workflow.content_source == "fixed" and len(task["content"]) > self.settings.max_reply_chars:
+                raise HTTPException(400, "定时文案超过消息长度上限，未发送")
+            now = time.monotonic()
+            while self.requests and now - self.requests[0][0] >= 60:
+                self.requests.popleft()
+            if (len(self.requests) + len(parts) > self.settings.global_rate_limit_per_minute
+                    or sum(entry[1:] == (bot_id, source, destination) for entry in self.requests)
+                    + len(parts) > self.settings.rate_limit_per_minute):
+                raise HTTPException(429, "主动发送达到频率限制，定时消息未发送")
+            self.requests.extend((now, bot_id, source, destination) for _ in parts)
+            qq = runtime.dispatcher.qq
+            prepared = {}
+            # 先准备全部媒体，再开始发送；准备失败不会发出半组消息。
+            # AI 文案最多等待120秒，另为天气、语音合成及上传保留准备时间。
+            preparation_timeout = 190 if workflow.content_source == "ai" else 100
+            async with asyncio.timeout(preparation_timeout):
+                stage = "读取图片"
+                media, description = None, None
+                if workflow.image_source == "library":
+                    from qbot.greeting_presets import choose_library_image
+                    media, description = await asyncio.to_thread(choose_library_image, workflow.library_id)
+                elif workflow.image_source == "upload":
+                    from qbot.media import validate_media
+                    media = validate_media("image", task["image_filename"] or "", task["image_data"] or b"")
+                if media is not None:
+                    details["image"] = {"filename": media.filename, "sha256": media.fingerprint}
+                    await self.store.call("update_record", task["record_id"],
+                        media_details=json.dumps(details, ensure_ascii=False))
+                if workflow.content_source == "ai":
+                    stage = "生成 AI 文案"
+                    provider = await self.store.call("active_provider", bot_id)
+                    if provider is None:
+                        raise HTTPException(409, "请配置聊天模型供应商")
+                    bots = await self.store.call("list_bots")
+                    bot = next(item for item in bots if item["id"] == bot_id)
+                    record = await self.store.call("record_detail", task["record_id"])
+                    task["content"] = await generate_greeting(self.settings, provider,
+                        bot.get("system_prompt") or "", record, task["slot"], description, output="audio" if workflow.output in ("audio", "text_audio") else "text",
+                        prompt_style=workflow.prompt_style, custom_prompt=workflow.custom_prompt, realtime=True)
+                    if len(task["content"]) > self.settings.max_reply_chars:
+                        raise GreetingGenerationError("生成文案超过消息长度上限，未发送")
+                    stage = "保存生成文案"
+                    await self.store.call("save_scheduled_content", bot_id, task["record_id"], task["content"])
+                if media is not None:
+                    stage = "上传图片"
+                    prepared["image"] = await qq.upload_media(source, destination, media)
+                if workflow.output in ("audio", "text_audio"):
+                    stage = "合成及上传语音"
+                    from qbot.auto_voice import voice_file
+                    prepared["audio"] = await voice_file(task["content"], delivery, self.store,
+                                                          source, qq, destination, details)
+            for part in parts:
+                stage = "发送" + {"text": "文字", "audio": "语音", "image": "图片"}[part["kind"]]
+                current_part = part
+                part["status"] = "sending"
+                await self.store.call("update_record", task["record_id"],
+                    media_details=json.dumps(details, ensure_ascii=False))
+                sending = True
+                async with asyncio.timeout(25):
+                    if part["kind"] == "text":
+                        await qq.send_proactive(source, destination, task["content"])
+                    else:
+                        await qq.send_media(source, destination, prepared[part["kind"]])
+                part["status"] = "replied"
+                sent_count += 1
+                sending = False
+                await self.store.call("update_record", task["record_id"],
+                    media_details=json.dumps(details, ensure_ascii=False))
+            status = "replied"
+        except HTTPException as exc:
+            error = str(exc.detail)
+        except (TimeoutError, QQDeliveryUnknown):
+            retry_allowed = not sending
+            status = "delivery_unknown" if sending else "send_failed"
+            error = "QQ 发送超时，当前部分可能已送达" if sending else f"{stage}超时，未执行发送"
+        except QQAPIError as exc:
+            # 送达未知已由上一分支拦截，此处是平台明确失败或发送前上传失败。
+            sending = False
+            retry_allowed = True
+            error = str(exc)
+            details["failed_stage"] = stage
+            logging.getLogger(__name__).warning("QQ 定时发送失败 record=%s stage=%s error=%s",
+                task["record_id"], stage, error)
+        except GreetingGenerationError as exc:
+            retry_allowed = True
+            error = "AI 文案生成失败：" + str(exc)
+        except ValueError as exc:
+            error = "流程准备失败，请检查素材、聊天模型及 TTS 配置"
+            logging.getLogger(__name__).warning("定时媒体准备失败：%s", type(exc).__name__)
+        except asyncio.CancelledError:
+            attempts.append({"number": len(attempts) + 1, "status": "cancelled",
+                             "error": "任务中断", "sent_parts": sent_count, "total_parts": len(parts)})
+            if current_part and current_part["status"] == "sending":
+                current_part["status"] = "delivery_unknown" if sending else "send_failed"
+            await self.store.call("update_record", task["record_id"],
+                status="delivery_unknown" if sending else "send_failed", error_message=f"服务停止，已确认发送{sent_count}/{len(parts)}部分，任务中断不自动重发",
                 media_details=json.dumps(details, ensure_ascii=False))
-            return {"record_id": task["record_id"], "status": status, "message": error, "duplicate": False}
+            raise
+        except Exception as exc:
+            retry_allowed = not sending and not isinstance(exc, StorageError)
+            # 仅保留栈位置，不记录异常正文、局部变量或供应商响应。
+            frames = traceback.extract_tb(exc.__traceback__)
+            locations = " > ".join(f"{frame.name}:{frame.lineno}" for frame in frames[-6:])
+            logging.getLogger(__name__).error("定时发送异常 record=%s stage=%s type=%s stack=%s",
+                task["record_id"], stage, type(exc).__name__, locations)
+            details["failed_stage"] = stage
+            details["error_type"] = type(exc).__name__
+            status = "delivery_unknown" if sending else "send_failed"
+            error = f"{stage}失败（{type(exc).__name__}），请核对服务日志"
+        attempt_number = len(attempts) + 1
+        should_retry = (retry_allowed and status == "send_failed" and sent_count == 0
+                        and not sending and attempt_number <= retry_count)
+        attempts.append({"number": attempt_number, "status": status, "error": error,
+                         "sent_parts": sent_count, "total_parts": len(parts)})
+        if status != "replied":
+            if current_part and current_part["status"] == "sending":
+                current_part["status"] = status
+            error += f"；已确认发送 {sent_count}/{len(parts)} 部分"
+            error += (f"，10秒后重试（{attempt_number}/{retry_count}）" if should_retry
+                      else f"，已尝试{attempt_number}次，停止重试")
+        stored_status = "processing" if should_retry else status
+        await self.store.call("update_record", task["record_id"], status=stored_status, error_message=error,
+            media_details=json.dumps(details, ensure_ascii=False))
+        return {"record_id": task["record_id"], "status": stored_status, "message": error,
+                "duplicate": False, "attempt_count": attempt_number,
+                "_retry": should_retry, "_details": details}
 
     async def send(self, bot_id: int, record_id: int, content: str, request_id: str,
                    media: MediaUpload | None = None, speech_text: str = "") -> dict:

@@ -492,3 +492,7 @@ scheduled_templates 是管理员全局模板表，不保存任何会话身份。
 ## 0025 实时通话增量（迁移未执行）
 
 `voice_call_configs` 新增 mode、realtime_provider_id（model_providers 外键）、realtime_voice。`voice_memories` 保存 id、bot_id（bots 外键）、owner_hash、content（最多600字）、content_hash、created_at；唯一键为 bot_id＋owner_hash＋content_hash。owner_hash 为服务端管理员账号摘要，与 QQ 用户 OpenID 无关；更换管理员账号不继承旧账号记忆。每范围最多100条，工具查询最多8条/2400字，不存音频。
+
+## 定时任务重试 JSON 字段（代码已编写，待验证）
+
+`interaction_greetings.delivery.retry_count` 为首次之外的失败重试次数，0～10，默认3；缺失按3处理，不新增表列。`chat_records.media_details` 增加 retry_count、attempt_number、attempts（number/status/error/sent_parts/total_parts），配置变化或取消时可附 retry_stopped。同次领取的多次尝试复用一条chat_records和interaction_greeting_runs；失败后仍占当天额度，仅确认0部分发送且状态安全时可继续，送达未知与部分成功不重试。不恢复进程中断记录。

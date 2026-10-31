@@ -933,20 +933,24 @@ class Store(VoiceCallStore, MemoryStore):
                 **json.loads(r["delivery"] or "{}"), image_filename=r["image_filename"] or "",
                 has_image=bool(r["image_data"])) for r in rows}
             history = conn.execute(select(runs.c.local_date, runs.c.created_at, g.c.slot, runs.c.content,
-                runs.c.record_id, self.records.c.status, self.records.c.error_message)
+                runs.c.record_id, self.records.c.status, self.records.c.error_message,
+                self.records.c.media_details.label("attempt_details"))
                 .select_from(runs.join(g, runs.c.greeting_id == g.c.id)
                     .join(self.records, runs.c.record_id == self.records.c.id))
                 .where(g.c.bot_id == bot_id, g.c.conversation_id == record["conversation_id"], g.c.task_key == task_key)
                 .order_by(runs.c.id.desc()).limit(20)).mappings().all()
         result_rules = [rules.get(r["slot"], r) for r in default_rules(include_other=bool(task_key))]
         for rule in result_rules:
+            rule.setdefault("retry_count", 3)
             rule["workflow"] = resolve_workflow(rule).model_dump()
         return {"rules": result_rules, "catalog": public_catalog(),
                 "task_key": task_key, "task_name": rows[0]["task_name"] if rows else "",
                 "task_slot": rows[0]["slot"] if task_key and rows else None,
                 "bound": bool(record["contact_name"]), "contact_name": record["contact_name"],
                 "group_remark": record["group_remark"], "user_remark": record["user_remark"],
-                "history": [{**dict(r), "manual": r["local_date"] is None,
+                "history": [{**{key: value for key, value in r.items() if key != "attempt_details"},
+                    "attempt_count": len(json.loads(r["attempt_details"] or "{}").get("attempts", [])),
+                    "manual": r["local_date"] is None,
                     "local_date": r["local_date"] or local_time(r["created_at"]).date()} for r in history]}
 
     def save_greeting_settings(self, bot_id: int, record_id: int, values: dict) -> None:
@@ -996,7 +1000,7 @@ class Store(VoiceCallStore, MemoryStore):
                     if not provider or not provider["enabled"] or provider["model_type"] != "tts" or not provider["api_key_encrypted"]:
                         raise ValueError("请选择已启用且配置密钥的 TTS 供应商")
                 fields["delivery"] = json.dumps(dict(delivery_mode=rule.delivery_mode, workflow=rule.workflow.model_dump(),
-                    tts_provider_id=rule.tts_provider_id, voice=rule.voice))
+                    tts_provider_id=rule.tts_provider_id, voice=rule.voice, retry_count=rule.retry_count))
                 # 校验和媒体处理结束后记录保存时刻，当前分钟不会因保存而触发。
                 fields["schedule_updated_at"] = utc_now()
                 if old:
@@ -1072,6 +1076,21 @@ class Store(VoiceCallStore, MemoryStore):
             conn.execute(runs.insert().values(bot_id=row["bot_id"], greeting_id=greeting_id,
                 local_date=None if manual else now.date(), record_id=rid, content=execution_content, created_at=now_utc))
             return {**dict(row), "record_id": rid, "workflow": workflow.model_dump()}
+
+    def scheduled_retry_valid(self, task: dict, manual: bool) -> bool:
+        """重试复用原领取记录；任务改动或接收人解绑后不再继续旧执行。"""
+        g, c, r = self.greetings, self.conversations, self.records
+        with self.engine.connect() as conn:
+            row = conn.execute(select(g.c.enabled, g.c.schedule_updated_at,
+                c.c.contact_name, c.c.source, c.c.group_id, c.c.user_id, r.c.status)
+                .select_from(g.join(c, (g.c.conversation_id == c.c.id) & (g.c.bot_id == c.c.bot_id))
+                    .join(r, (r.c.conversation_id == c.c.id) & (r.c.bot_id == g.c.bot_id)))
+                .where(g.c.id == task["id"], g.c.bot_id == task["bot_id"],
+                       r.c.id == task["record_id"])).mappings().first()
+        return bool(row and (manual or row["enabled"]) and row["contact_name"]
+                    and row["schedule_updated_at"] == task["schedule_updated_at"]
+                    and all(row[key] == task[key] for key in ("source", "group_id", "user_id"))
+                    and row["status"] == "processing")
 
     def save_scheduled_content(self, bot_id: int, record_id: int, content: str) -> None:
         """在发送前一起保存生成正文和执行历史，不改写任务的固定草稿。"""

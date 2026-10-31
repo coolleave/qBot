@@ -638,6 +638,7 @@ async function openGreetings(item) {
     if (rule.workflow.prompt_style && !styles.some(s => s.id === rule.workflow.prompt_style)) styleSelect.add(new Option("已保存风格：" + rule.workflow.prompt_style, rule.workflow.prompt_style));
     fillGreetingWorkflow(rule.slot, rule.workflow);
     form.elements[rule.slot + "_voice"].value = rule.voice || "Bunny";
+    form.elements[rule.slot + "_retry_count"].value = rule.retry_count ?? 3;
     const tts = form.elements[rule.slot + "_tts_provider_id"];
     tts.replaceChildren(new Option("请选择 TTS 供应商", ""), ...ttsProviders.map(p => new Option(p.name, p.id)));
     if (rule.tts_provider_id && !ttsProviders.some(p => p.id === rule.tts_provider_id)) tts.add(new Option("原供应商不可用，请重新选择", rule.tts_provider_id));
@@ -653,8 +654,8 @@ async function openGreetings(item) {
   updateGreetingTaskSlot();
   $("greeting-history").replaceChildren();
   for (const run of data.history) {
-    const state = ["pending", "processing"].includes(run.status) ? "处理中或中断后未确认，不自动重发" : (labels[run.status] || run.status);
-    $("greeting-history").append(element("p", `${run.local_date} · ${run.manual ? "手动执行" : "自动／历史领取"} · ${({morning:"早间", noon:"午间", evening:"晚间", other:"其他时段"})[run.slot]} · ${state} · 对话 #${run.record_id}`), element("pre", run.content), element("p", run.error_message || "", "error"));
+    const state = ["pending", "processing"].includes(run.status) ? "处理中／等待重试" : (labels[run.status] || run.status);
+    $("greeting-history").append(element("p", `${run.local_date} · ${run.manual ? "手动执行" : "自动／历史领取"} · ${({morning:"早间", noon:"午间", evening:"晚间", other:"其他时段"})[run.slot]} · ${state} · 对话 #${run.record_id}${run.attempt_count ? ` · 已尝试${run.attempt_count}次` : ""}`), element("pre", run.content), element("p", run.error_message || "", "error"));
   }
   if (!data.history.length) $("greeting-history").append(element("p", "暂无记录", "muted"));
   $("greeting-dialog").showModal();
@@ -669,7 +670,7 @@ for (const slot of ["morning", "noon", "evening", "other"]) $(slot + "-run").onc
   const target = greetingTarget, item = greetingItem;
   const controls = [...$("greeting-dialog").querySelectorAll("button, input, textarea, select")];
   greetingRunning = true; controls.forEach(node => node.disabled = true);
-  $("greeting-error").textContent = ""; $("greeting-run-result").textContent = "正在执行，请稍候…";
+  $("greeting-error").textContent = ""; $("greeting-run-result").textContent = "正在执行（失败时按配置重试），请稍候…";
   try {
     const result = await api(`/bots/${target.botId}/records/${target.recordId}/greetings/${slot}/run` + greetingTaskQuery(target), {method:"POST"});
     const message = `记录 #${result.record_id} · ${result.status === "replied" ? "QQ 已确认发送" : labels[result.status] || result.status}。${result.message || ""}`;

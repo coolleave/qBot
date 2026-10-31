@@ -25,6 +25,7 @@ class GreetingRule(BaseModel):
     image_base64: str | None = Field(default=None, max_length=4_666_668)
     image_filename: str = Field(default="", max_length=150)
     remove_image: bool = False
+    retry_count: int = Field(default=3, ge=0, le=10, strict=True)
 
     @model_validator(mode="after")
     def validate_rule(self):
