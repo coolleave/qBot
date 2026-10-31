@@ -10,6 +10,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
 
+from qbot.chat_context import chat_context
 from qbot.timing import measure
 from qbot.config import Settings
 from qbot.token_usage import extract_token_usage
@@ -28,6 +29,7 @@ class Session:
 class ChatService:
     def __init__(self, settings: Settings, model: Runnable | None, system_prompt: str | None = None):
         self.settings = settings
+        self.context_prompt = files("qbot").joinpath("prompts/chat_context.txt").read_text("utf-8")
         self.memory_prompt = files("qbot").joinpath("prompts/memory_use.txt").read_text("utf-8")
         prompt_text = system_prompt or files("qbot").joinpath("prompts/system.txt").read_text("utf-8")
         prompt = ChatPromptTemplate.from_messages([
@@ -36,7 +38,7 @@ class ChatService:
             MessagesPlaceholder("memory_rules", optional=True),
             MessagesPlaceholder("owner_reference", optional=True),
             MessagesPlaceholder("memory", optional=True),
-            MessagesPlaceholder("history"), MessagesPlaceholder("recognition_notice", optional=True), MessagesPlaceholder("output_style", optional=True), MessagesPlaceholder("current"),
+            MessagesPlaceholder("history"), MessagesPlaceholder("live_context", optional=True), MessagesPlaceholder("recognition_notice", optional=True), MessagesPlaceholder("output_style", optional=True), MessagesPlaceholder("current"),
         ])
         self.prompt = prompt
         self.chain = prompt | model | StrOutputParser() if model is not None else None
@@ -79,7 +81,10 @@ class ChatService:
                 if chain is None:
                     raise ValueError("尚未配置模型")
                 async with asyncio.timeout(self.settings.chat_timeout_seconds):
+                    with measure(metrics, "weather_context"):
+                        live_context = await chat_context(text, history)
                     inputs = {"history": history, "current": [HumanMessage(content=current_text)],
+                        "live_context": [SystemMessage(content=self.context_prompt + "\n" + live_context)],
                         "identity": [SystemMessage(content=identity_context)] if identity_context else [],
                         "owner_reference": [HumanMessage(content=owner_context)] if owner_context else [],
                         "memory": [HumanMessage(content=memory_context)] if memory_context else [],
