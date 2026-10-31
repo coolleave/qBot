@@ -49,7 +49,8 @@ COPY res/dafeiyu_100/ ./res/dafeiyu_100/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
 # COPY 保留宿主机权限；兼容旧部署脚本生成的 600 源码和 700 目录。
-RUN chmod -R a+rX /app
+RUN find /app \( -type d -o -perm /111 \) ! -perm -a+rx -exec chmod a+rx {} + \
+    && find /app ! -perm -a+r -exec chmod a+r {} +
 USER qbot
 EXPOSE 8092
 CMD ["python", "-m", "qbot", "serve"]
