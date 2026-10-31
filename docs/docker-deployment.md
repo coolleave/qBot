@@ -174,6 +174,20 @@ docker compose up -d qbot
 
 `config/` 和 `图片/` 随镜像复制，修改后重新构建部署；不要省略这两个目录。镜像使用非 root 用户运行，多阶段构建将原生音频依赖的编译工具留在构建阶段。现有 constraints.txt 来源于 Windows，Linux 依赖安装及 SILK 解码/编码仍需实际构建与联调确认。
 
+## 2026-10-28 模板管理部署记录
+
+实验室服务器已从32d10ea快进到291ffd0，沿用现有项目镜像源和依赖缓存完成构建。持有.deploy/deploy.lock防止与cron重叠，停qbot容器后在共享数据库仅执行一次0021迁移，再用生产Compose配置启动新镜像。容器running healthy、/health返回ok，容器内迁移为0021 (head)，storage.py及scheduled-templates.js与仓库文件SHA-256一致。随后通过--mark-current将成功基线登记为291ffd0；原每30分钟cron保留。未修改Docker全局镜像源，未调用模型/TTS或手动发送QQ消息。
+
+## 2026-10-30 网页语音通话分支部署
+
+使用新配置的SSH密钥登录实验室服务器，取得.deploy/deploy.lock后将服务器仓库切换到codex/voice-calls，部署提交8d503f0。未合并远端main，未部署本地记忆系统代码。配置、旧镜像ID及原成功基线备份于服务器`.deploy/backups/voice-release-20261030-220101/`，原.env.production保持不变。
+
+复用现有Docker镜像源和依赖缓存完成构建，构建成功后替换qbot-prod容器。部署后running healthy、重启次数0，/health与/admin返回200，Store初始化正常，共享数据库仍为0024_memory，本次没有重复执行迁移。容器内voice_calls.py、voice_call_routes.py、voice-calls.js和voice-capture.js的SHA-256均与服务器仓库一致。
+
+分支部署成功版本记录在`.deploy/voice-last-success`。原main自动更新脚本因服务器当前不在main而暂停，不改写原last-success基线；以后合并回main并验证部署后，再恢复main自动更新。数据库已领先语音分支迁移头，后续Alembic操作仍需包含0024的完整迁移链。
+
+远程后台仍为HTTP/IP入口，麦克风需要HTTPS或localhost。可在Windows使用SSH本地转发，将本机8093转到服务器192.168.1.106:8092，再访问http://localhost:8093/admin。未运行测试、打开浏览器、拨打真实通话或主动调用付费模型；自动识别、回声、插话及真实延迟仍待验收。
+
 ## 2026-10-31 记忆与语音合并发布（已部署）
 
 按用户要求保留已上线网页语音通话，将 codex/voice-calls 与记忆系统合并到 main。不包含本地未提交的新实时通话功能和0025迁移。已只读确认服务器数据库版本为0024_memory，记忆五表与语音两表均存在，本次无需重复迁移。
