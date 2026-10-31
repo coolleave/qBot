@@ -5,7 +5,7 @@ import json
 import time
 from importlib.resources import files
 
-from qbot.voice_calls import VoiceCall
+from qbot.voice_calls import VoiceCall, VoiceCallError
 from qbot.voice_call_audio import send_event
 
 
@@ -109,7 +109,7 @@ class RealtimeVoiceCall(VoiceCall):
 
     async def start_response(self, response: dict) -> None:
         if len(self.turns) >= 100:
-            raise ValueError("已达到单次通话响应上限")
+            raise VoiceCallError("已达到单次通话响应上限")
         turn = {"turn_id": len(self.turns) + 1, "user": "", "answer": "", "played": [],
                 "status": "generating", "usage": {}, "error": None, "output_items": [],
                 "audio_bytes": 0, "received_bytes": 0, "started": time.monotonic()}
@@ -132,11 +132,11 @@ class RealtimeVoiceCall(VoiceCall):
                 return
             call_id = item.get("call_id")
             if not call_id or call_id in self.tool_ids:
-                raise ValueError("重复或无效工具调用")
+                raise VoiceCallError("重复或无效工具调用")
             self.tool_ids.add(call_id)
             self.tool_count += 1
             if self.tool_count > 30:
-                raise ValueError("记忆查询超过单次通话上限")
+                raise VoiceCallError("记忆查询超过单次通话上限")
             try:
                 raw = item.get("arguments", "")
                 if len(raw) > 1024 or item.get("name") != "search_memory":
@@ -167,7 +167,7 @@ class RealtimeVoiceCall(VoiceCall):
                 self.user_items[item_id] = {}
                 self.pending_user = item_id
                 if len(self.user_items) > 200:
-                    raise ValueError("输入轮次超过上限")
+                    raise VoiceCallError("输入轮次超过上限")
                 await self.emit("listening")
             elif kind == "input_audio_buffer.speech_stopped":
                 self.speaking_since = None
@@ -177,7 +177,7 @@ class RealtimeVoiceCall(VoiceCall):
             elif kind == "conversation.item.input_audio_transcription.completed":
                 text = event.get("transcript", "")
                 if len(text) > self.settings.max_input_chars:
-                    raise ValueError("语音转写超过长度上限")
+                    raise VoiceCallError("语音转写超过长度上限")
                 user = self.user_items.setdefault(event["item_id"], {})
                 user["text"] = text
                 if user.get("turn"):
@@ -210,31 +210,34 @@ class RealtimeVoiceCall(VoiceCall):
                 elif kind in ("response.audio_transcript.delta", "response.text.delta"):
                     turn["answer"] += event.get("delta", "")
                     if len(turn["answer"]) > 1200:
-                        raise ValueError("实时回复超过长度上限")
+                        raise VoiceCallError("实时回复超过长度上限")
                     await self.emit("answer", turn_id=turn["turn_id"], text=event.get("delta", ""))
                 elif kind == "response.audio.delta":
                     pcm = base64.b64decode(event.get("delta", ""), validate=True)
                     turn["received_bytes"] += len(pcm)
                     if len(pcm) % 2 or turn["received_bytes"] > 48000 * 90:
-                        raise ValueError("实时回复音频超限")
+                        raise VoiceCallError("实时回复音频超限")
                     for offset in range(0, len(pcm), 9600):
                         self.audio_queue.put_nowait((turn, "audio", pcm[offset:offset + 9600]))
                 elif kind == "response.done":
                     if response.get("status") != "completed":
                         await self.interrupt(automatic=True)
                         if response.get("status") == "failed":
-                            raise ValueError("实时模型回复失败")
+                            details = response.get("status_details") or {}
+                            if isinstance(details, dict) and details.get("error"):
+                                raise self.provider_error(details)
+                            raise VoiceCallError("实时模型回复失败")
                         continue
                     turn["status"] = "playing"
                     self.audio_queue.put_nowait((turn, "end", None))
                     calls = [item for item in response.get("output", []) if item.get("type") == "function_call"]
                     if calls:
                         if len(calls) > 3:
-                            raise ValueError("单轮工具调用过多")
+                            raise VoiceCallError("单轮工具调用过多")
                         self.turn_task = asyncio.create_task(self.tools_and_continue(calls, self.epoch))
                         self.turn_task.add_done_callback(self.turn_finished)
                     await self.persist()
-        raise ValueError("实时对话连接提前结束")
+        raise VoiceCallError("实时对话连接提前结束")
 
     async def watchdog(self) -> None:
         async def response_limits() -> None:
@@ -242,7 +245,7 @@ class RealtimeVoiceCall(VoiceCall):
                 await asyncio.sleep(2)
                 now = time.monotonic()
                 if any(t["status"] in ("generating", "playing") and now - t["started"] > 120 for t in self.turns):
-                    raise ValueError("实时回复或播放确认超时")
+                    raise VoiceCallError("实时回复或播放确认超时")
         tasks = [asyncio.create_task(super().watchdog()), asyncio.create_task(response_limits())]
         try:
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

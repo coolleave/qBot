@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import time
+import traceback
 from importlib.resources import files
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -21,7 +22,11 @@ from qbot.voice_call_config import realtime_endpoint
 logger = logging.getLogger(__name__)
 
 
-class VoiceProviderError(RuntimeError):
+class VoiceCallError(RuntimeError):
+    """可向管理员展示的固定本地校验提示，不接收外部异常原文。"""
+
+
+class VoiceProviderError(VoiceCallError):
     """仅携带已脱敏的供应商错误摘要。"""
 
 
@@ -148,7 +153,7 @@ class VoiceCall:
                     if buffer.strip():
                         await sentences.put(buffer.strip())
                     if not turn["answer"].strip():
-                        raise ValueError("聊天模型未返回可朗读内容")
+                        raise VoiceCallError("聊天模型未返回可朗读内容")
                 finally:
                     await stream.aclose()
                     if aggregate is not None:
@@ -160,7 +165,7 @@ class VoiceCall:
                 while (sentence := await sentences.get()) is not None:
                     sentence_id += 1
                     if sentence_id > 16:
-                        raise ValueError("本轮回复短句过多，请缩短问题")
+                        raise VoiceCallError("本轮回复短句过多，请缩短问题")
                     # 客户端逐句确认，限制待播积压并保存真正已播完的文本。
                     self.ack.clear()
                     self.expected_ack = (turn["turn_id"], sentence_id)
@@ -231,13 +236,13 @@ class VoiceCall:
                 pcm = message["bytes"]
                 byte_count += len(pcm)
                 if not pcm or len(pcm) > 6400 or len(pcm) % 2 or byte_count > 96000:
-                    raise ValueError("麦克风音频格式或发送速率异常")
+                    raise VoiceCallError("麦克风音频格式或发送速率异常")
                 await send_event(upstream, "input_audio_buffer.append", audio=base64.b64encode(pcm).decode())
             else:
                 raw = message.get("text") or ""
                 controls += 1
                 if len(raw) > 1024 or controls > 20:
-                    raise ValueError("通话控制消息超过限制")
+                    raise VoiceCallError("通话控制消息超过限制")
                 event = json.loads(raw)
                 kind = event.get("type")
                 if kind == "hangup":
@@ -297,13 +302,13 @@ class VoiceCall:
                     continue
                 self.seen_items.add(item_id)
                 if len(self.seen_items) > 200:
-                    raise ValueError("识别轮次超过限制")
+                    raise VoiceCallError("识别轮次超过限制")
                 text = event.get("transcript", "").strip()
                 if text:
                     await self.start_turn(text)
                 else:
                     await self.emit("notice", message="刚才没有识别到内容，请再说一次")
-        raise ValueError("实时识别连接提前结束")
+        raise VoiceCallError("实时识别连接提前结束")
 
     async def watchdog(self) -> None:
         while True:
@@ -355,7 +360,7 @@ class VoiceCall:
             self.reason = "通话连接已关闭"
         except Exception as exc:
             self.status = "failed"
-            if isinstance(exc, VoiceProviderError):
+            if isinstance(exc, VoiceCallError):
                 detail = str(exc)
             elif isinstance(exc, InvalidStatus):
                 detail = f"供应商拒绝连接（HTTP {exc.response.status_code}），请检查密钥、地域及模型权限"
@@ -367,7 +372,12 @@ class VoiceCall:
             else:
                 detail = f"处理异常（{type(exc).__name__}），请检查供应商配置、音频格式和网络"
             self.reason = f"{stage}失败：{detail}"
-            logger.warning("网页通话终止 call_id=%s：%s", self.id, self.reason)
+            # 只记录代码位置，不格式化异常原文或局部变量，避免泄露密钥和音频。
+            locations = " -> ".join(
+                f"{frame.filename.replace(chr(92), '/').rsplit('/', 1)[-1]}:{frame.lineno}:{frame.name}"
+                for frame in traceback.extract_tb(exc.__traceback__)
+            )
+            logger.warning("网页通话终止 call_id=%s：%s；位置=%s", self.id, self.reason, locations)
         finally:
             for task in jobs:
                 task.cancel()
