@@ -72,7 +72,9 @@ class ProactiveSender:
                 qq = runtime.dispatcher.qq
                 prepared = {}
                 # 先准备全部媒体，再开始发送；准备失败不会发出半组消息。
-                async with asyncio.timeout(100):
+                # AI 文案最多等待120秒，另为天气、语音合成及上传保留准备时间。
+                preparation_timeout = 190 if workflow.content_source == "ai" else 100
+                async with asyncio.timeout(preparation_timeout):
                     stage = "读取图片"
                     media, description = None, None
                     if workflow.image_source == "library":
