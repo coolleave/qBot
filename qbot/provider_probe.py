@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 async def probe_provider(settings: Settings, provider: dict, content: str | list = "你好") -> dict:
     # 禁用自动重试，耗时表示完整模型调用时间（非首 token 延迟）。
     config = settings.model_copy(update={"model_max_retries": 0,
-        "model_timeout_seconds": 20, "model_max_tokens": 64})
+        # 思考型模型的推理也可能占用输出额度，64 token 容易在正文生成前耗尽。
+        "model_timeout_seconds": 20, "model_max_tokens": 4096})
     model = None
     started = time.perf_counter()
     result = {"success": False, "reply": "", "message": ""}
@@ -30,8 +31,23 @@ async def probe_provider(settings: Settings, provider: dict, content: str | list
             )
             # 防止异常服务将请求中的密钥原样反射到后台页面。
             reply = reply.replace(provider["api_key"], "[已隐藏密钥]").strip()
-            result.update(success=bool(reply), reply=reply[:1000],
-                          message="调用成功" if reply else "接口返回成功，但没有文本回复")
+            finish_reason = response.response_metadata.get("finish_reason")
+            if reply:
+                message = "调用成功（输出达到 token 上限，回复可能不完整）" if finish_reason == "length" else "调用成功"
+            elif finish_reason == "length":
+                message = "模型已达到测试输出上限（4096 token），但未生成文本回复；思考过程可能已耗尽额度"
+            elif finish_reason == "content_filter":
+                message = "模型回复被供应商内容过滤，未返回文本"
+            elif response.additional_kwargs.get("reasoning_content") or (
+                isinstance(content, list) and any(
+                    isinstance(part, dict) and part.get("type") in {"reasoning", "thinking"}
+                    for part in content
+                )
+            ):
+                message = "模型仅返回思考内容，没有正式文本回复；请检查模型的思考模式和输出额度"
+            else:
+                message = "模型请求已完成，但未返回文本；请检查模型是否支持 Chat Completions 及响应格式"
+            result.update(success=bool(reply), reply=reply[:1000], message=message)
     except (TimeoutError, APITimeoutError):
         result["message"] = "请求超时，请检查网络或模型服务状态"
     except APIConnectionError:
