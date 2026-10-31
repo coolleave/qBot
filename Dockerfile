@@ -19,9 +19,7 @@ RUN /opt/venv/bin/python -c 'import pathlib,tomllib; project=tomllib.loads(pathl
     && PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
     PIP_DEFAULT_TIMEOUT=60 \
     /opt/venv/bin/python -m pip install -c constraints.txt 'setuptools>=75' -r /tmp/qbot-requirements.txt
-COPY qbot/ ./qbot/
-# 构建工具已在缓存层安装，本项目安装无需再次联网解析依赖。
-RUN /opt/venv/bin/python -m pip install --no-deps --no-build-isolation .
+# 虚拟环境只包含第三方依赖，业务源码不参与此阶段的缓存键。
 
 FROM ${PYTHON_IMAGE} AS runtime
 
@@ -40,17 +38,16 @@ RUN sed -i \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 10001 --create-home qbot
 WORKDIR /app
+# 大体积且低频变化的素材置于依赖和业务代码之前，保留原资源路径。
+# COPY 时统一权限，兼容宿主机旧的600文件/700目录，无需额外扫描或写层。
+COPY --chmod=0755 图片/ ./图片/
+COPY --chmod=0755 res/dafeiyu_100/ ./res/dafeiyu_100/
 COPY --from=builder /opt/venv /opt/venv
-# 资源路径根据 qbot 源文件定位，保留项目目录布局。
-COPY qbot/ ./qbot/
-COPY config/ ./config/
-COPY 图片/ ./图片/
-COPY res/dafeiyu_100/ ./res/dafeiyu_100/
-COPY migrations/ ./migrations/
-COPY alembic.ini ./
-# COPY 保留宿主机权限；兼容旧部署脚本生成的 600 源码和 700 目录。
-RUN find /app \( -type d -o -perm /111 \) ! -perm -a+rx -exec chmod a+rx {} + \
-    && find /app ! -perm -a+r -exec chmod a+r {} +
+COPY --chmod=0755 config/ ./config/
+COPY --chmod=0755 migrations/ ./migrations/
+COPY --chmod=0755 alembic.ini ./
+# 从工作目录直接运行源码，避免业务变化重建依赖环境和素材层。
+COPY --chmod=0755 qbot/ ./qbot/
 USER qbot
 EXPOSE 8092
 CMD ["python", "-m", "qbot", "serve"]
