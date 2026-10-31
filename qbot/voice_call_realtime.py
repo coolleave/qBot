@@ -46,7 +46,9 @@ class RealtimeVoiceCall(VoiceCall):
                 "tools": [{"type": "function", "function": {"name": "search_memory",
                     "description": "查询当前网页用户的已有记忆；关键词为空时返回最近记忆，不读取 QQ 记录。",
                     "parameters": {"type": "object", "properties": {"query": {"type": "string", "maxLength": 100}},
-                                   "required": ["query"], "additionalProperties": False}}}]}
+                                   # 此供应商对 additionalProperties:false 返回生成阶段内部错误。
+                                   # 参数白名单仍由 tools_and_continue 在服务端校验。
+                                   "required": ["query"]}}}]}
 
     def background_jobs(self) -> list:
         return [self.play_audio()]
@@ -227,6 +229,8 @@ class RealtimeVoiceCall(VoiceCall):
                             details = response.get("status_details") or {}
                             if isinstance(details, dict) and details.get("error"):
                                 raise self.provider_error(details)
+                            if isinstance(details, dict) and details.get("reason"):
+                                raise self.provider_error({"error": {"message": details["reason"]}})
                             raise VoiceCallError("实时模型回复失败")
                         await self.interrupt(automatic=True)
                         continue
