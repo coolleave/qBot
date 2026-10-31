@@ -125,3 +125,11 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 `0025_realtime_calls` 接续 `0024_memory`，向 `voice_call_configs` 增加 `mode`（旧行默认 pipeline）、`realtime_provider_id` 外键和 `realtime_voice`；新增 `voice_memories`。`model_type` 原 VARCHAR(16) 足以保存 realtime。启动会反射新表，需先停应用、备份项目库、使用含完整0024链的代码显式 `python -m alembic upgrade head`，再启动新代码。不修改已执行迁移，不 stamp，不自动迁移；本轮尚未执行升级。
 
 本轮静态检查：修改涉及的9个Python文件AST解析、2个JavaScript文件语法检查、通话DOM引用/ID和 `git diff --check` 通过。未运行测试、数据库迁移、浏览器或付费通话；运行效果待验收。
+
+## 2026-10-31 实时通话与网页记忆发布（已迁移、已部署）
+
+按用户授权发布 `f7c960c`，包含实时通话、独立网页记忆及定时文案时间天气功能。先持有部署锁并构建镜像，再停止线上 qBot；本机未发现运行中的 qBot。共享项目库从 `0024_memory` 显式升级至 `0025_realtime_calls`，仅执行0025，没有重复执行旧迁移。
+
+停服后的20张表、564行数据和建表结构备份于服务器 `.deploy/backups/before-0025-20261031-111108/`，包含类型标记的 `database.json` 和SHA-256，另保存生产配置、原提交、原镜像及部署基线，目录仅部署用户可读。旧镜像保留为 `qbot:before-0025`。迁移后逐表核对原业务字段数据一致，非目标业务表结构不变；新增网页记忆表为空，通话模式默认pipeline，供应商默认空，音色默认longanqian_v3.1，新增索引和外键均核对通过。
+
+线上容器running healthy、重启次数0，/health正常、/admin返回200；111个源码及迁移文件的SHA-256与发布仓库一致，启动日志无Traceback/ERROR/CRITICAL标记。镜像为 `sha256:86da0d36af8754d018c3d1ee5b817bf9edd2d76d13961cc98a71bbd2dbc32e62`，已恢复自动部署成功基线。未运行测试、浏览器、真实通话或付费模型验收。
