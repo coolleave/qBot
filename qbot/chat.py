@@ -11,6 +11,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
 
 from qbot.chat_context import chat_context
+from qbot.reply_format import plain_text_reply
 from qbot.timing import measure
 from qbot.config import Settings
 from qbot.token_usage import extract_token_usage
@@ -29,6 +30,7 @@ class Session:
 class ChatService:
     def __init__(self, settings: Settings, model: Runnable | None, system_prompt: str | None = None):
         self.settings = settings
+        self.output_prompt = files("qbot").joinpath("prompts/chat_output.txt").read_text("utf-8")
         self.context_prompt = files("qbot").joinpath("prompts/chat_context.txt").read_text("utf-8")
         self.memory_prompt = files("qbot").joinpath("prompts/memory_use.txt").read_text("utf-8")
         prompt_text = system_prompt or files("qbot").joinpath("prompts/system.txt").read_text("utf-8")
@@ -38,7 +40,7 @@ class ChatService:
             MessagesPlaceholder("memory_rules", optional=True),
             MessagesPlaceholder("owner_reference", optional=True),
             MessagesPlaceholder("memory", optional=True),
-            MessagesPlaceholder("history"), MessagesPlaceholder("live_context", optional=True), MessagesPlaceholder("recognition_notice", optional=True), MessagesPlaceholder("output_style", optional=True), MessagesPlaceholder("current"),
+            MessagesPlaceholder("history"), MessagesPlaceholder("live_context", optional=True), MessagesPlaceholder("recognition_notice", optional=True), MessagesPlaceholder("output_style", optional=True), SystemMessage(content=self.output_prompt), MessagesPlaceholder("current"),
         ])
         self.prompt = prompt
         self.chain = prompt | model | StrOutputParser() if model is not None else None
@@ -112,6 +114,9 @@ class ChatService:
                     raise ValueError("模型返回了空文本")
                 if prepare_reply:
                     answer = await prepare_reply(answer)
+                answer = plain_text_reply(answer)
+                if not answer:
+                    raise ValueError("模型未返回可用的纯文本内容")
                 if len(answer) > self.settings.max_reply_chars:
                     answer = answer[:self.settings.max_reply_chars - 8] + "\n（内容已截断）"
                 if sender:

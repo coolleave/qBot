@@ -1,6 +1,7 @@
 import asyncio
 import json
 import hashlib
+import re
 from typing import Literal
 import logging
 import time
@@ -67,7 +68,11 @@ def incoming_message(event_type: str, data: dict) -> GroupMessage:
         return GroupMessage(source="qq_c2c", id=message.id, group_openid=scope,
             author=Author(member_openid=message.author.user_openid, bot=message.author.bot, username=message.author.username),
             content=message.content, timestamp=message.timestamp, attachments=message.attachments)
-    return GroupMessage.model_validate({**data, "source": "qq_group"})
+    message = GroupMessage.model_validate({**data, "source": "qq_group"})
+    # 群 @ 事件可能只携带空白或平台艾特标记；附件消息仍交给多模态处理。
+    if not message.attachments and re.fullmatch(r"(?:\s|<@!?[A-Za-z0-9_-]+>)*", message.content):
+        message = message.model_copy(update={"content": "【用户在群聊中仅 @ 机器人，没有附加文字】"})
+    return message
 
 
 def message_scope(message: GroupMessage) -> str:
