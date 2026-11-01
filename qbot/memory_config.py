@@ -99,7 +99,8 @@ def memory_command(text: str) -> tuple[str, str] | None:
         content = natural.group(1).strip()
         if not content or content.rstrip("。！!？?") in ("这个", "这件事", "刚才说的", "刚才那件事"):
             return "help", ""
-        return "add", content
+        # 范围由后续数据库读取的真实会话确定，解析层不信任消息中的场景描述。
+        return "remember", content
     for prefix, kind in (("/forget ", "forget"), ("/memory-edit ", "edit"), ("/remember-group ", "group")):
         if text.startswith(prefix):
             return kind, text[len(prefix):].strip()

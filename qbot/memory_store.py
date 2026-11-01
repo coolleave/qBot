@@ -66,7 +66,8 @@ class MemoryStore(MemoryJobStore):
             conn.execute(self.memory_settings.update().where(self.memory_settings.c.bot_id == bot_id)
                          .values(owner_version=version, updated_at=utc_now()))
             m = self.memory_items
-            conn.execute(m.update().where(m.c.bot_id == bot_id, m.c.scope == "group")
+            # 只有自动共享依赖主人资格；用户明确公开保存的条目继续供本群使用。
+            conn.execute(m.update().where(m.c.bot_id == bot_id, m.c.scope == "group", m.c.origin == "automatic")
                          .values(scope="personal", status=func.if_(and_(m.c.category == "request",
                              m.c.status != "forgotten"), "superseded", m.c.status)))
         boundary = self._memory_latest(conn, bot_id) if boundary is None else boundary
@@ -152,7 +153,7 @@ class MemoryStore(MemoryJobStore):
         config = self._memory_settings(conn, bot_id)
         if conversation["source"] == "qq_group":
             shared = and_(m.c.group_id == conversation["group_id"], m.c.scope == "group",
-                          m.c.owner_version == config["owner_version"])
+                          or_(m.c.origin != "automatic", m.c.owner_version == config["owner_version"]))
             if own_only:
                 shared = and_(shared, m.c.subject_id == conversation["user_id"])
             scopes.append(shared)
@@ -364,14 +365,16 @@ class MemoryStore(MemoryJobStore):
             rows = conn.execute(select(m.c.id, m.c.content).where(*self._memory_available(
                 conn, bot_id, conversation, own_only=True)).order_by(m.c.id.desc()).limit(10)).all()
             return "记忆（最近10条）：\n" + "\n".join(f"#{row.id} {row.content[:100]}" for row in rows) if rows else "当前范围没有有效的个人记忆。"
-        if kind in ("add", "group"):
+        if kind in ("add", "group", "remember"):
             if not value or len(value) > 600:
                 return "请说出要记住的具体内容（1～600字），例如：记住，我喜欢吃番茄炒蛋。"
-            if kind == "group" and (conversation["source"] != "qq_group" or self._memory_owner(conn, bot_id) != conversation["user_id"]):
-                return "当前不能创建群共享记忆。保存自己的记忆可以说：记住，我喜欢吃番茄炒蛋。"
-            values = dict(conversation_id=conversation["id"], content=value, scope="group" if kind == "group" else "personal", category="note")
+            if kind == "group" and conversation["source"] != "qq_group":
+                return "群共享记忆需要在群聊中保存；私聊可以直接说：记住，我喜欢吃番茄炒蛋。"
+            # 自然语言随真实聊天场景选范围；旧 /remember 仍保留个人保存入口。
+            shared = kind == "group" or (kind == "remember" and conversation["source"] == "qq_group")
+            values = dict(conversation_id=conversation["id"], content=value, scope="group" if shared else "personal", category="note")
             self._memory_put(conn, bot_id, values, origin="explicit", sources=[record_id], owner_version=config["owner_version"])
-            return f"已保存到{'当前群共享' if kind == 'group' else '你的长期'}记忆：{value}"
+            return f"已保存到{'当前群共享' if shared else '你的长期'}记忆：{value}"
         if kind in ("forget", "edit"):
             chunks = value.split(maxsplit=1)
             if not chunks or not chunks[0].lstrip("#").isdigit():
