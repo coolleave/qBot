@@ -33,6 +33,7 @@ class ProviderInput(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     model_type: Literal["chat", "image", "asr", "tts", "asr_realtime", "realtime"] = "chat"
     supports_images: bool = False
+    enable_thinking: bool = Field(default=False, strict=True)
     api_type: Literal["deepseek", "openai_compatible", "openai_chat"]
     base_url: str = Field(max_length=2048)
     model_name: str = Field(min_length=1, max_length=200)

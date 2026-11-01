@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -21,222 +22,883 @@
   <script src="/admin-assets/memory.js" defer></script>
   <link rel="stylesheet" href="/admin-assets/memory.css">
 </head>
+
 <body>
-<noscript><p class="notice">管理后台需要启用 JavaScript 才能登录和使用。</p></noscript>
-<section id="login-screen" class="login-layout">
-  <div class="login-intro"><div class="brand"><img class="login-brand-logo" src="/admin-assets/qbot-logo-v1.png" alt="" width="52" height="52">q<span>Bot</span><small>CONSOLE</small></div><h1>对话有记录，<br>配置有条理。</h1><p>在这里查看机器人对话，管理模型服务。<br>一个轻量、专注的工作台。</p><div class="intro-foot">PERSONAL AI WORKSPACE <span>V0.5</span></div></div>
-  <div class="login-panel"><div id="login-app"></div></div>
-</section>
-<div id="workspace" class="workspace" hidden>
-  <aside id="console-nav"></aside>
-  <main><header id="console-header"></header>
-    <div id="notice" class="notice" hidden></div>
-    <section id="voice-page" hidden></section>
-    <section id="memory-page" hidden></section>
-    <section id="tokens-page" hidden>
-      <div class="page-heading"><div><span class="eyebrow">TOKEN ANALYTICS</span><h1>Token 统计</h1><p class="muted">查看聊天用量趋势，定位消耗较多的机器人、模型和对话。</p></div><button id="token-refresh" type="button">↻ 刷新统计</button></div>
-      <form id="token-filter" class="filters">
-        <label>机器人<select id="token-bot" name="bot_id"><option value="">全部机器人</option></select></label>
-        <label>模型<select id="token-model" name="model_name"><option value="">全部历史模型</option></select></label>
-        <label>对话<select id="token-conversation" name="conversation_id"><option value="">全部对话</option></select></label>
-        <label>开始日期（北京时间）<input id="token-start" type="date" name="start" required></label>
-        <label>结束日期（北京时间）<input id="token-end" type="date" name="end" required></label>
-        <button class="primary" type="submit">应用筛选</button><button id="token-reset" type="button">重置</button>
-      </form>
-      <details class="card"><summary>搜索对话 / 更多对话</summary><div class="token-search"><label>名称、用户/群 OpenID 或对话 ID<input id="token-search" maxlength="200" placeholder="输入关键词查找会话"></label><button id="token-search-button" type="button">查找</button></div><div class="pagination"><span id="token-options-info"></span><div><button id="token-options-prev" type="button">上一页</button><button id="token-options-next" type="button">下一页</button></div></div></details>
-      <p id="token-status" role="status" class="muted"></p>
-      <div id="token-results" hidden>
-        <div id="token-cards" class="token-cards"></div>
-        <div class="card"><div class="card-title"><h2>每日用量趋势</h2><span class="muted">已知总 Token · 北京时间</span></div><div id="token-trend" class="token-trend"></div><details><summary>查看每日数值</summary><div class="table-scroll"><table><thead><tr><th>日期</th><th>输入</th><th>输出</th><th>总计</th><th>有总量 / 记录数</th></tr></thead><tbody id="token-days"></tbody></table></div></details></div>
-        <div class="token-rank-grid"><div class="card"><h2>机器人用量 · Top 10</h2><div id="token-bot-rank"></div></div><div class="card"><h2>模型用量 · Top 10</h2><div id="token-model-rank"></div></div></div>
-        <div class="card"><h2>对话用量 · Top 20</h2><p class="muted">点击排行名称应用筛选；对话按机器人、来源、群和用户独立统计。</p><div id="token-conversation-rank"></div></div>
+  <noscript>
+    <p class="notice">管理后台需要启用 JavaScript 才能登录和使用。</p>
+  </noscript>
+  <section id="login-screen" class="login-layout">
+    <div class="login-intro">
+      <div class="brand"><img class="login-brand-logo" src="/admin-assets/qbot-logo-v1.png" alt="" width="52"
+          height="52">q<span>Bot</span><small>CONSOLE</small></div>
+      <h1>对话有记录，<br>配置有条理。</h1>
+      <p>在这里查看机器人对话，管理模型服务。<br>一个轻量、专注的工作台。</p>
+      <div class="intro-foot">PERSONAL AI WORKSPACE <span>V0.5</span></div>
+    </div>
+    <div class="login-panel">
+      <div id="login-app"></div>
+    </div>
+  </section>
+  <div id="workspace" class="workspace" hidden>
+    <aside id="console-nav"></aside>
+    <main>
+      <header id="console-header"></header>
+      <div id="notice" class="notice" hidden></div>
+      <section id="voice-page" hidden></section>
+      <section id="memory-page" hidden></section>
+      <section id="tokens-page" hidden>
+        <div class="page-heading">
+          <div><span class="eyebrow">TOKEN ANALYTICS</span>
+            <h1>Token 统计</h1>
+          </div><button id="token-refresh" type="button">↻ 刷新统计</button>
+        </div>
+        <form id="token-filter" class="filters">
+          <label>机器人<select id="token-bot" name="bot_id">
+              <option value="">全部机器人</option>
+            </select></label>
+          <label>模型<select id="token-model" name="model_name">
+              <option value="">全部历史模型</option>
+            </select></label>
+          <label>对话<select id="token-conversation" name="conversation_id">
+              <option value="">全部对话</option>
+            </select></label>
+          <label>开始日期（北京时间）<input id="token-start" type="date" name="start" required></label>
+          <label>结束日期（北京时间）<input id="token-end" type="date" name="end" required></label>
+          <button class="primary" type="submit">应用筛选</button><button id="token-reset" type="button">重置</button>
+        </form>
+        <details class="card">
+          <summary>搜索对话 / 更多对话</summary>
+          <div class="token-search"><label>名称、用户/群 OpenID 或对话 ID<input id="token-search" maxlength="200"
+                placeholder="输入关键词查找会话"></label><button id="token-search-button" type="button">查找</button></div>
+          <div class="pagination"><span id="token-options-info"></span>
+            <div><button id="token-options-prev" type="button">上一页</button><button id="token-options-next"
+                type="button">下一页</button></div>
+          </div>
+        </details>
+        <p id="token-status" role="status" class="muted"></p>
+        <div id="token-results" hidden>
+          <div id="token-cards" class="token-cards"></div>
+          <div class="card">
+            <div class="card-title">
+              <h2>每日用量趋势</h2><span class="muted">已知总 Token · 北京时间</span>
+            </div>
+            <div id="token-trend" class="token-trend"></div>
+            <details>
+              <summary>查看每日数值</summary>
+              <div class="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>日期</th>
+                      <th>输入</th>
+                      <th>输出</th>
+                      <th>总计</th>
+                      <th>有总量 / 记录数</th>
+                    </tr>
+                  </thead>
+                  <tbody id="token-days"></tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+          <div class="token-rank-grid">
+            <div class="card">
+              <h2>机器人用量 · Top 10</h2>
+              <div id="token-bot-rank"></div>
+            </div>
+            <div class="card">
+              <h2>模型用量 · Top 10</h2>
+              <div id="token-model-rank"></div>
+            </div>
+          </div>
+          <div class="card">
+            <h2>对话用量 · Top 20</h2>
+            <div id="token-conversation-rank"></div>
+          </div>
+        </div>
+        <p class="muted">仅统计聊天模型返回的用量，未知不等于零。</p>
+      </section>
+      <section id="records-page">
+        <div class="page-heading">
+          <div><span class="eyebrow">CONVERSATIONS</span>
+            <h1>聊天记录</h1>
+          </div><button id="refresh-records">↻ 刷新记录</button>
+        </div>
+        <form id="filter-form" class="filters"><label>机器人<select name="bot_id" id="bot-filter">
+              <option value="">全部机器人</option>
+            </select></label><label>来源<select name="source">
+              <option value="">全部来源</option>
+              <option value="qq_group">QQ 群聊</option>
+              <option value="qq_c2c">QQ 私聊</option>
+              <option value="local">本地聊天</option>
+            </select></label><label>处理状态<select name="status">
+              <option value="">全部状态</option>
+              <option value="pending">等待处理</option>
+              <option value="processing">处理中</option>
+              <option value="replied">已回复</option>
+              <option value="model_failed">模型失败</option>
+              <option value="send_failed">发送失败</option>
+              <option value="delivery_unknown">送达未知</option>
+              <option value="expired">已过期</option>
+              <option value="rejected">已拒绝</option>
+            </select></label><label>群标识<input name="group_id" placeholder="精确匹配群 OpenID"
+              maxlength="256"></label><label>用户标识<input name="user_id" placeholder="精确匹配用户 OpenID"
+              maxlength="256"></label><label>开始时间<input name="start" type="datetime-local"></label><label>结束时间<input
+              name="end" type="datetime-local"></label><button class="primary" type="submit">筛选记录</button><button
+            id="reset-filters" type="button">重置</button></form>
+        <div class="card">
+          <div class="card-title">
+            <h2>对话列表</h2><span id="record-count" class="muted"></span>
+          </div>
+          <div id="records-table-app"></div>
+        </div>
+      </section>
+      <section id="providers-page" hidden>
+        <div class="page-heading">
+          <div><span class="eyebrow">MODEL PROVIDERS</span>
+            <h1>模型供应商</h1>
+          </div><button id="new-provider" class="primary">＋ 添加供应商</button>
+        </div>
+        <div class="provider-summary">
+          <div><span class="eyebrow">当前默认聊天供应商</span>
+            <h2 id="default-label">加载中…</h2>
+          </div><button id="environment-default">取消默认供应商</button>
+        </div>
+        <div class="provider-summary">
+          <div><span class="eyebrow">备用聊天模型</span>
+            <h2 id="fallback-label">加载中…</h2>
+          </div>
+        </div>
+        <div id="providers-list" class="provider-grid"></div>
+        <div id="providers-empty" class="empty" hidden>尚未添加供应商。点击右上角添加 DeepSeek 或兼容接口。</div>
+        <p class="muted">测试连接与试听会调用模型，可能产生费用。</p>
+      </section>
+      <section id="bots-page" hidden>
+        <div class="page-heading">
+          <div>
+            <h1>机器人管理</h1>
+          </div><button id="new-bot" class="primary">＋ 添加机器人</button>
+        </div><button id="refresh-bots">刷新连接状态</button>
+        <div id="bots-list" class="provider-grid"></div>
+      </section>
+      <section id="messages-page" hidden>
+        <div class="page-heading chat-page-heading">
+          <div>
+            <h1>对话</h1>
+          </div><label class="chat-bot-picker">当前机器人<select id="send-bot" aria-label="选择机器人"></select></label>
+        </div>
+        <div class="chat-workspace">
+          <aside class="chat-sidebar" aria-label="会话列表">
+            <div class="chat-tabs" role="tablist" aria-label="会话类型">
+              <button id="chat-private-tab" type="button" role="tab" aria-selected="true"
+                aria-controls="chat-session-panel">私聊</button>
+              <button id="chat-group-tab" type="button" role="tab" aria-selected="false"
+                aria-controls="chat-session-panel" tabindex="-1">群聊</button>
+            </div><input id="send-source" type="hidden" value="qq_c2c">
+            <form id="chat-search-form" class="chat-search"><input id="chat-search" maxlength="256"
+                placeholder="搜索备注或 OpenID" aria-label="搜索会话"><button type="submit" aria-label="搜索">搜索</button></form>
+            <div class="chat-list-heading"><span id="send-target-count">选择机器人开始</span><button id="refresh-send-targets"
+                type="button" title="刷新会话列表">刷新</button></div>
+            <div id="chat-session-panel" class="chat-session-panel" role="tabpanel" aria-labelledby="chat-private-tab">
+              <div id="send-targets-body" class="chat-session-list"></div>
+              <p id="send-targets-empty" class="empty">选择机器人后查看对话。</p>
+            </div>
+            <div class="chat-list-pagination"><span id="send-target-page"></span>
+              <div><button id="send-target-prev" type="button" aria-label="上一页会话">‹</button><button
+                  id="send-target-next" type="button" aria-label="下一页会话">›</button></div>
+            </div>
+          </aside>
+          <div class="chat-main">
+            <div id="chat-welcome" class="chat-welcome"><img src="/admin-assets/qbot-logo-v1.png" width="76" height="76"
+                alt="">
+              <h2>从一段对话开始</h2>
+              <p>在左侧选择用户或群聊<br>查看历史消息，也可以发送新的内容</p>
+            </div>
+            <div id="chat-active" class="chat-active" hidden>
+              <header class="chat-heading">
+                <div>
+                  <h2 id="chat-title"></h2>
+                  <p id="chat-subtitle"></p>
+                </div>
+                <div class="chat-heading-actions"><button id="chat-bind-identity" type="button"
+                    hidden>绑定身份</button><button id="chat-group-note" type="button" hidden>群备注</button><button
+                    id="chat-refresh" type="button">刷新消息</button></div>
+              </header>
+              <div id="chat-timeline" class="chat-timeline" tabindex="0" aria-label="历史对话">
+                <div class="chat-history-top"><button id="chat-load-older" type="button" hidden>加载更早消息</button></div>
+                <p id="chat-history-notice" class="chat-history-notice" role="status"></p>
+                <div id="chat-message-list"></div>
+              </div>
+              <form id="chat-composer" class="chat-composer"><label class="chat-input-label"
+                  for="chat-text">发送新消息</label><textarea id="chat-text" rows="3" maxlength="10000"
+                  placeholder="输入消息，Enter 发送，Shift + Enter 换行" required></textarea>
+                <div class="chat-composer-toolbar"><button id="chat-media" type="button">图片 / 语音</button><span
+                    id="chat-send-scope">以机器人身份发送</span><button id="chat-new-message" type="button"
+                    hidden>开始新消息</button><button id="chat-send" class="primary" type="submit">发送 ↑</button></div>
+                <p id="chat-send-result" role="status"></p>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section id="greetings-page" hidden>
+        <div class="page-heading">
+          <div>
+            <h1>定时任务</h1>
+          </div>
+          <div class="actions"><button id="manage-scheduled-templates" type="button">模板管理</button><button
+              id="new-greeting" type="button" class="primary">新建任务</button><button id="refresh-greeting-targets"
+              type="button">刷新列表</button></div>
+        </div>
+        <div class="filters"><label>机器人<select id="greeting-bot">
+              <option value="">全部机器人</option>
+            </select></label></div>
+        <div class="card">
+          <div class="card-title">
+            <h2>任务列表</h2><span id="greeting-target-count" class="muted"></span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>机器人</th>
+                  <th>任务 / 接收人</th>
+                  <th>会话范围</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="greeting-targets-body"></tbody>
+            </table>
+          </div>
+          <p id="greeting-targets-empty" class="empty" hidden></p>
+          <div class="pagination"><span id="greeting-target-page"></span>
+            <div><button id="greeting-target-prev" type="button">上一页</button><button id="greeting-target-next"
+                type="button">下一页</button></div>
+          </div>
+        </div>
+      </section>
+      <section id="bindings-page" hidden>
+        <div class="page-heading">
+          <div>
+            <h1>用户与群备注</h1>
+          </div><button id="new-user-binding" class="primary" type="button">按用户 ID 备注</button>
+        </div>
+        <div class="contact-tabs" role="tablist" aria-label="备注类型">
+          <button type="button" id="contact-user-tab" role="tab" aria-selected="true" aria-controls="contact-user-panel"
+            tabindex="0">用户备注</button>
+          <button type="button" id="contact-group-tab" role="tab" aria-selected="false"
+            aria-controls="contact-group-panel" tabindex="-1">群备注</button>
+        </div>
+        <div id="contact-user-panel" role="tabpanel" aria-labelledby="contact-user-tab">
+          <form id="user-binding-filter" class="filters"><label>机器人<select id="binding-bot-filter">
+                <option value="">全部机器人</option>
+              </select></label><label>用户 OpenID<input id="binding-user-filter" maxlength="256"
+                placeholder="精确匹配，可留空"></label><button class="primary" type="submit">查询 / 刷新</button></form>
+          <div class="card">
+            <div class="card-title">
+              <h2>用户备注 · 按会话查看</h2><span id="user-binding-count" class="muted"></span>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>机器人 / 来源</th>
+                    <th>用户 OpenID / 群</th>
+                    <th>用户备注</th>
+                    <th>QQ 号备注</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="user-bindings-body"></tbody>
+              </table>
+            </div>
+            <p id="user-bindings-empty" class="empty" hidden></p>
+            <div class="pagination"><span id="user-binding-page"></span>
+              <div><button id="user-binding-prev" type="button">上一页</button><button id="user-binding-next"
+                  type="button">下一页</button></div>
+            </div>
+          </div>
+        </div>
+        <div id="contact-group-panel" role="tabpanel" aria-labelledby="contact-group-tab" hidden>
+          <div class="card">
+            <div class="card-title">
+              <h2>群备注</h2>
+            </div>
+            <form id="group-note-filter" class="filters"><label>机器人<select id="group-note-bot-filter">
+                  <option value="">全部机器人</option>
+                </select></label><label>群 OpenID<input id="group-note-filter-id" maxlength="191"
+                  placeholder="精确匹配，可留空"></label><button type="submit">查询 / 刷新</button></form>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>机器人</th>
+                    <th>群备注</th>
+                    <th>群 OpenID</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="group-note-body"></tbody>
+              </table>
+            </div>
+            <p id="group-note-notice" role="status"></p>
+            <div class="pagination"><span id="group-note-page"></span>
+              <div><button id="group-note-prev" type="button">上一页</button><button id="group-note-next"
+                  type="button">下一页</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section id="identities-page" hidden>
+        <div class="page-heading">
+          <div>
+            <h1>身份绑定</h1>
+          </div><button id="new-identity-binding" class="primary" type="button">按 ID 绑定身份</button>
+        </div>
+        <form id="identity-filter" class="filters"><label>机器人<select id="identity-bot-filter">
+              <option value="">全部机器人</option>
+            </select></label><label>用户 OpenID<input id="identity-user-filter" maxlength="256"
+              placeholder="精确匹配，可留空"></label><button class="primary" type="submit">查询 / 刷新</button></form>
+        <div class="card">
+          <div class="card-title">
+            <h2>用户身份</h2><span id="identity-count" class="muted"></span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>机器人</th>
+                  <th>用户 OpenID</th>
+                  <th>姓名</th>
+                  <th>角色</th>
+                  <th>QQ 备注</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="identities-body"></tbody>
+            </table>
+          </div>
+          <p id="identities-empty" class="empty" hidden></p>
+          <div class="pagination"><span id="identity-page"></span>
+            <div><button id="identity-prev" type="button">上一页</button><button id="identity-next"
+                type="button">下一页</button></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <dialog id="bot-dialog">
+    <form id="bot-form">
+      <div class="dialog-heading">
+        <h2 id="bot-title">添加机器人</h2><button type="button" data-close="bot-dialog">×</button>
+      </div><input name="id" type="hidden"><label>本地备注名（不会修改 QQ 昵称）<input name="name" required
+          maxlength="100"></label><label>AppID<input name="app_id" required maxlength="64" pattern="[0-9]+"
+          autocomplete="off"></label><label>AppSecret<input name="app_secret" type="password" maxlength="4096"
+          autocomplete="new-password" placeholder="编辑时留空保留；更换 AppID 必须填写"></label><label>接入方式<select name="transport">
+          <option value="websocket">WebSocket（无需公网 IP）</option>
+          <option value="webhook">Webhook（需要公网 HTTPS）</option>
+        </select></label><label>模型供应商<select name="provider_id" id="bot-provider"></select></label>
+      <fieldset>
+        <legend>多模态与回复方式</legend><label class="checkbox"><input type="checkbox" name="mm_images">图片理解</label><label
+          class="checkbox"><input type="checkbox" name="mm_gifs">动态表情理解</label><label class="checkbox"><input
+            type="checkbox" name="mm_asr">短语音转写（最多60秒）</label><label>视觉理解模型（单独选择，仅分析图片）<select
+            name="mm_vision_provider_id"></select></label><label>语音识别模型<select
+            name="mm_asr_provider_id"></select></label><label>自动回复语音模型<select
+            name="mm_tts_provider_id"></select></label><label>音色 ID<input name="mm_voice" value="Bunny"
+            list="tts-voices" maxlength="100"></label><label>私聊回复方式<select name="mm_private_reply">
+            <option value="text">文字</option>
+            <option value="follow">收到语音时用语音回复</option>
+            <option value="voice">优先语音回复</option>
+          </select></label><label>群聊回复方式<select name="mm_group_reply">
+            <option value="text">文字</option>
+            <option value="follow">收到语音时用语音回复</option>
+            <option value="voice">优先语音回复</option>
+          </select></label>
+      </fieldset><label>系统提示词<textarea name="system_prompt" rows="5" maxlength="8000"
+          placeholder="留空使用项目默认提示词"></textarea></label><label class="checkbox"><input type="checkbox"
+          name="enabled">启用并连接此机器人</label>
+      <p id="bot-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" data-close="bot-dialog">取消</button><button type="submit"
+          class="primary">保存</button></div>
+    </form>
+  </dialog>
+  <dialog id="provider-dialog">
+    <form id="provider-form">
+      <div class="dialog-heading">
+        <h2 id="provider-title">添加供应商</h2><button type="button" data-close="provider-dialog" aria-label="关闭">×</button>
+      </div><input name="id" type="hidden"><label>供应商预设<select id="provider-preset">
+          <option value="deepseek">DeepSeek</option>
+          <option value="qwen">Qwen · 千问（阿里云百炼）</option>
+          <option value="custom">自定义</option>
+        </select></label>
+      <p id="provider-preset-hint" class="muted"></p><label>名称<input name="name" required maxlength="100"
+          placeholder="例如：DeepSeek 主服务"></label><label>模型类型<select name="model_type">
+          <option value="chat">chat · 聊天</option>
+          <option value="image">图片生成</option>
+          <option value="asr">asr · 录音识别</option>
+          <option value="realtime">realtime · 实时通话（语音对话）</option>
+          <option value="asr_realtime">asr_realtime · 实时语音识别（通话）</option>
+          <option value="tts">tts · 语音合成</option>
+        </select></label>
+      <label>接口类型<select name="api_type">
+          <option value="deepseek">DeepSeek</option>
+          <option value="openai_compatible">兼容聊天 / 千问原生语音接口</option>
+          <option value="openai_chat">OpenAI 兼容 · Chat Completions</option>
+        </select></label>
+      <p class="muted">填写 API 基础地址，不包含 /chat/completions。</p><label>服务地址<input name="base_url" type="url" required maxlength="2048"
+          placeholder="https://api.deepseek.com"></label><label>模型名称<input name="model_name"
+          list="provider-model-suggestions" required maxlength="200" placeholder="deepseek-flash"></label><label
+        class="checkbox"><input name="supports_images" type="checkbox">支持图片输入（仅兼容接口的 chat 模型）</label><label>API
+        Key<input name="api_key" type="password" autocomplete="new-password" maxlength="4096"
+          placeholder="编辑时留空保留已有密钥"></label><label class="checkbox"><input name="enabled" type="checkbox">启用此供应商</label>
+      <label id="provider-thinking-field" class="checkbox"><input name="enable_thinking" type="checkbox">启用思考（关闭时不传参数）</label>
+      <p id="provider-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" data-close="provider-dialog">取消</button><button type="submit"
+          class="primary">保存配置</button></div>
+    </form>
+  </dialog>
+  <dialog id="detail-dialog">
+    <div class="dialog-heading">
+      <h2>对话详情</h2><button data-close="detail-dialog" aria-label="关闭">×</button>
+    </div>
+    <p id="detail-meta" class="muted"></p>
+    <h3>用户消息</h3>
+    <pre id="detail-question"></pre>
+    <h3>机器人回复</h3>
+    <pre id="detail-answer"></pre>
+    <h3>处理耗时</h3>
+    <div id="detail-timing"></div>
+    <h3>多模态处理详情</h3>
+    <pre id="detail-media"></pre>
+    <p id="detail-error" class="error"></p>
+    <form id="binding-form" hidden>
+      <h3>绑定此发送者</h3>
+      <label>姓名<input name="member_name" required maxlength="100" placeholder="例如：宇哥"></label>
+      <label>智能体身份<select name="family_role" required>
+          <option value="">请选择智能体身份</option>
+        </select></label>
+      <label>QQ 号备注<input name="qq_number_note" maxlength="20" pattern="[0-9]*" inputmode="numeric"
+          placeholder="仅备注，不用于身份校验"></label>
+      <p id="binding-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button id="unbind-member" type="button">解除绑定</button><button type="submit"
+          class="primary">保存绑定</button></div>
+    </form>
+  </dialog>
+  <dialog id="greeting-recipient-dialog">
+    <div class="dialog-heading">
+      <h2>新建定时任务 · 选择接收人</h2><button type="button" data-close="greeting-recipient-dialog" aria-label="关闭">×</button>
+    </div>
+    <form id="greeting-recipient-filter" class="filters"><label>机器人<select id="greeting-recipient-bot" required>
+          <option value="">请选择机器人</option>
+        </select></label><label>接收人<input id="greeting-recipient-search" maxlength="256"
+          placeholder="姓名或完整 OpenID"></label><button type="submit">查询</button></form>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>接收人</th>
+            <th>发送范围</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="greeting-recipient-body"></tbody>
+      </table>
+    </div>
+    <p id="greeting-recipient-notice" role="status"></p>
+    <div class="pagination"><span id="greeting-recipient-page"></span>
+      <div><button id="greeting-recipient-prev" type="button">上一页</button><button id="greeting-recipient-next"
+          type="button">下一页</button></div>
+    </div>
+  </dialog>
+  <dialog id="greeting-dialog">
+    <form id="greeting-form">
+      <div class="dialog-heading">
+        <h2>定时主动发送</h2><button type="button" data-close="greeting-dialog">×</button>
       </div>
-      <p class="muted footnote">仅统计聊天模型已返回用量，含上下文；未知不等于零。每项独立累加已知值，不含视觉、ASR、TTS 和后台试用，也不代表费用账单。模型按历史名称归并；默认最近30天，单次最多366天。</p>
-    </section>
-    <section id="records-page"><div class="page-heading"><div><span class="eyebrow">CONVERSATIONS</span><h1>聊天记录</h1><p class="muted">追踪每一次对话，了解回复与处理结果。</p></div><button id="refresh-records">↻ 刷新记录</button></div>
-      <form id="filter-form" class="filters"><label>机器人<select name="bot_id" id="bot-filter"><option value="">全部机器人</option></select></label><label>来源<select name="source"><option value="">全部来源</option><option value="qq_group">QQ 群聊</option><option value="qq_c2c">QQ 私聊</option><option value="local">本地聊天</option></select></label><label>处理状态<select name="status"><option value="">全部状态</option><option value="pending">等待处理</option><option value="processing">处理中</option><option value="replied">已回复</option><option value="model_failed">模型失败</option><option value="send_failed">发送失败</option><option value="delivery_unknown">送达未知</option><option value="expired">已过期</option><option value="rejected">已拒绝</option></select></label><label>群标识<input name="group_id" placeholder="精确匹配群 OpenID" maxlength="256"></label><label>用户标识<input name="user_id" placeholder="精确匹配用户 OpenID" maxlength="256"></label><label>开始时间<input name="start" type="datetime-local"></label><label>结束时间<input name="end" type="datetime-local"></label><button class="primary" type="submit">筛选记录</button><button id="reset-filters" type="button">重置</button></form>
-      <div class="card"><div class="card-title"><h2>对话列表</h2><span id="record-count" class="muted"></span></div><div id="records-table-app"></div></div>
-    </section>
-    <section id="providers-page" hidden><div class="page-heading"><div><span class="eyebrow">MODEL PROVIDERS</span><h1>模型供应商</h1><p class="muted">集中管理模型与密钥，默认配置从下一次请求生效。</p></div><button id="new-provider" class="primary">＋ 添加供应商</button></div><div class="provider-summary"><div><span class="eyebrow">当前默认聊天供应商</span><h2 id="default-label">加载中…</h2></div><button id="environment-default">取消默认供应商</button></div><div class="provider-summary"><div><span class="eyebrow">备用聊天模型</span><h2 id="fallback-label">加载中…</h2><p class="muted">普通聊天调用失败时切换一次；视觉、语音及定时文案不使用此备用。</p></div></div><div id="providers-list" class="provider-grid"></div><div id="providers-empty" class="empty" hidden>尚未添加供应商。点击右上角添加 DeepSeek 或兼容接口。</div><p class="muted footnote">密钥加密保存，页面不会显示原文。保存配置不会调用付费模型接口。点击“测试连接”会向已保存的模型发送“你好”，可能产生少量费用；显示完整回复耗时，非首字延迟。</p></section>
-    <section id="bots-page" hidden><div class="page-heading"><div><h1>机器人管理</h1><p class="muted">每个机器人独立连接、模型和会话。保存启用的机器人会重新连接并清空内存上下文。</p></div><button id="new-bot" class="primary">＋ 添加机器人</button></div><button id="refresh-bots">刷新连接状态</button><div id="bots-list" class="provider-grid"></div></section>
-<section id="messages-page" hidden>
-<div class="page-heading chat-page-heading"><div><h1>对话</h1><p class="muted">让历史与此刻的交流，在同一个地方。</p></div><label class="chat-bot-picker">当前机器人<select id="send-bot" aria-label="选择机器人"></select></label></div>
-<div class="chat-workspace">
-<aside class="chat-sidebar" aria-label="会话列表">
-<div class="chat-tabs" role="tablist" aria-label="会话类型">
-<button id="chat-private-tab" type="button" role="tab" aria-selected="true" aria-controls="chat-session-panel">私聊</button>
-<button id="chat-group-tab" type="button" role="tab" aria-selected="false" aria-controls="chat-session-panel" tabindex="-1">群聊</button>
-</div><input id="send-source" type="hidden" value="qq_c2c">
-<form id="chat-search-form" class="chat-search"><input id="chat-search" maxlength="256" placeholder="搜索备注或 OpenID" aria-label="搜索会话"><button type="submit" aria-label="搜索">搜索</button></form>
-<div class="chat-list-heading"><span id="send-target-count">选择机器人开始</span><button id="refresh-send-targets" type="button" title="刷新会话列表">刷新</button></div>
-<div id="chat-session-panel" class="chat-session-panel" role="tabpanel" aria-labelledby="chat-private-tab"><div id="send-targets-body" class="chat-session-list"></div><p id="send-targets-empty" class="empty">选择机器人后查看对话。</p></div>
-<div class="chat-list-pagination"><span id="send-target-page"></span><div><button id="send-target-prev" type="button" aria-label="上一页会话">‹</button><button id="send-target-next" type="button" aria-label="下一页会话">›</button></div></div>
-</aside>
-<div class="chat-main">
-<div id="chat-welcome" class="chat-welcome"><img src="/admin-assets/qbot-logo-v1.png" width="76" height="76" alt=""><h2>从一段对话开始</h2><p>在左侧选择用户或群聊<br>查看历史消息，也可以发送新的内容</p></div>
-<div id="chat-active" class="chat-active" hidden>
-<header class="chat-heading"><div><h2 id="chat-title"></h2><p id="chat-subtitle"></p></div><div class="chat-heading-actions"><button id="chat-bind-identity" type="button" hidden>绑定身份</button><button id="chat-group-note" type="button" hidden>群备注</button><button id="chat-refresh" type="button">刷新消息</button></div></header>
-<div id="chat-timeline" class="chat-timeline" tabindex="0" aria-label="历史对话">
-<div class="chat-history-top"><button id="chat-load-older" type="button" hidden>加载更早消息</button></div>
-<p id="chat-history-notice" class="chat-history-notice" role="status"></p><div id="chat-message-list"></div>
-</div>
-<form id="chat-composer" class="chat-composer"><label class="chat-input-label" for="chat-text">发送新消息</label><textarea id="chat-text" rows="3" maxlength="10000" placeholder="输入消息，Enter 发送，Shift + Enter 换行" required></textarea><div class="chat-composer-toolbar"><button id="chat-media" type="button">图片 / 语音</button><span id="chat-send-scope">以机器人身份发送</span><button id="chat-new-message" type="button" hidden>开始新消息</button><button id="chat-send" class="primary" type="submit">发送 ↑</button></div><p id="chat-send-result" role="status"></p></form>
-</div>
-</div>
-</div>
-</section>
-    <section id="greetings-page" hidden>
-<div class="page-heading"><div><h1>定时任务</h1><p class="muted">按北京时间到点发送固定或 AI 生成的组合消息，无需用户先发消息。实际送达受 QQ 主动消息权限限制。</p></div><div class="actions"><button id="manage-scheduled-templates" type="button">模板管理</button><button id="new-greeting" type="button" class="primary">新建任务</button><button id="refresh-greeting-targets" type="button">刷新列表</button></div></div>
-<div class="filters"><label>机器人<select id="greeting-bot"><option value="">全部机器人</option></select></label></div>
-<div class="card"><div class="card-title"><h2>任务列表</h2><span id="greeting-target-count" class="muted"></span></div><div class="table-scroll"><table><thead><tr><th>机器人</th><th>任务 / 接收人</th><th>会话范围</th><th>状态</th><th>操作</th></tr></thead><tbody id="greeting-targets-body"></tbody></table></div><p id="greeting-targets-empty" class="empty" hidden></p><div class="pagination"><span id="greeting-target-page"></span><div><button id="greeting-target-prev" type="button">上一页</button><button id="greeting-target-next" type="button">下一页</button></div></div></div>
-<p class="muted footnote">点击「新建任务」，直接选择机器人和已绑定的接收人。私聊发送给本人，群聊发送给整个群；同一对象可以新建多条独立任务，已有配置保持不变。</p>
-</section>
-    <section id="bindings-page" hidden><div class="page-heading"><div><h1>用户与群备注</h1><p class="muted">用户备注在同一机器人、相同 OpenID 的会话中共享；群备注单独维护。同一人的私聊和群聊 OpenID 不保证相同，不同机器人也不共用 OpenID。备注不会改变身份角色或 QQ 昵称。</p></div><button id="new-user-binding" class="primary" type="button">按用户 ID 备注</button></div>
-<div class="contact-tabs" role="tablist" aria-label="备注类型">
-<button type="button" id="contact-user-tab" role="tab" aria-selected="true" aria-controls="contact-user-panel" tabindex="0">用户备注</button>
-<button type="button" id="contact-group-tab" role="tab" aria-selected="false" aria-controls="contact-group-panel" tabindex="-1">群备注</button>
-</div>
-<div id="contact-user-panel" role="tabpanel" aria-labelledby="contact-user-tab">
-<form id="user-binding-filter" class="filters"><label>机器人<select id="binding-bot-filter"><option value="">全部机器人</option></select></label><label>用户 OpenID<input id="binding-user-filter" maxlength="256" placeholder="精确匹配，可留空"></label><button class="primary" type="submit">查询 / 刷新</button></form>
-<div class="card"><div class="card-title"><h2>用户备注 · 按会话查看</h2><span id="user-binding-count" class="muted"></span></div><div class="table-scroll"><table><thead><tr><th>机器人 / 来源</th><th>用户 OpenID / 群</th><th>用户备注</th><th>QQ 号备注</th><th>操作</th></tr></thead><tbody id="user-bindings-body"></tbody></table></div><p id="user-bindings-empty" class="empty" hidden></p><div class="pagination"><span id="user-binding-page"></span><div><button id="user-binding-prev" type="button">上一页</button><button id="user-binding-next" type="button">下一页</button></div></div></div>
-</div>
-<div id="contact-group-panel" role="tabpanel" aria-labelledby="contact-group-tab" hidden>
-<div class="card"><div class="card-title"><h2>群备注</h2></div>
-<form id="group-note-filter" class="filters"><label>机器人<select id="group-note-bot-filter"><option value="">全部机器人</option></select></label><label>群 OpenID<input id="group-note-filter-id" maxlength="191" placeholder="精确匹配，可留空"></label><button type="submit">查询 / 刷新</button></form>
-<div class="table-scroll"><table><thead><tr><th>机器人</th><th>群备注</th><th>群 OpenID</th><th>操作</th></tr></thead><tbody id="group-note-body"></tbody></table></div>
-<p id="group-note-notice" role="status"></p><div class="pagination"><span id="group-note-page"></span><div><button id="group-note-prev" type="button">上一页</button><button id="group-note-next" type="button">下一页</button></div></div>
-</div>
-</div>
-</section>
-    <section id="identities-page" hidden>
-<div class="page-heading"><div><h1>身份绑定</h1><p class="muted">设置姓名和角色后，可选择一位用户设为主人；意见冲突时优先听从主人。每个机器人独立，同一 OpenID 共用身份；更换主人自动取消原主人，解除身份也会取消主人。</p></div><button id="new-identity-binding" class="primary" type="button">按 ID 绑定身份</button></div>
-<form id="identity-filter" class="filters"><label>机器人<select id="identity-bot-filter"><option value="">全部机器人</option></select></label><label>用户 OpenID<input id="identity-user-filter" maxlength="256" placeholder="精确匹配，可留空"></label><button class="primary" type="submit">查询 / 刷新</button></form>
-<div class="card"><div class="card-title"><h2>用户身份</h2><span id="identity-count" class="muted"></span></div><div class="table-scroll"><table><thead><tr><th>机器人</th><th>用户 OpenID</th><th>姓名</th><th>角色</th><th>QQ 备注</th><th>操作</th></tr></thead><tbody id="identities-body"></tbody></table></div><p id="identities-empty" class="empty" hidden></p><div class="pagination"><span id="identity-page"></span><div><button id="identity-prev" type="button">上一页</button><button id="identity-next" type="button">下一页</button></div></div></div>
-<p class="muted footnote">保存或解除后，各会话在下一次对话时更新身份并清理旧上下文。QQ 号仅作备注；不同 OpenID 不自动合并，需分别绑定。「用户与群备注」中的接收人名称与这里独立。</p>
-    </section>
-  </main>
-</div>
-<dialog id="bot-dialog"><form id="bot-form"><div class="dialog-heading"><h2 id="bot-title">添加机器人</h2><button type="button" data-close="bot-dialog">×</button></div><input name="id" type="hidden"><label>本地备注名（不会修改 QQ 昵称）<input name="name" required maxlength="100"></label><label>AppID<input name="app_id" required maxlength="64" pattern="[0-9]+" autocomplete="off"></label><label>AppSecret<input name="app_secret" type="password" maxlength="4096" autocomplete="new-password" placeholder="编辑时留空保留；更换 AppID 必须填写"></label><label>接入方式<select name="transport"><option value="websocket">WebSocket（无需公网 IP）</option><option value="webhook">Webhook（需要公网 HTTPS）</option></select></label><label>模型供应商<select name="provider_id" id="bot-provider"></select></label><fieldset><legend>多模态与回复方式</legend><label class="checkbox"><input type="checkbox" name="mm_images">图片理解</label><label class="checkbox"><input type="checkbox" name="mm_gifs">动态表情理解</label><label class="checkbox"><input type="checkbox" name="mm_asr">短语音转写（最多60秒）</label><label>视觉理解模型（单独选择，仅分析图片）<select name="mm_vision_provider_id"></select></label><label>语音识别模型<select name="mm_asr_provider_id"></select></label><label>自动回复语音模型<select name="mm_tts_provider_id"></select></label><label>音色 ID<input name="mm_voice" value="Bunny" list="tts-voices" maxlength="100"></label><label>私聊回复方式<select name="mm_private_reply"><option value="text">文字</option><option value="follow">收到语音时用语音回复</option><option value="voice">优先语音回复</option></select></label><label>群聊回复方式<select name="mm_group_reply"><option value="text">文字</option><option value="follow">收到语音时用语音回复</option><option value="voice">优先语音回复</option></select></label><p class="muted">长回复、代码、链接和表格使用文字；语音准备失败自动回退文字。私聊自动转为 SILK。视觉模型先分析图片，再由聊天模型按人设回复；开启图片理解须选择视觉模型。所有能力默认关闭，使用会产生模型费用。</p></fieldset><label>系统提示词<textarea name="system_prompt" rows="5" maxlength="8000" placeholder="留空使用项目默认提示词"></textarea></label><label class="checkbox"><input type="checkbox" name="enabled">启用并连接此机器人</label><p class="muted">请在 QQ 开放平台选择相同接入方式。密钥加密保存；启停与编辑不会删除聊天记录。修改前建议等待正在进行的回复完成。</p><p id="bot-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" data-close="bot-dialog">取消</button><button type="submit" class="primary">保存</button></div></form></dialog>
-<dialog id="provider-dialog"><form id="provider-form"><div class="dialog-heading"><h2 id="provider-title">添加供应商</h2><button type="button" data-close="provider-dialog" aria-label="关闭">×</button></div><input name="id" type="hidden"><label>供应商预设<select id="provider-preset"><option value="deepseek">DeepSeek</option><option value="qwen">Qwen · 千问（阿里云百炼）</option><option value="custom">自定义</option></select></label><p id="provider-preset-hint" class="muted"></p><label>名称<input name="name" required maxlength="100" placeholder="例如：DeepSeek 主服务"></label><label>模型类型<select name="model_type"><option value="chat">chat · 聊天</option><option value="image">图片生成</option><option value="asr">asr · 录音识别</option><option value="realtime">realtime · 实时通话（语音对话）</option><option value="asr_realtime">asr_realtime · 实时语音识别（通话）</option><option value="tts">tts · 语音合成</option></select></label><p class="muted">实时通话选择 qwen-audio-3.1-realtime-flash，无需独立 ASR/TTS。实时语音识别用于网页通话，支持 qwen3-asr-flash-realtime；与录音识别分开配置。TTS 可同时供通话及普通语音使用。图片生成当前仅保存配置。ASR 支持 Qwen-Audio-3.x / Fun-ASR-Flash；Filetrans 使用异步任务接口。千问预设会按模型类型填写服务地址和模型。TTS 支持 Qwen Realtime 文本试听；请选择兼容接口，服务地址填 https://dashscope.aliyuncs.com，模型填 qwen3-tts-flash-realtime。机器人聊天仅支持 chat。</p><label>接口类型<select name="api_type"><option value="deepseek">DeepSeek</option><option value="openai_compatible">兼容聊天 / 千问原生语音接口</option><option value="openai_chat">OpenAI 兼容 · Chat Completions</option></select></label><p class="muted">OpenAI 兼容接口仅用于 chat，支持按模型能力开启图片输入。填写供应商提供的 HTTPS API 基础地址（通常以 /v1 结尾），不要填写 /chat/completions；不适用于 Responses 或原生语音协议。</p><label>服务地址<input name="base_url" type="url" required maxlength="2048" placeholder="https://api.deepseek.com"></label><label>模型名称<input name="model_name" list="provider-model-suggestions" required maxlength="200" placeholder="deepseek-flash"></label><label class="checkbox"><input name="supports_images" type="checkbox">支持图片输入（仅兼容接口的 chat 模型）</label><label>API Key<input name="api_key" type="password" autocomplete="new-password" maxlength="4096" placeholder="编辑时留空保留已有密钥"></label><label class="checkbox"><input name="enabled" type="checkbox">启用此供应商</label><p id="provider-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" data-close="provider-dialog">取消</button><button type="submit" class="primary">保存配置</button></div></form></dialog>
-<dialog id="detail-dialog"><div class="dialog-heading"><h2>对话详情</h2><button data-close="detail-dialog" aria-label="关闭">×</button></div><p id="detail-meta" class="muted"></p><h3>用户消息</h3><pre id="detail-question"></pre><h3>机器人回复</h3><pre id="detail-answer"></pre><h3>处理耗时</h3><div id="detail-timing"></div><h3>多模态处理详情</h3><pre id="detail-media"></pre><p id="detail-error" class="error"></p>
-<form id="binding-form" hidden><h3>绑定此发送者</h3><p class="muted">使用这条消息的真实用户 ID。绑定当前机器人与此用户 OpenID，身份在该机器人下的所有同 OpenID 会话中生效。不同机器人独立，QQ 号仅作备注；不同 OpenID 不会自动合并。</p>
-<label>姓名<input name="member_name" required maxlength="100" placeholder="例如：宇哥"></label>
-<label>智能体身份<select name="family_role" required><option value="">请选择智能体身份</option></select></label>
-<label>QQ 号备注<input name="qq_number_note" maxlength="20" pattern="[0-9]*" inputmode="numeric" placeholder="仅备注，不用于身份校验"></label>
-<p id="binding-error" class="error" role="alert"></p><div class="dialog-actions"><button id="unbind-member" type="button">解除绑定</button><button type="submit" class="primary">保存绑定</button></div></form></dialog>
-<dialog id="greeting-recipient-dialog"><div class="dialog-heading"><h2>新建定时任务 · 选择接收人</h2><button type="button" data-close="greeting-recipient-dialog" aria-label="关闭">×</button></div><form id="greeting-recipient-filter" class="filters"><label>机器人<select id="greeting-recipient-bot" required><option value="">请选择机器人</option></select></label><label>接收人<input id="greeting-recipient-search" maxlength="256" placeholder="姓名或完整 OpenID"></label><button type="submit">查询</button></form><div class="table-scroll"><table><thead><tr><th>接收人</th><th>发送范围</th><th>操作</th></tr></thead><tbody id="greeting-recipient-body"></tbody></table></div><p id="greeting-recipient-notice" role="status"></p><div class="pagination"><span id="greeting-recipient-page"></span><div><button id="greeting-recipient-prev" type="button">上一页</button><button id="greeting-recipient-next" type="button">下一页</button></div></div></dialog>
-<dialog id="greeting-dialog"><form id="greeting-form"><div class="dialog-heading"><h2>定时主动发送</h2><button type="button" data-close="greeting-dialog">×</button></div>
-<p id="greeting-target" class="muted"></p>
-<div id="greeting-task-fields" hidden><label>任务名称<input id="greeting-task-name" maxlength="100" placeholder="例如：工作日早间问候"></label><label>文案时段<select id="greeting-task-slot"><option value="morning">早间</option><option value="noon">午间</option><option value="evening">晚间</option><option value="other">其他时段</option></select></label></div>
-<fieldset><legend>早间问候</legend><label class="checkbox"><input type="checkbox" name="morning_enabled">启用</label>
-<div class="greeting-times"><label>发送时间（北京时间）<input type="time" name="morning_start" required></label><label>失败重试次数<input type="number" name="morning_retry_count" min="0" max="10" step="1" value="3" required title="首次失败后的额外尝试次数，0关闭；部分已发送或送达未知不重试"></label></div>
-<div class="greeting-days"><label class="checkbox"><input type="checkbox" name="morning_days" value="1">周一</label><label class="checkbox"><input type="checkbox" name="morning_days" value="2">周二</label><label class="checkbox"><input type="checkbox" name="morning_days" value="3">周三</label><label class="checkbox"><input type="checkbox" name="morning_days" value="4">周四</label><label class="checkbox"><input type="checkbox" name="morning_days" value="5">周五</label><label class="checkbox"><input type="checkbox" name="morning_days" value="6">周六</label><label class="checkbox"><input type="checkbox" name="morning_days" value="7">周日</label></div><label>套用模板<select name="morning_delivery_mode"></select></label><button type="button" id="morning-choose-template">选择自定义模板</button><div class="greeting-times"><label>文案来源<select name="morning_content_source"><option value="fixed">固定文案</option><option value="ai">执行时 AI 生成</option></select></label><label>图片来源<select name="morning_image_source"><option value="none">不带图片</option><option value="upload">上传图片</option><option value="library">素材库随机图片</option></select></label><label>输出方式<select name="morning_output"><option value="text">文字</option><option value="audio">TTS 语音</option><option value="text_audio">文字＋语音</option><option value="none">仅图片</option></select></label></div><label id="morning-style-field" hidden>文案风格<select name="morning_prompt_style"></select></label><label id="morning-prompt-field" hidden>自定义提示词<textarea name="morning_custom_prompt" rows="3" maxlength="4000" placeholder="例如：写一段轻松幽默的下班提醒，不超过80字。留空沿用所选风格或人设。"></textarea></label><label id="morning-library-field" hidden>素材库<select name="morning_library_id"></select></label><div id="morning-image-fields" hidden><label>图片（PNG/JPG，最多3.5 MB）<input type="file" name="morning_image_file" accept=".png,.jpg,.jpeg"></label><p id="morning-image-name" class="muted"></p><label class="checkbox"><input type="checkbox" name="morning_remove_image">删除已保存图片</label></div><div id="morning-voice-fields" hidden><label>TTS 供应商<select name="morning_tts_provider_id"></select></label><label>音色<input name="morning_voice" value="Bunny" list="tts-voices" maxlength="100"></label></div><label>问候文案 / 语音内容<textarea name="morning_content" rows="3" required maxlength="200"></textarea></label><p class="muted">预览</p><pre id="morning-preview"></pre><button type="button" id="morning-run">早间任务执行一次</button></fieldset><fieldset><legend>午间问候</legend><label class="checkbox"><input type="checkbox" name="noon_enabled">启用</label>
-<div class="greeting-times"><label>发送时间（北京时间）<input type="time" name="noon_start" required></label><label>失败重试次数<input type="number" name="noon_retry_count" min="0" max="10" step="1" value="3" required title="首次失败后的额外尝试次数，0关闭；部分已发送或送达未知不重试"></label></div>
-<div class="greeting-days"><label class="checkbox"><input type="checkbox" name="noon_days" value="1">周一</label><label class="checkbox"><input type="checkbox" name="noon_days" value="2">周二</label><label class="checkbox"><input type="checkbox" name="noon_days" value="3">周三</label><label class="checkbox"><input type="checkbox" name="noon_days" value="4">周四</label><label class="checkbox"><input type="checkbox" name="noon_days" value="5">周五</label><label class="checkbox"><input type="checkbox" name="noon_days" value="6">周六</label><label class="checkbox"><input type="checkbox" name="noon_days" value="7">周日</label></div><label>套用模板<select name="noon_delivery_mode"></select></label><button type="button" id="noon-choose-template">选择自定义模板</button><div class="greeting-times"><label>文案来源<select name="noon_content_source"><option value="fixed">固定文案</option><option value="ai">执行时 AI 生成</option></select></label><label>图片来源<select name="noon_image_source"><option value="none">不带图片</option><option value="upload">上传图片</option><option value="library">素材库随机图片</option></select></label><label>输出方式<select name="noon_output"><option value="text">文字</option><option value="audio">TTS 语音</option><option value="text_audio">文字＋语音</option><option value="none">仅图片</option></select></label></div><label id="noon-style-field" hidden>文案风格<select name="noon_prompt_style"></select></label><label id="noon-prompt-field" hidden>自定义提示词<textarea name="noon_custom_prompt" rows="3" maxlength="4000" placeholder="例如：写一段轻松幽默的下班提醒，不超过80字。留空沿用所选风格或人设。"></textarea></label><label id="noon-library-field" hidden>素材库<select name="noon_library_id"></select></label><div id="noon-image-fields" hidden><label>图片（PNG/JPG，最多3.5 MB）<input type="file" name="noon_image_file" accept=".png,.jpg,.jpeg"></label><p id="noon-image-name" class="muted"></p><label class="checkbox"><input type="checkbox" name="noon_remove_image">删除已保存图片</label></div><div id="noon-voice-fields" hidden><label>TTS 供应商<select name="noon_tts_provider_id"></select></label><label>音色<input name="noon_voice" value="Bunny" list="tts-voices" maxlength="100"></label></div><label>问候文案 / 语音内容<textarea name="noon_content" rows="3" required maxlength="200"></textarea></label><p class="muted">预览</p><pre id="noon-preview"></pre><button type="button" id="noon-run">午间任务执行一次</button></fieldset><fieldset><legend>晚间问候</legend><label class="checkbox"><input type="checkbox" name="evening_enabled">启用</label>
-<div class="greeting-times"><label>发送时间（北京时间）<input type="time" name="evening_start" required></label><label>失败重试次数<input type="number" name="evening_retry_count" min="0" max="10" step="1" value="3" required title="首次失败后的额外尝试次数，0关闭；部分已发送或送达未知不重试"></label></div>
-<div class="greeting-days"><label class="checkbox"><input type="checkbox" name="evening_days" value="1">周一</label><label class="checkbox"><input type="checkbox" name="evening_days" value="2">周二</label><label class="checkbox"><input type="checkbox" name="evening_days" value="3">周三</label><label class="checkbox"><input type="checkbox" name="evening_days" value="4">周四</label><label class="checkbox"><input type="checkbox" name="evening_days" value="5">周五</label><label class="checkbox"><input type="checkbox" name="evening_days" value="6">周六</label><label class="checkbox"><input type="checkbox" name="evening_days" value="7">周日</label></div><label>套用模板<select name="evening_delivery_mode"></select></label><button type="button" id="evening-choose-template">选择自定义模板</button><div class="greeting-times"><label>文案来源<select name="evening_content_source"><option value="fixed">固定文案</option><option value="ai">执行时 AI 生成</option></select></label><label>图片来源<select name="evening_image_source"><option value="none">不带图片</option><option value="upload">上传图片</option><option value="library">素材库随机图片</option></select></label><label>输出方式<select name="evening_output"><option value="text">文字</option><option value="audio">TTS 语音</option><option value="text_audio">文字＋语音</option><option value="none">仅图片</option></select></label></div><label id="evening-style-field" hidden>文案风格<select name="evening_prompt_style"></select></label><label id="evening-prompt-field" hidden>自定义提示词<textarea name="evening_custom_prompt" rows="3" maxlength="4000" placeholder="例如：写一段轻松幽默的下班提醒，不超过80字。留空沿用所选风格或人设。"></textarea></label><label id="evening-library-field" hidden>素材库<select name="evening_library_id"></select></label><div id="evening-image-fields" hidden><label>图片（PNG/JPG，最多3.5 MB）<input type="file" name="evening_image_file" accept=".png,.jpg,.jpeg"></label><p id="evening-image-name" class="muted"></p><label class="checkbox"><input type="checkbox" name="evening_remove_image">删除已保存图片</label></div><div id="evening-voice-fields" hidden><label>TTS 供应商<select name="evening_tts_provider_id"></select></label><label>音色<input name="evening_voice" value="Bunny" list="tts-voices" maxlength="100"></label></div><label>问候文案 / 语音内容<textarea name="evening_content" rows="3" required maxlength="200"></textarea></label><p class="muted">预览</p><pre id="evening-preview"></pre><button type="button" id="evening-run">晚间任务执行一次</button></fieldset><fieldset><legend>其他时段</legend><label class="checkbox"><input type="checkbox" name="other_enabled">启用</label>
-<div class="greeting-times"><label>发送时间（北京时间）<input type="time" name="other_start" required></label><label>失败重试次数<input type="number" name="other_retry_count" min="0" max="10" step="1" value="3" required title="首次失败后的额外尝试次数，0关闭；部分已发送或送达未知不重试"></label></div>
-<div class="greeting-days"><label class="checkbox"><input type="checkbox" name="other_days" value="1">周一</label><label class="checkbox"><input type="checkbox" name="other_days" value="2">周二</label><label class="checkbox"><input type="checkbox" name="other_days" value="3">周三</label><label class="checkbox"><input type="checkbox" name="other_days" value="4">周四</label><label class="checkbox"><input type="checkbox" name="other_days" value="5">周五</label><label class="checkbox"><input type="checkbox" name="other_days" value="6">周六</label><label class="checkbox"><input type="checkbox" name="other_days" value="7">周日</label></div><label>套用模板<select name="other_delivery_mode"></select></label><button type="button" id="other-choose-template">选择自定义模板</button><div class="greeting-times"><label>文案来源<select name="other_content_source"><option value="fixed">固定文案</option><option value="ai">执行时 AI 生成</option></select></label><label>图片来源<select name="other_image_source"><option value="none">不带图片</option><option value="upload">上传图片</option><option value="library">素材库随机图片</option></select></label><label>输出方式<select name="other_output"><option value="text">文字</option><option value="audio">TTS 语音</option><option value="text_audio">文字＋语音</option><option value="none">仅图片</option></select></label></div><label id="other-style-field" hidden>文案风格<select name="other_prompt_style"></select></label><label id="other-prompt-field" hidden>自定义提示词<textarea name="other_custom_prompt" rows="3" maxlength="4000" placeholder="例如：写一段轻松幽默的下班提醒，不超过80字。留空沿用所选风格或人设。"></textarea></label><label id="other-library-field" hidden>素材库<select name="other_library_id"></select></label><div id="other-image-fields" hidden><label>图片（PNG/JPG，最多3.5 MB）<input type="file" name="other_image_file" accept=".png,.jpg,.jpeg"></label><p id="other-image-name" class="muted"></p><label class="checkbox"><input type="checkbox" name="other_remove_image">删除已保存图片</label></div><div id="other-voice-fields" hidden><label>TTS 供应商<select name="other_tts_provider_id"></select></label><label>音色<input name="other_voice" value="Bunny" list="tts-voices" maxlength="100"></label></div><label>问候文案 / 语音内容<textarea name="other_content" rows="3" required maxlength="200"></textarea></label><p class="muted">预览</p><pre id="other-preview"></pre><button type="button" id="other-run">此任务执行一次</button></fieldset><p id="greeting-run-result" role="status"></p><p id="greeting-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" data-close="greeting-dialog">关闭</button><button class="primary" type="submit">保存设置</button></div></form><h3>最近 20 次问候记录</h3><div id="greeting-history"></div></dialog>
-<dialog id="send-dialog"><form id="send-form"><div class="dialog-heading"><h2>主动发送消息</h2><button type="button" data-close="send-dialog">×</button></div><p id="send-target" class="muted"></p><p class="muted">群聊消息发送给整个群。是否允许发送由 QQ 平台权限和额度决定。</p><label>消息类型<select name="message_kind"><option value="text">文字</option><option value="image">图片</option><option value="audio">语音</option></select></label>
-<label id="send-text-label">消息内容<textarea name="content" required rows="5" maxlength="10000"></textarea></label>
-<div id="send-tts-panel" hidden><label>TTS 模型<select id="send-tts-provider"></select></label><label>合成文本<textarea id="send-tts-text" maxlength="500" placeholder="输入要说的话，最多 500 字符"></textarea></label><label>音色<input id="send-tts-voice" value="Bunny" list="tts-voices" maxlength="100"></label><button type="button" id="send-tts-generate">生成语音并试听</button><p class="muted">调用模型可能产生费用。默认 Bunny（萌小姬），可从音色建议中选择或填写官方音色 ID。WAV 用于试听，私聊发送时自动转为 SILK。自定义设计或复刻声音需要 VD/VC 模型，当前 Flash 仅支持预设音色。</p><p id="send-tts-result" role="status"></p></div><div id="send-media-panel" hidden><label>选择文件<input type="file" name="media_file"></label><p id="send-media-hint" class="muted"></p><p id="send-file-info" class="muted"></p><img id="send-image-preview" alt="待发送图片预览" hidden><audio id="send-audio-preview" controls preload="metadata" hidden></audio></div><p id="send-result" role="status"></p><div class="dialog-actions"><button type="button" data-close="send-dialog">关闭</button><button id="send-submit" type="submit" class="primary">立即发送</button></div></form></dialog>
-<dialog id="user-binding-dialog"><form id="user-binding-form"><div class="dialog-heading"><h2>编辑用户备注</h2><button type="button" data-close="user-binding-dialog">×</button></div>
-<label>机器人<select name="bot_id" id="binding-bot" required></select></label><label>消息来源<select name="source"><option value="qq_c2c">QQ 私聊</option><option value="qq_group">QQ 群聊</option></select></label>
-<label>用户 OpenID<input name="user_id" required maxlength="256" placeholder="user_openid 或 member_openid，不是 QQ 号"></label><label id="binding-group-label" hidden>群 OpenID<input name="group_id" maxlength="191"></label>
-<label>用户备注<input name="contact_name" required maxlength="100" placeholder="例如：宇哥"></label><label>QQ 备注<input name="contact_qq" maxlength="20" pattern="[0-9]*" inputmode="numeric"></label>
-<p class="muted">来源和群仅用于定位一条已有消息；保存后，此机器人下相同用户 OpenID 的所有会话共用该备注。QQ 号仅作记录，不用于合并身份。</p><p id="user-binding-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" data-close="user-binding-dialog">取消</button><button class="primary" type="submit">保存绑定</button></div></form></dialog>
-<dialog id="group-note-dialog"><form id="group-note-form"><div class="dialog-heading"><h2>编辑群备注</h2><button type="button" data-close="group-note-dialog">×</button></div><input name="bot_id" type="hidden"><input name="group_id" type="hidden"><p id="group-note-target"></p><label>群备注<input name="name" maxlength="100" placeholder="例如：两位牢弟交流群；留空清除"></label><p class="muted">仅改变后台显示名称；不修改 QQ 群名、用户备注或定时任务。</p><p id="group-note-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" data-close="group-note-dialog">取消</button><button type="submit" class="primary">保存备注</button></div></form></dialog>
-<dialog id="identity-dialog"><form id="identity-form"><div class="dialog-heading"><h2>绑定聊天身份</h2><button type="button" data-close="identity-dialog" aria-label="关闭">×</button></div>
-<label>机器人<select name="bot_id" id="identity-bot" required></select></label>
-<label>用户 OpenID<input name="user_id" required maxlength="256" placeholder="已向此机器人发送过消息的 OpenID，不是 QQ 号"></label>
-<label>姓名<input name="member_name" required maxlength="100"></label>
-<label>智能体身份<select name="family_role" required><option value="">请选择智能体身份</option></select></label>
-<label>QQ 号备注<input name="qq_number_note" maxlength="20" pattern="[0-9]*" inputmode="numeric"></label>
-<p class="muted">无需选择群或私聊。绑定后，此机器人收到同一 OpenID 的消息时均使用该身份；其他机器人独立配置。</p>
-<p id="identity-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" data-close="identity-dialog">取消</button><button class="primary" type="submit">保存身份</button></div></form></dialog>
-<!-- qwen3-tts-flash-realtime 官方预设音色，核对日期 2026-10-26；各语音入口共用。 -->
-<datalist id="tts-voices">
-<option value="Cherry">芊悦 · Cherry</option>
-<option value="Serena">苏瑶 · Serena</option>
-<option value="Ethan">晨煦 · Ethan</option>
-<option value="Chelsie">千雪 · Chelsie</option>
-<option value="Momo">茉兔 · Momo</option>
-<option value="Vivian">十三 · Vivian</option>
-<option value="Moon">月白 · Moon</option>
-<option value="Maia">四月 · Maia</option>
-<option value="Kai">凯 · Kai</option>
-<option value="Nofish">不吃鱼 · Nofish</option>
-<option value="Bella">萌宝 · Bella</option>
-<option value="Jennifer">詹妮弗 · Jennifer</option>
-<option value="Ryan">甜茶 · Ryan</option>
-<option value="Katerina">卡捷琳娜 · Katerina</option>
-<option value="Aiden">艾登 · Aiden</option>
-<option value="Eldric Sage">沧明子 · Eldric Sage</option>
-<option value="Mia">乖小妹 · Mia</option>
-<option value="Mochi">沙小弥 · Mochi</option>
-<option value="Bellona">燕铮莺 · Bellona</option>
-<option value="Vincent">田叔 · Vincent</option>
-<option value="Bunny">萌小姬（默认） · Bunny</option>
-<option value="Neil">阿闻 · Neil</option>
-<option value="Elias">墨讲师 · Elias</option>
-<option value="Arthur">徐大爷 · Arthur</option>
-<option value="Nini">邻家妹妹 · Nini</option>
-<option value="Seren">小婉 · Seren</option>
-<option value="Pip">顽屁小孩 · Pip</option>
-<option value="Stella">少女阿月 · Stella</option>
-<option value="Bodega">博德加 · Bodega</option>
-<option value="Sonrisa">索尼莎 · Sonrisa</option>
-<option value="Alek">阿列克 · Alek</option>
-<option value="Dolce">多尔切 · Dolce</option>
-<option value="Sohee">素熙 · Sohee</option>
-<option value="Ono Anna">小野杏 · Ono Anna</option>
-<option value="Lenn">莱恩 · Lenn</option>
-<option value="Emilien">埃米尔安 · Emilien</option>
-<option value="Andre">安德雷 · Andre</option>
-<option value="Radio Gol">拉迪奥·戈尔 · Radio Gol</option>
-<option value="Jada">上海-阿珍 · Jada</option>
-<option value="Dylan">北京-晓东 · Dylan</option>
-<option value="Li">南京-老李 · Li</option>
-<option value="Marcus">陕西-秦川 · Marcus</option>
-<option value="Roy">闽南-阿杰 · Roy</option>
-<option value="Peter">天津-李彼得 · Peter</option>
-<option value="Sunny">四川-晴儿 · Sunny</option>
-<option value="Eric">四川-程川 · Eric</option>
-<option value="Rocky">粤语-阿强 · Rocky</option>
-<option value="Kiki">粤语-阿清 · Kiki</option>
-</datalist>
-<dialog id="roles-dialog">
-<div class="dialog-heading"><h2 id="roles-title">身份角色</h2><button type="button" data-close="roles-dialog">×</button></div>
-<p class="muted">角色仅属于当前智能体。关系说明用于聊天及问候；角色不授予管理权限。</p>
-<div id="roles-list"></div><button id="new-role" type="button">＋ 新增角色</button>
-<form id="role-form"><h3 id="role-editor-title">新增角色</h3><input name="id" type="hidden">
-<label>角色编号<input name="value" required maxlength="16" pattern="[a-z][a-z0-9_]*" placeholder="例如 teacher，创建后不可修改"></label>
-<label>显示名称<input name="label" required maxlength="100" placeholder="例如 老师"></label>
-<label>关系说明<input name="relationship" maxlength="500" placeholder="例如 当前智能体的老师"></label>
-<label>预设称呼（可选）<input name="member_name" maxlength="100" placeholder="留空允许绑定多个不同姓名的用户"></label>
-<p class="muted">预设称呼填写后，绑定姓名须与其一致。角色仍有用户绑定时不能删除。</p>
-<p id="role-error" class="error" role="alert"></p><div class="dialog-actions"><button type="submit" class="primary">保存角色</button></div>
-</form></dialog>
+      <p id="greeting-target" class="muted"></p>
+      <div id="greeting-task-fields" hidden><label>任务名称<input id="greeting-task-name" maxlength="100"
+            placeholder="例如：工作日早间问候"></label><label>文案时段<select id="greeting-task-slot">
+            <option value="morning">早间</option>
+            <option value="noon">午间</option>
+            <option value="evening">晚间</option>
+            <option value="other">其他时段</option>
+          </select></label>
+      </div>
+      <fieldset>
+        <legend>早间问候</legend><label class="checkbox"><input type="checkbox" name="morning_enabled">启用</label>
+        <div class="greeting-times"><label>发送时间（北京时间）<input type="time" name="morning_start" required></label><label>失败重试次数<input type="number" name="morning_retry_count" min="0" max="10" step="1" value="3" required title="首次失败后的额外尝试次数，0关闭；部分已发送或送达未知不重试"></label></div>
+        <div class="greeting-days"><label class="checkbox"><input type="checkbox" name="morning_days"
+              value="1">周一</label><label class="checkbox"><input type="checkbox" name="morning_days"
+              value="2">周二</label><label class="checkbox"><input type="checkbox" name="morning_days"
+              value="3">周三</label><label class="checkbox"><input type="checkbox" name="morning_days"
+              value="4">周四</label><label class="checkbox"><input type="checkbox" name="morning_days"
+              value="5">周五</label><label class="checkbox"><input type="checkbox" name="morning_days"
+              value="6">周六</label><label class="checkbox"><input type="checkbox" name="morning_days"
+              value="7">周日</label></div><label>套用模板<select name="morning_delivery_mode"></select></label><button
+          type="button" id="morning-choose-template">选择自定义模板</button>
+        <div class="greeting-times"><label>文案来源<select name="morning_content_source">
+              <option value="fixed">固定文案</option>
+              <option value="ai">执行时 AI 生成</option>
+            </select></label><label>图片来源<select name="morning_image_source">
+              <option value="none">不带图片</option>
+              <option value="upload">上传图片</option>
+              <option value="library">素材库随机图片</option>
+            </select></label><label>输出方式<select name="morning_output">
+              <option value="text">文字</option>
+              <option value="audio">TTS 语音</option>
+              <option value="text_audio">文字＋语音</option>
+              <option value="none">仅图片</option>
+            </select></label></div><label id="morning-style-field" hidden>文案风格<select
+            name="morning_prompt_style"></select></label><label id="morning-prompt-field" hidden>自定义提示词<textarea
+            name="morning_custom_prompt" rows="3" maxlength="4000"
+            placeholder="例如：写一段轻松幽默的下班提醒，不超过80字。留空沿用所选风格或人设。"></textarea></label><label id="morning-library-field"
+          hidden>素材库<select name="morning_library_id"></select></label>
+        <div id="morning-image-fields" hidden><label>图片（PNG/JPG，最多3.5 MB）<input type="file" name="morning_image_file"
+              accept=".png,.jpg,.jpeg"></label>
+          <p id="morning-image-name" class="muted"></p><label class="checkbox"><input type="checkbox"
+              name="morning_remove_image">删除已保存图片</label>
+        </div>
+        <div id="morning-voice-fields" hidden><label>TTS 供应商<select
+              name="morning_tts_provider_id"></select></label><label>音色<input name="morning_voice" value="Bunny"
+              list="tts-voices" maxlength="100"></label>
+        </div><label>问候文案 / 语音内容<textarea name="morning_content" rows="3" required maxlength="200"></textarea></label>
+        <p class="muted">预览</p>
+        <pre id="morning-preview"></pre><button type="button" id="morning-run">早间任务执行一次</button>
+      </fieldset>
+      <fieldset>
+        <legend>午间问候</legend><label class="checkbox"><input type="checkbox" name="noon_enabled">启用</label>
+        <div class="greeting-times"><label>发送时间（北京时间）<input type="time" name="noon_start" required></label><label>失败重试次数<input type="number" name="noon_retry_count" min="0" max="10" step="1" value="3" required title="首次失败后的额外尝试次数，0关闭；部分已发送或送达未知不重试"></label></div>
+        <div class="greeting-days"><label class="checkbox"><input type="checkbox" name="noon_days"
+              value="1">周一</label><label class="checkbox"><input type="checkbox" name="noon_days"
+              value="2">周二</label><label class="checkbox"><input type="checkbox" name="noon_days"
+              value="3">周三</label><label class="checkbox"><input type="checkbox" name="noon_days"
+              value="4">周四</label><label class="checkbox"><input type="checkbox" name="noon_days"
+              value="5">周五</label><label class="checkbox"><input type="checkbox" name="noon_days"
+              value="6">周六</label><label class="checkbox"><input type="checkbox" name="noon_days" value="7">周日</label>
+        </div><label>套用模板<select name="noon_delivery_mode"></select></label><button type="button"
+          id="noon-choose-template">选择自定义模板</button>
+        <div class="greeting-times"><label>文案来源<select name="noon_content_source">
+              <option value="fixed">固定文案</option>
+              <option value="ai">执行时 AI 生成</option>
+            </select></label><label>图片来源<select name="noon_image_source">
+              <option value="none">不带图片</option>
+              <option value="upload">上传图片</option>
+              <option value="library">素材库随机图片</option>
+            </select></label><label>输出方式<select name="noon_output">
+              <option value="text">文字</option>
+              <option value="audio">TTS 语音</option>
+              <option value="text_audio">文字＋语音</option>
+              <option value="none">仅图片</option>
+            </select></label></div><label id="noon-style-field" hidden>文案风格<select
+            name="noon_prompt_style"></select></label><label id="noon-prompt-field" hidden>自定义提示词<textarea
+            name="noon_custom_prompt" rows="3" maxlength="4000"
+            placeholder="例如：写一段轻松幽默的下班提醒，不超过80字。留空沿用所选风格或人设。"></textarea></label><label id="noon-library-field"
+          hidden>素材库<select name="noon_library_id"></select></label>
+        <div id="noon-image-fields" hidden><label>图片（PNG/JPG，最多3.5 MB）<input type="file" name="noon_image_file"
+              accept=".png,.jpg,.jpeg"></label>
+          <p id="noon-image-name" class="muted"></p><label class="checkbox"><input type="checkbox"
+              name="noon_remove_image">删除已保存图片</label>
+        </div>
+        <div id="noon-voice-fields" hidden><label>TTS 供应商<select
+              name="noon_tts_provider_id"></select></label><label>音色<input name="noon_voice" value="Bunny"
+              list="tts-voices" maxlength="100"></label>
+        </div><label>问候文案 / 语音内容<textarea name="noon_content" rows="3" required maxlength="200"></textarea></label>
+        <p class="muted">预览</p>
+        <pre id="noon-preview"></pre><button type="button" id="noon-run">午间任务执行一次</button>
+      </fieldset>
+      <fieldset>
+        <legend>晚间问候</legend><label class="checkbox"><input type="checkbox" name="evening_enabled">启用</label>
+        <div class="greeting-times"><label>发送时间（北京时间）<input type="time" name="evening_start" required></label><label>失败重试次数<input type="number" name="evening_retry_count" min="0" max="10" step="1" value="3" required title="首次失败后的额外尝试次数，0关闭；部分已发送或送达未知不重试"></label></div>
+        <div class="greeting-days"><label class="checkbox"><input type="checkbox" name="evening_days"
+              value="1">周一</label><label class="checkbox"><input type="checkbox" name="evening_days"
+              value="2">周二</label><label class="checkbox"><input type="checkbox" name="evening_days"
+              value="3">周三</label><label class="checkbox"><input type="checkbox" name="evening_days"
+              value="4">周四</label><label class="checkbox"><input type="checkbox" name="evening_days"
+              value="5">周五</label><label class="checkbox"><input type="checkbox" name="evening_days"
+              value="6">周六</label><label class="checkbox"><input type="checkbox" name="evening_days"
+              value="7">周日</label></div><label>套用模板<select name="evening_delivery_mode"></select></label><button
+          type="button" id="evening-choose-template">选择自定义模板</button>
+        <div class="greeting-times"><label>文案来源<select name="evening_content_source">
+              <option value="fixed">固定文案</option>
+              <option value="ai">执行时 AI 生成</option>
+            </select></label><label>图片来源<select name="evening_image_source">
+              <option value="none">不带图片</option>
+              <option value="upload">上传图片</option>
+              <option value="library">素材库随机图片</option>
+            </select></label><label>输出方式<select name="evening_output">
+              <option value="text">文字</option>
+              <option value="audio">TTS 语音</option>
+              <option value="text_audio">文字＋语音</option>
+              <option value="none">仅图片</option>
+            </select></label></div><label id="evening-style-field" hidden>文案风格<select
+            name="evening_prompt_style"></select></label><label id="evening-prompt-field" hidden>自定义提示词<textarea
+            name="evening_custom_prompt" rows="3" maxlength="4000"
+            placeholder="例如：写一段轻松幽默的下班提醒，不超过80字。留空沿用所选风格或人设。"></textarea></label><label id="evening-library-field"
+          hidden>素材库<select name="evening_library_id"></select></label>
+        <div id="evening-image-fields" hidden><label>图片（PNG/JPG，最多3.5 MB）<input type="file" name="evening_image_file"
+              accept=".png,.jpg,.jpeg"></label>
+          <p id="evening-image-name" class="muted"></p><label class="checkbox"><input type="checkbox"
+              name="evening_remove_image">删除已保存图片</label>
+        </div>
+        <div id="evening-voice-fields" hidden><label>TTS 供应商<select
+              name="evening_tts_provider_id"></select></label><label>音色<input name="evening_voice" value="Bunny"
+              list="tts-voices" maxlength="100"></label>
+        </div><label>问候文案 / 语音内容<textarea name="evening_content" rows="3" required maxlength="200"></textarea></label>
+        <p class="muted">预览</p>
+        <pre id="evening-preview"></pre><button type="button" id="evening-run">晚间任务执行一次</button>
+      </fieldset>
+      <fieldset>
+        <legend>其他时段</legend><label class="checkbox"><input type="checkbox" name="other_enabled">启用</label>
+        <div class="greeting-times"><label>发送时间（北京时间）<input type="time" name="other_start" required></label><label>失败重试次数<input type="number" name="other_retry_count" min="0" max="10" step="1" value="3" required title="首次失败后的额外尝试次数，0关闭；部分已发送或送达未知不重试"></label></div>
+        <div class="greeting-days"><label class="checkbox"><input type="checkbox" name="other_days"
+              value="1">周一</label><label class="checkbox"><input type="checkbox" name="other_days"
+              value="2">周二</label><label class="checkbox"><input type="checkbox" name="other_days"
+              value="3">周三</label><label class="checkbox"><input type="checkbox" name="other_days"
+              value="4">周四</label><label class="checkbox"><input type="checkbox" name="other_days"
+              value="5">周五</label><label class="checkbox"><input type="checkbox" name="other_days"
+              value="6">周六</label><label class="checkbox"><input type="checkbox" name="other_days" value="7">周日</label>
+        </div><label>套用模板<select name="other_delivery_mode"></select></label><button type="button"
+          id="other-choose-template">选择自定义模板</button>
+        <div class="greeting-times"><label>文案来源<select name="other_content_source">
+              <option value="fixed">固定文案</option>
+              <option value="ai">执行时 AI 生成</option>
+            </select></label><label>图片来源<select name="other_image_source">
+              <option value="none">不带图片</option>
+              <option value="upload">上传图片</option>
+              <option value="library">素材库随机图片</option>
+            </select></label><label>输出方式<select name="other_output">
+              <option value="text">文字</option>
+              <option value="audio">TTS 语音</option>
+              <option value="text_audio">文字＋语音</option>
+              <option value="none">仅图片</option>
+            </select></label></div><label id="other-style-field" hidden>文案风格<select
+            name="other_prompt_style"></select></label><label id="other-prompt-field" hidden>自定义提示词<textarea
+            name="other_custom_prompt" rows="3" maxlength="4000"
+            placeholder="例如：写一段轻松幽默的下班提醒，不超过80字。留空沿用所选风格或人设。"></textarea></label><label id="other-library-field"
+          hidden>素材库<select name="other_library_id"></select></label>
+        <div id="other-image-fields" hidden><label>图片（PNG/JPG，最多3.5 MB）<input type="file" name="other_image_file"
+              accept=".png,.jpg,.jpeg"></label>
+          <p id="other-image-name" class="muted"></p><label class="checkbox"><input type="checkbox"
+              name="other_remove_image">删除已保存图片</label>
+        </div>
+        <div id="other-voice-fields" hidden><label>TTS 供应商<select
+              name="other_tts_provider_id"></select></label><label>音色<input name="other_voice" value="Bunny"
+              list="tts-voices" maxlength="100"></label>
+        </div><label>问候文案 / 语音内容<textarea name="other_content" rows="3" required maxlength="200"></textarea></label>
+        <p class="muted">预览</p>
+        <pre id="other-preview"></pre><button type="button" id="other-run">此任务执行一次</button>
+      </fieldset>
+      <p id="greeting-run-result" role="status"></p>
+      <p id="greeting-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" data-close="greeting-dialog">关闭</button><button class="primary"
+          type="submit">保存设置</button></div>
+    </form>
+    <h3>最近 20 次问候记录</h3>
+    <div id="greeting-history"></div>
+  </dialog>
+  <dialog id="send-dialog">
+    <form id="send-form">
+      <div class="dialog-heading">
+        <h2>主动发送消息</h2><button type="button" data-close="send-dialog">×</button>
+      </div>
+      <p id="send-target" class="muted"></p>
+      <label>消息类型<select name="message_kind">
+          <option value="text">文字</option>
+          <option value="image">图片</option>
+          <option value="audio">语音</option>
+        </select></label>
+      <label id="send-text-label">消息内容<textarea name="content" required rows="5" maxlength="10000"></textarea></label>
+      <div id="send-tts-panel" hidden><label>TTS 模型<select id="send-tts-provider"></select></label><label>合成文本<textarea
+            id="send-tts-text" maxlength="500" placeholder="输入要说的话，最多 500 字符"></textarea></label><label>音色<input
+            id="send-tts-voice" value="Bunny" list="tts-voices" maxlength="100"></label><button type="button"
+          id="send-tts-generate">生成语音并试听</button>
+        <p class="muted">语音合成可能产生费用。</p>
+        <p id="send-tts-result" role="status"></p>
+      </div>
+      <div id="send-media-panel" hidden><label>选择文件<input type="file" name="media_file"></label>
+        <p id="send-media-hint" class="muted"></p>
+        <p id="send-file-info" class="muted"></p><img id="send-image-preview" alt="待发送图片预览" hidden><audio
+          id="send-audio-preview" controls preload="metadata" hidden></audio>
+      </div>
+      <p id="send-result" role="status"></p>
+      <div class="dialog-actions"><button type="button" data-close="send-dialog">关闭</button><button id="send-submit"
+          type="submit" class="primary">立即发送</button></div>
+    </form>
+  </dialog>
+  <dialog id="user-binding-dialog">
+    <form id="user-binding-form">
+      <div class="dialog-heading">
+        <h2>编辑用户备注</h2><button type="button" data-close="user-binding-dialog">×</button>
+      </div>
+      <label>机器人<select name="bot_id" id="binding-bot" required></select></label><label>消息来源<select name="source">
+          <option value="qq_c2c">QQ 私聊</option>
+          <option value="qq_group">QQ 群聊</option>
+        </select></label>
+      <label>用户 OpenID<input name="user_id" required maxlength="256"
+          placeholder="user_openid 或 member_openid，不是 QQ 号"></label><label id="binding-group-label" hidden>群
+        OpenID<input name="group_id" maxlength="191"></label>
+      <label>用户备注<input name="contact_name" required maxlength="100" placeholder="例如：宇哥"></label><label>QQ 备注<input
+          name="contact_qq" maxlength="20" pattern="[0-9]*" inputmode="numeric"></label>
+      <p id="user-binding-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" data-close="user-binding-dialog">取消</button><button
+          class="primary" type="submit">保存绑定</button></div>
+    </form>
+  </dialog>
+  <dialog id="group-note-dialog">
+    <form id="group-note-form">
+      <div class="dialog-heading">
+        <h2>编辑群备注</h2><button type="button" data-close="group-note-dialog">×</button>
+      </div><input name="bot_id" type="hidden"><input name="group_id" type="hidden">
+      <p id="group-note-target"></p><label>群备注<input name="name" maxlength="100" placeholder="例如：两位牢弟交流群；留空清除"></label>
+      <p id="group-note-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" data-close="group-note-dialog">取消</button><button type="submit"
+          class="primary">保存备注</button></div>
+    </form>
+  </dialog>
+  <dialog id="identity-dialog">
+    <form id="identity-form">
+      <div class="dialog-heading">
+        <h2>绑定聊天身份</h2><button type="button" data-close="identity-dialog" aria-label="关闭">×</button>
+      </div>
+      <label>机器人<select name="bot_id" id="identity-bot" required></select></label>
+      <label>用户 OpenID<input name="user_id" required maxlength="256" placeholder="已向此机器人发送过消息的 OpenID，不是 QQ 号"></label>
+      <label>姓名<input name="member_name" required maxlength="100"></label>
+      <label>智能体身份<select name="family_role" required>
+          <option value="">请选择智能体身份</option>
+        </select></label>
+      <label>QQ 号备注<input name="qq_number_note" maxlength="20" pattern="[0-9]*" inputmode="numeric"></label>
+      <p id="identity-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" data-close="identity-dialog">取消</button><button class="primary"
+          type="submit">保存身份</button></div>
+    </form>
+  </dialog>
+  <!-- qwen3-tts-flash-realtime 官方预设音色，核对日期 2026-10-26；各语音入口共用。 -->
+  <datalist id="tts-voices">
+    <option value="Cherry">芊悦 · Cherry</option>
+    <option value="Serena">苏瑶 · Serena</option>
+    <option value="Ethan">晨煦 · Ethan</option>
+    <option value="Chelsie">千雪 · Chelsie</option>
+    <option value="Momo">茉兔 · Momo</option>
+    <option value="Vivian">十三 · Vivian</option>
+    <option value="Moon">月白 · Moon</option>
+    <option value="Maia">四月 · Maia</option>
+    <option value="Kai">凯 · Kai</option>
+    <option value="Nofish">不吃鱼 · Nofish</option>
+    <option value="Bella">萌宝 · Bella</option>
+    <option value="Jennifer">詹妮弗 · Jennifer</option>
+    <option value="Ryan">甜茶 · Ryan</option>
+    <option value="Katerina">卡捷琳娜 · Katerina</option>
+    <option value="Aiden">艾登 · Aiden</option>
+    <option value="Eldric Sage">沧明子 · Eldric Sage</option>
+    <option value="Mia">乖小妹 · Mia</option>
+    <option value="Mochi">沙小弥 · Mochi</option>
+    <option value="Bellona">燕铮莺 · Bellona</option>
+    <option value="Vincent">田叔 · Vincent</option>
+    <option value="Bunny">萌小姬（默认） · Bunny</option>
+    <option value="Neil">阿闻 · Neil</option>
+    <option value="Elias">墨讲师 · Elias</option>
+    <option value="Arthur">徐大爷 · Arthur</option>
+    <option value="Nini">邻家妹妹 · Nini</option>
+    <option value="Seren">小婉 · Seren</option>
+    <option value="Pip">顽屁小孩 · Pip</option>
+    <option value="Stella">少女阿月 · Stella</option>
+    <option value="Bodega">博德加 · Bodega</option>
+    <option value="Sonrisa">索尼莎 · Sonrisa</option>
+    <option value="Alek">阿列克 · Alek</option>
+    <option value="Dolce">多尔切 · Dolce</option>
+    <option value="Sohee">素熙 · Sohee</option>
+    <option value="Ono Anna">小野杏 · Ono Anna</option>
+    <option value="Lenn">莱恩 · Lenn</option>
+    <option value="Emilien">埃米尔安 · Emilien</option>
+    <option value="Andre">安德雷 · Andre</option>
+    <option value="Radio Gol">拉迪奥·戈尔 · Radio Gol</option>
+    <option value="Jada">上海-阿珍 · Jada</option>
+    <option value="Dylan">北京-晓东 · Dylan</option>
+    <option value="Li">南京-老李 · Li</option>
+    <option value="Marcus">陕西-秦川 · Marcus</option>
+    <option value="Roy">闽南-阿杰 · Roy</option>
+    <option value="Peter">天津-李彼得 · Peter</option>
+    <option value="Sunny">四川-晴儿 · Sunny</option>
+    <option value="Eric">四川-程川 · Eric</option>
+    <option value="Rocky">粤语-阿强 · Rocky</option>
+    <option value="Kiki">粤语-阿清 · Kiki</option>
+  </datalist>
+  <dialog id="roles-dialog">
+    <div class="dialog-heading">
+      <h2 id="roles-title">身份角色</h2><button type="button" data-close="roles-dialog">×</button>
+    </div>
+    <div id="roles-list"></div><button id="new-role" type="button">＋ 新增角色</button>
+    <form id="role-form">
+      <h3 id="role-editor-title">新增角色</h3><input name="id" type="hidden">
+      <label>角色编号<input name="value" required maxlength="16" pattern="[a-z][a-z0-9_]*"
+          placeholder="例如 teacher，创建后不可修改"></label>
+      <label>显示名称<input name="label" required maxlength="100" placeholder="例如 老师"></label>
+      <label>关系说明<input name="relationship" maxlength="500" placeholder="例如 当前智能体的老师"></label>
+      <label>预设称呼（可选）<input name="member_name" maxlength="100" placeholder="留空允许绑定多个不同姓名的用户"></label>
+      <p id="role-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="submit" class="primary">保存角色</button></div>
+    </form>
+  </dialog>
 
-<dialog id="scheduled-templates-dialog">
-<div class="dialog-heading"><h2>定时任务模板管理</h2><button type="button" data-close="scheduled-templates-dialog">×</button></div>
+  <dialog id="scheduled-templates-dialog">
+    <div class="dialog-heading">
+      <h2>定时任务模板管理</h2><button type="button" data-close="scheduled-templates-dialog">×</button>
+    </div>
+    <form id="scheduled-template-search" class="filters"><label>模板名称<input id="scheduled-template-query" maxlength="100"
+          placeholder="搜索模板"></label><button type="submit">查询</button><button type="button" id="new-scheduled-template"
+        class="primary">新增模板</button></form>
+    <p id="scheduled-template-notice" role="status"></p>
+    <div id="scheduled-template-list"></div>
+    <div class="pagination"><span id="scheduled-template-page"></span><button type="button"
+        id="scheduled-template-prev">上一页</button><button type="button" id="scheduled-template-next">下一页</button></div>
+  </dialog>
+  <dialog id="scheduled-template-editor">
+    <form id="scheduled-template-form">
+      <div class="dialog-heading">
+        <h2 id="scheduled-template-title">新增模板</h2><button type="button"
+          data-close="scheduled-template-editor">×</button>
+      </div>
+      <label>模板名称<input name="name" required maxlength="100"></label>
+      <div class="greeting-times"><label>文案来源<select name="content_source">
+            <option value="fixed">固定文案</option>
+            <option value="ai">每次执行 AI 生成</option>
+          </select></label>
+        <label>输出方式<select name="output">
+            <option value="text">文字</option>
+            <option value="audio">TTS 语音</option>
+            <option value="text_audio">文字＋语音</option>
+            <option value="none">仅图片</option>
+          </select></label>
+        <label>图片来源<select name="image_source">
+            <option value="none">不带图片</option>
+            <option value="upload">上传图片</option>
+            <option value="library">素材库随机图片</option>
+          </select></label>
+      </div>
+      <label id="template-content-field">固定文案 / 朗读内容<textarea name="content" maxlength="200"
+          rows="4"></textarea></label>
+      <div id="template-ai-fields" hidden><label>提示词（与文案风格至少填一项）<textarea name="custom_prompt" maxlength="4000" rows="5"
+            placeholder="描述想要生成的内容、语气和要求，例如：生成一句温暖的晚安祝福，不超过60字。"></textarea></label><label>文案风格（可选）<select
+            name="prompt_style"></select></label>
+      </div>
+      <label id="template-library-field" hidden>素材库<select name="library_id"></select></label>
+      <div id="template-image-fields" hidden><label>图片（PNG/JPG，最大3.5MB）<input type="file" name="image_file"
+            accept=".png,.jpg,.jpeg"></label>
+        <p id="template-image-name" class="muted"></p><img id="template-image-preview" alt="模板图片预览" hidden
+          style="max-width:100%;max-height:220px"><label class="checkbox"><input name="remove_image"
+            type="checkbox">删除已保存图片</label>
+      </div>
+      <div id="template-voice-fields" hidden><label>TTS 供应商<select
+            name="tts_provider_id"></select></label><label>音色<input name="voice" value="Bunny" list="tts-voices"
+            maxlength="100"></label>
+      </div>
+      <p id="scheduled-template-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" data-close="scheduled-template-editor">取消</button><button
+          type="submit" class="primary">保存模板</button></div>
+    </form>
+  </dialog>
+  <datalist id="provider-model-suggestions"></datalist>
+</body>
 
-<form id="scheduled-template-search" class="filters"><label>模板名称<input id="scheduled-template-query" maxlength="100" placeholder="搜索模板"></label><button type="submit">查询</button><button type="button" id="new-scheduled-template" class="primary">新增模板</button></form>
-<p id="scheduled-template-notice" role="status"></p><div id="scheduled-template-list"></div>
-<div class="pagination"><span id="scheduled-template-page"></span><button type="button" id="scheduled-template-prev">上一页</button><button type="button" id="scheduled-template-next">下一页</button></div>
-</dialog>
-<dialog id="scheduled-template-editor"><form id="scheduled-template-form">
-<div class="dialog-heading"><h2 id="scheduled-template-title">新增模板</h2><button type="button" data-close="scheduled-template-editor">×</button></div>
-<label>模板名称<input name="name" required maxlength="100"></label>
-<div class="greeting-times"><label>文案来源<select name="content_source"><option value="fixed">固定文案</option><option value="ai">每次执行 AI 生成</option></select></label>
-<label>输出方式<select name="output"><option value="text">文字</option><option value="audio">TTS 语音</option><option value="text_audio">文字＋语音</option><option value="none">仅图片</option></select></label>
-<label>图片来源<select name="image_source"><option value="none">不带图片</option><option value="upload">上传图片</option><option value="library">素材库随机图片</option></select></label></div>
-<label id="template-content-field">固定文案 / 朗读内容<textarea name="content" maxlength="200" rows="4"></textarea></label>
-<div id="template-ai-fields" hidden><label>提示词（与文案风格至少填一项）<textarea name="custom_prompt" maxlength="4000" rows="5" placeholder="描述想要生成的内容、语气和要求，例如：生成一句温暖的晚安祝福，不超过60字。"></textarea></label><label>文案风格（可选）<select name="prompt_style"></select></label></div>
-<label id="template-library-field" hidden>素材库<select name="library_id"></select></label>
-<div id="template-image-fields" hidden><label>图片（PNG/JPG，最大3.5MB）<input type="file" name="image_file" accept=".png,.jpg,.jpeg"></label><p id="template-image-name" class="muted"></p><img id="template-image-preview" alt="模板图片预览" hidden style="max-width:100%;max-height:220px"><label class="checkbox"><input name="remove_image" type="checkbox">删除已保存图片</label></div>
-<div id="template-voice-fields" hidden><label>TTS 供应商<select name="tts_provider_id"></select></label><label>音色<input name="voice" value="Bunny" list="tts-voices" maxlength="100"></label></div>
-
-<p id="scheduled-template-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" data-close="scheduled-template-editor">取消</button><button type="submit" class="primary">保存模板</button></div>
-</form></dialog>
-<datalist id="provider-model-suggestions"></datalist></body></html>
+</html>

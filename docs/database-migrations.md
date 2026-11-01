@@ -133,3 +133,10 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 停服后的20张表、564行数据和建表结构备份于服务器 `.deploy/backups/before-0025-20261031-111108/`，包含类型标记的 `database.json` 和SHA-256，另保存生产配置、原提交、原镜像及部署基线，目录仅部署用户可读。旧镜像保留为 `qbot:before-0025`。迁移后逐表核对原业务字段数据一致，非目标业务表结构不变；新增网页记忆表为空，通话模式默认pipeline，供应商默认空，音色默认longanqian_v3.1，新增索引和外键均核对通过。
 
 线上容器running healthy、重启次数0，/health正常、/admin返回200；111个源码及迁移文件的SHA-256与发布仓库一致，启动日志无Traceback/ERROR/CRITICAL标记。镜像为 `sha256:86da0d36af8754d018c3d1ee5b817bf9edd2d76d13961cc98a71bbd2dbc32e62`，已恢复自动部署成功基线。未运行测试、浏览器、真实通话或付费模型验收。
+
+
+## 0026 供应商思考配置（未执行）
+
+新增 `0026_provider_thinking`，接续0025，为model_providers增加非空布尔enable_thinking，默认0（不发送思考参数）。升级前停止应用、备份并显式执行 `python -m alembic upgrade head`；不自动迁移，不修改已执行版本。
+
+2026-11-01：线上数据库已显式升级至 `0026_provider_thinking`。迁移前供应商表备份位于服务器 `.deploy/backups/thinking-0026/providers-before.json`（私有权限，含加密配置，勿提交）；核对9条供应商原字段完全一致，新增enable_thinking均为0且非空。原生产容器已恢复running healthy。本轮仅升级数据库，新增开关及测速代码尚未提交部署；本地数据库未执行。

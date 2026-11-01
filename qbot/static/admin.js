@@ -52,11 +52,11 @@ function updateBotLabels() {
   if (detailRecord) renderDetailMeta(detailRecord);
 }
 let contactNoteTab = "user";
-const labels = {pending:"等待处理",processing:"处理中",replied:"已回复",model_failed:"模型失败",send_failed:"发送失败",delivery_unknown:"送达未知",expired:"已过期",rejected:"已拒绝"};
-function toast(message) { ElementPlus.ElMessage({message, duration:4500, showClose:true, grouping:true, customClass:"console-message", appendTo:document.querySelector("dialog[open]") || document.body}); }
+const labels = { pending: "等待处理", processing: "处理中", replied: "已回复", model_failed: "模型失败", send_failed: "发送失败", delivery_unknown: "送达未知", expired: "已过期", rejected: "已拒绝" };
+function toast(message) { ElementPlus.ElMessage({ message, duration: 4500, showClose: true, grouping: true, customClass: "console-message", appendTo: document.querySelector("dialog[open]") || document.body }); }
 function loggedOut() { document.dispatchEvent(new Event("qbot-logout")); $("bot-form").reset(); csrf = ""; recordsRequest++; ui.records = []; ui.total = 0; ui.loading = false; ui.username = ""; $("workspace").hidden = true; $("login-screen").hidden = false; document.querySelectorAll("dialog[open]").forEach(d => d.close()); }
 async function api(path, options = {}) {
-  const response = await fetch("/api/admin" + path, {credentials:"same-origin", ...options, headers:{"Content-Type":"application/json", "X-QBot-Admin":"1", "X-CSRF-Token":csrf, ...options.headers}});
+  const response = await fetch("/api/admin" + path, { credentials: "same-origin", ...options, headers: { "Content-Type": "application/json", "X-QBot-Admin": "1", "X-CSRF-Token": csrf, ...options.headers } });
   let data; try { data = await response.json(); } catch { throw new Error("服务器响应异常，请稍后重试"); }
   if (!response.ok) { if (response.status === 401 && path !== "/login") loggedOut(); throw new Error(data.detail || "请求失败"); }
   return data;
@@ -64,16 +64,16 @@ async function api(path, options = {}) {
 async function generateSpeech(providerId, text, voice = "Bunny") {
   if (!providerId || !text.trim()) throw new Error("请选择 TTS 模型并输入文本");
   const response = await fetch(`/api/admin/providers/${providerId}/speech`, {
-    method:"POST", credentials:"same-origin",
-    headers:{"Content-Type":"application/json", "X-QBot-Admin":"1", "X-CSRF-Token":csrf},
-    body:JSON.stringify({text:text.trim(), voice:voice.trim()})
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "X-QBot-Admin": "1", "X-CSRF-Token": csrf },
+    body: JSON.stringify({ text: text.trim(), voice: voice.trim() })
   });
   if (!response.ok) {
     if (response.status === 401) loggedOut();
     if (response.status === 404) throw new Error("当前后端未找到语音合成接口。请确认访问的是本项目服务，完成数据库迁移后重启 Python 服务，再刷新后台；仅刷新页面不会加载新接口。");
     const data = await response.json(); throw new Error(data.detail || "语音合成失败");
   }
-  return new File([await response.blob()], "tts.wav", {type:"audio/wav"});
+  return new File([await response.blob()], "tts.wav", { type: "audio/wav" });
 }
 async function enter() {
   const state = await api("/session"); csrf = state.csrf_token;
@@ -87,10 +87,10 @@ function date(value) { return value ? new Date(/[Zz]|[+-]\d\d:\d\d$/.test(value)
 function tokenNumber(value) { return value == null ? "未知" : Number(value).toLocaleString(); }
 function tokenText(item) { return [item.input_tokens, item.output_tokens, item.total_tokens].map(tokenNumber).join(" / "); }
 function element(tag, text, className) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; }
-function button(text, action) { const node = element("button", text, "row-action"); node.type = "button"; node.onclick = async () => { node.disabled = true; try { await action(); } catch(e) { toast(e.message); } finally { node.disabled = false; } }; return node; }
+function button(text, action) { const node = element("button", text, "row-action"); node.type = "button"; node.onclick = async () => { node.disabled = true; try { await action(); } catch (e) { toast(e.message); } finally { node.disabled = false; } }; return node; }
 async function loadRecords() {
-  const request = ++recordsRequest, params = new URLSearchParams({page:String(currentPage),page_size:"20"});
-  for (const [name,value] of new FormData($("filter-form"))) if(value) params.set(name, ["start","end"].includes(name) ? new Date(value).toISOString() : value.trim());
+  const request = ++recordsRequest, params = new URLSearchParams({ page: String(currentPage), page_size: "20" });
+  for (const [name, value] of new FormData($("filter-form"))) if (value) params.set(name, ["start", "end"].includes(name) ? new Date(value).toISOString() : value.trim());
   ui.loading = true; ui.recordError = "";
   $("record-count").textContent = "正在加载…";
   let data;
@@ -102,14 +102,14 @@ async function loadRecords() {
     }
     throw error;
   }
-  if(request !== recordsRequest) return;
+  if (request !== recordsRequest) return;
   ui.records = data.items; ui.total = data.total; ui.recordPage = data.page; ui.pageSize = data.page_size; ui.loading = false;
   $("record-count").textContent = `共 ${data.total} 条`;
 
 }
 let detailRecord = null;
 function renderDetailMeta(item) {
-  const source = {qq_group:"QQ 群聊", qq_c2c:"QQ 私聊", local:"本地聊天"}[item.source] || item.source;
+  const source = { qq_group: "QQ 群聊", qq_c2c: "QQ 私聊", local: "本地聊天" }[item.source] || item.source;
   $("detail-meta").textContent = `${botLabel(item.bot_id)} · ${source} · ${date(item.received_at)} · ${labels[item.status] || item.status} · ${item.provider_name_snapshot || "未调用模型"} / ${item.model_name_snapshot || "—"}${item.source === "qq_group" ? " · 群 " + groupDisplay(item) : ""} · 用户 ${userDisplay(item)}`;
   $("detail-meta").append(document.createTextNode(` · 聊天 Token（输入 / 输出 / 总计）：${tokenText(item)}`));
 }
@@ -120,11 +120,11 @@ function renderTimingDetails(item) {
   const head = element("thead"), heading = element("tr"), body = element("tbody");
   for (const label of ["阶段", "耗时", "状态"]) heading.append(element("th", label));
   head.append(heading); table.append(head, body);
-  const legacy = (value, status) => ({elapsed_ms:value, status});
+  const legacy = (value, status) => ({ elapsed_ms: value, status });
   function row(label, value) {
     const ms = value?.elapsed_ms, available = typeof ms === "number" && Number.isFinite(ms) && ms >= 0;
     const tr = element("tr");
-    const state = available ? ({success:"完成", failed:"失败 / 超时", cancelled:"中断 / 超时", finished:"已结束", unrecognized:"未识别", processing:"处理中"}[value.status] || "已记录") : "—";
+    const state = available ? ({ success: "完成", failed: "失败 / 超时", cancelled: "中断 / 超时", finished: "已结束", unrecognized: "未识别", processing: "处理中" }[value.status] || "已记录") : "—";
     tr.append(element("td", label), element("td", available ? (ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} 秒`) : "未记录"), element("td", state));
     body.append(tr);
   }
@@ -148,7 +148,7 @@ function renderTimingDetails(item) {
   row("私聊音频转码", timings.convert);
   row("语音上传", timings.upload);
   row("QQ 发送", timings.send);
-  host.append(table, element("p", "汇总包含子阶段，请勿相加。总耗时从入队开始，截止处理收尾，不含首次入库及最终耗时保存；QQ 发送耗时不等于开始播放时间。未执行、尚未结束或历史缺失阶段显示未记录。", "muted"));
+  host.append(table);
 }
 async function showDetail(id) {
   const item = await api("/records/" + id);
@@ -176,14 +176,14 @@ async function loadProviders() {
   for (const item of providers) {
     const card = element("article", undefined, "provider-card"), top = element("div", undefined, "top");
     top.append(element("h2", item.name), element("span", item.id === defaultProvider ? "默认使用" : item.enabled ? "已启用" : "已停用", "badge " + (item.enabled ? "replied" : "")));
-    card.append(top, element("p", `${({chat:"chat · 聊天",image:"图片生成",asr:"asr · 录音识别",realtime:"实时通话 · 语音对话",asr_realtime:"实时语音识别 · 通话",tts:"tts · 语音合成"})[item.model_type]} · ${item.api_type === "deepseek" ? "DeepSeek" : item.api_type === "openai_chat" ? "OpenAI 兼容 · Chat Completions" : "兼容聊天 / 千问原生语音接口"} · ${item.model_name}`), element("p", item.base_url, "muted"), element("p", "API Key  " + item.api_key_mask, "muted"));
+    card.append(top, element("p", `${({ chat: "chat · 聊天", image: "图片生成", asr: "asr · 录音识别", realtime: "实时通话 · 语音对话", asr_realtime: "实时语音识别 · 通话", tts: "tts · 语音合成" })[item.model_type]} · ${item.api_type === "deepseek" ? "DeepSeek" : item.api_type === "openai_chat" ? "OpenAI 兼容 · Chat Completions" : "兼容聊天 / 千问原生语音接口"} · ${item.model_name}`), element("p", item.base_url, "muted"), element("p", "API Key  " + item.api_key_mask, "muted"));
     const actions = element("div", undefined, "actions"); actions.append(button("编辑配置", () => editProvider(item)));
-    if(item.model_type === "chat" && item.enabled && item.id !== defaultProvider && item.id !== fallbackProvider) actions.append(button("设为默认", async () => { await api("/default-provider", {method:"PUT",body:JSON.stringify({provider_id:item.id})}); await loadProviders(); toast("默认供应商已更新"); }));
+    if (item.model_type === "chat" && item.enabled && item.id !== defaultProvider && item.id !== fallbackProvider) actions.append(button("设为默认", async () => { await api("/default-provider", { method: "PUT", body: JSON.stringify({ provider_id: item.id }) }); await loadProviders(); toast("默认供应商已更新"); }));
     if (item.id === fallbackProvider) top.append(element("span", "备用模型", "badge replied"));
     if (item.model_type === "chat" && item.enabled && item.has_api_key && item.id !== defaultProvider) {
       actions.append(button(item.id === fallbackProvider ? "取消备用" : "设为备用", async () => {
         try {
-          await api("/fallback-provider", {method:"PUT", body:JSON.stringify({provider_id:item.id === fallbackProvider ? null : item.id})});
+          await api("/fallback-provider", { method: "PUT", body: JSON.stringify({ provider_id: item.id === fallbackProvider ? null : item.id }) });
           await loadProviders(); toast("备用模型已更新，下次聊天请求生效");
         } catch (e) { toast(e.message); }
       }));
@@ -192,9 +192,17 @@ async function loadProviders() {
     const probe = button("测试连接", async () => {
       outcome.textContent = "正在发送“你好”，请稍候…";
       try {
-        const result = await api(`/providers/${item.id}/test`, {method:"POST"});
-        outcome.textContent = `${result.success ? "成功" : "失败"} · 耗时 ${result.latency_ms} ms · ${result.message}${result.reply ? " · 回复：" + result.reply : ""}`;
-      } catch(e) { outcome.textContent = "检查失败：" + e.message; }
+        const result = await api(`/providers/${item.id}/test`, { method: "POST" });
+        const duration = value => value == null ? "未提供" : `${(value / 1000).toFixed(2)} 秒`;
+        outcome.style.whiteSpace = "pre-wrap";
+        outcome.textContent = [
+          `${result.success ? "成功" : "失败"} · ${result.message}`,
+          `总耗时：${duration(result.latency_ms)} · 首正文等待：${duration(result.first_text_ms)}`,
+          `思考片段至正文：${duration(result.reasoning_elapsed_ms)} · 思考 tokens：${result.reasoning_tokens ?? "未提供"}`,
+          `思考信息：${result.reasoning || "接口未返回思考内容"}`,
+          ...(result.reply ? [`回复：${result.reply}`] : []),
+        ].join("\n");
+      } catch (e) { outcome.textContent = "检查失败：" + e.message; }
     });
     probe.disabled = !item.has_api_key || !["chat", "tts"].includes(item.model_type);
     if (item.model_type === "tts") {
@@ -202,7 +210,7 @@ async function loadProviders() {
       text.maxLength = 500; text.value = "你好，这是语音合成效果测试。"; text.setAttribute("aria-label", "试听文本");
       voice.value = "Bunny"; voice.setAttribute("aria-label", "音色名称"); voice.setAttribute("list", "tts-voices");
       player.controls = true; player.hidden = true;
-      card.append(element("p", "音色默认 Bunny（萌小姬），可选 Bella、Mochi、Momo 等，或填写官方音色 ID。测试会调用付费接口。Flash 模型不能通过填写描述自定义声音。", "muted"), text, voice, player);
+      card.append(element("p", "填写官方音色 ID；试听可能产生费用。", "muted"), text, voice, player);
       probe.onclick = async () => {
         probe.disabled = true; player.pause(); player.hidden = true;
         if (player.dataset.url) { URL.revokeObjectURL(player.dataset.url); delete player.dataset.url; }
@@ -214,7 +222,7 @@ async function loadProviders() {
           if (!card.isConnected) return;
           player.src = URL.createObjectURL(file); player.dataset.url = player.src; player.hidden = false;
           outcome.textContent = `合成成功 · 耗时 ${Math.round(performance.now() - started)} ms · 点击播放器试听`;
-        } catch(e) { outcome.textContent = "合成失败：" + e.message; }
+        } catch (e) { outcome.textContent = "合成失败：" + e.message; }
         finally { probe.disabled = false; }
       };
     } else if (item.model_type === "realtime") outcome.textContent = "请在「语音通话」选择实时对话模式并拨号；此模型直接输出语音，无需单独 TTS。";
@@ -230,9 +238,9 @@ async function loadProviders() {
         if (!file || file.size > 8000000) throw new Error("请选择不超过8 MB的文件");
         outcome.textContent = item.model_name.includes("filetrans") ? "正在上传并等待异步转写，最长约80秒…" : "正在处理…";
         try {
-          const result = await api(`/providers/${item.id}/inspect-media?kind=${kind}`, {method:"POST", headers:{"Content-Type":"application/octet-stream"}, body:file});
+          const result = await api(`/providers/${item.id}/inspect-media?kind=${kind}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
           outcome.textContent = `${result.success ? "成功" : "失败"} · ${result.latency_ms} ms · ${result.reply || result.message}`;
-        } catch(e) { outcome.textContent = "处理失败：" + e.message; }
+        } catch (e) { outcome.textContent = "处理失败：" + e.message; }
       });
       inspect.disabled = !item.has_api_key; actions.append(inspect);
       if (kind === "audio") { probe.hidden = true; outcome.textContent = "选择短语音后点击转写。"; }
@@ -254,10 +262,12 @@ function providerPreset(item) {
 function showProviderPreset() {
   const form = $("provider-form"), preset = $("provider-preset").value;
   const kind = form.elements.model_type.value;
+  $("provider-thinking-field").hidden = kind !== "chat";
+  if (kind !== "chat") form.elements.enable_thinking.checked = false;
   $("provider-preset-hint").textContent = preset === "qwen"
     ? (kind === "asr" ? "千问 ASR 默认 Filetrans：先上传 WAV，再异步转写。临时文件保留48小时，仅供开发试用；正式部署请使用自有 OSS。" : "千问默认北京地域；切换类型会重新填写推荐模型和地址。其他地域可手动修改，API Key 须匹配地域。")
     : preset === "deepseek" ? "DeepSeek 预设用于聊天，默认 deepseek-flash。填写自己的 API Key 后保存。" : "自行填写 HTTPS 地址、模型和接口。自定义不会自动适配未知的 ASR / TTS 协议。";
-  const names = preset === "qwen" ? ({chat:["qwen3.8-flash", "qwen3-vl-plus"], asr:["qwen-audio-3.0-asr-flash-filetrans", "qwen-audio-3.1-asr-flash-filetrans", "qwen-audio-3.0-asr-flash", "qwen-audio-3.1-asr-flash"], realtime:["qwen-audio-3.1-realtime-flash"], asr_realtime:["qwen3-asr-flash-realtime"], tts:["qwen3-tts-flash-realtime"]}[kind] || []) : preset === "deepseek" ? ["deepseek-flash", "deepseek-v4-pro"] : [];
+  const names = preset === "qwen" ? ({ chat: ["qwen3.8-flash", "qwen3-vl-plus"], asr: ["qwen-audio-3.0-asr-flash-filetrans", "qwen-audio-3.1-asr-flash-filetrans", "qwen-audio-3.0-asr-flash", "qwen-audio-3.1-asr-flash"], realtime: ["qwen-audio-3.1-realtime-flash"], asr_realtime: ["qwen3-asr-flash-realtime"], tts: ["qwen3-tts-flash-realtime"] }[kind] || []) : preset === "deepseek" ? ["deepseek-flash", "deepseek-v4-pro"] : [];
   $("provider-model-suggestions").replaceChildren(...names.map(name => new Option(name, name)));
 }
 function applyProviderPreset() {
@@ -272,7 +282,7 @@ function applyProviderPreset() {
   } catch { form.elements.api_key.value = ""; }
   form.elements.api_type.value = preset === "deepseek" ? "deepseek" : "openai_compatible";
   form.elements.base_url.value = base;
-  form.elements.model_name.value = preset === "deepseek" ? "deepseek-flash" : {chat:"qwen3.8-flash", asr:"qwen-audio-3.0-asr-flash-filetrans", realtime:"qwen-audio-3.1-realtime-flash", asr_realtime:"qwen3-asr-flash-realtime", tts:"qwen3-tts-flash-realtime"}[kind];
+  form.elements.model_name.value = preset === "deepseek" ? "deepseek-flash" : { chat: "qwen3.8-flash", asr: "qwen-audio-3.0-asr-flash-filetrans", realtime: "qwen-audio-3.1-realtime-flash", asr_realtime: "qwen3-asr-flash-realtime", tts: "qwen3-tts-flash-realtime" }[kind];
   form.elements.supports_images.checked = preset === "qwen" && kind === "chat";
   if (!form.elements.name.value.trim()) form.elements.name.value = (preset === "qwen" ? "千问" : "DeepSeek") + " " + kind;
   showProviderPreset();
@@ -294,9 +304,10 @@ $("provider-form").elements.model_type.onchange = () => {
 function editProvider(item) {
   const form = $("provider-form"); form.reset(); $("provider-error").textContent = "";
   $("provider-preset").value = item ? providerPreset(item) : "deepseek";
-  const defaults = item || {id:"",name:"",model_type:"chat",api_type:"deepseek",base_url:"https://api.deepseek.com",model_name:"deepseek-flash",enabled:false};
-  for(const key of ["id","name","model_type","api_type","base_url","model_name"]) form.elements[key].value = defaults[key];
+  const defaults = item || { id: "", name: "", model_type: "chat", api_type: "deepseek", base_url: "https://api.deepseek.com", model_name: "deepseek-flash", enabled: false };
+  for (const key of ["id", "name", "model_type", "api_type", "base_url", "model_name"]) form.elements[key].value = defaults[key];
   form.elements.supports_images.checked = Boolean(defaults.supports_images);
+  form.elements.enable_thinking.checked = Boolean(defaults.enable_thinking);
   form.elements.enabled.checked = Boolean(defaults.enabled); form.elements.api_key.value = "";
   showProviderPreset();
   $("provider-title").textContent = item ? "编辑供应商" : "添加供应商"; $("provider-dialog").showModal();
@@ -314,12 +325,12 @@ function switchPage(page) {
 document.querySelectorAll("[data-close]").forEach(node => node.onclick = () => $(node.dataset.close).close());
 $("provider-dialog").addEventListener("close", () => $("provider-form").elements.api_key.value = "");
 $("new-provider").onclick = () => editProvider(null);
-$("environment-default").onclick = async () => {try {await api("/default-provider", {method:"PUT",body:JSON.stringify({provider_id:null})}); await loadProviders(); toast("已取消默认供应商，选择新默认项后才能聊天");} catch(e) {toast(e.message);}};
-$("provider-form").onsubmit = async event => {event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id; data.enabled = form.elements.enabled.checked; data.supports_images = form.elements.supports_images.checked; submit.disabled = true; $("provider-error").textContent = ""; try {await api("/providers" + (id ? "/" + id : ""), {method:id ? "PUT" : "POST",body:JSON.stringify(data)}); $("provider-dialog").close(); await loadProviders(); toast("配置已保存，下次模型请求生效");} catch(e) {$("provider-error").textContent = e.message;} finally {submit.disabled = false;}};
-$("filter-form").onsubmit = event => {event.preventDefault();currentPage = 1;loadRecords().catch(e => toast(e.message));};
-$("reset-filters").onclick = () => {$("filter-form").reset();currentPage = 1;loadRecords().catch(e => toast(e.message));};
+$("environment-default").onclick = async () => { try { await api("/default-provider", { method: "PUT", body: JSON.stringify({ provider_id: null }) }); await loadProviders(); toast("已取消默认供应商，选择新默认项后才能聊天"); } catch (e) { toast(e.message); } };
+$("provider-form").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id; data.enabled = form.elements.enabled.checked; data.supports_images = form.elements.supports_images.checked; data.enable_thinking = form.elements.model_type.value === "chat" && form.elements.enable_thinking.checked; submit.disabled = true; $("provider-error").textContent = ""; try { await api("/providers" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) }); $("provider-dialog").close(); await loadProviders(); toast("配置已保存，下次模型请求生效"); } catch (e) { $("provider-error").textContent = e.message; } finally { submit.disabled = false; } };
+$("filter-form").onsubmit = event => { event.preventDefault(); currentPage = 1; loadRecords().catch(e => toast(e.message)); };
+$("reset-filters").onclick = () => { $("filter-form").reset(); currentPage = 1; loadRecords().catch(e => toast(e.message)); };
 $("refresh-records").onclick = () => loadRecords().catch(e => toast(e.message));
-enter().catch(e => {if(!$("workspace").hidden) toast(e.message);});
+enter().catch(e => { if (!$("workspace").hidden) toast(e.message); });
 
 async function loadBots() {
   const data = await api("/bots");
@@ -374,14 +385,14 @@ async function loadBots() {
         profileState.textContent = result.success ? `官方 ID：${result.profile.id}` : result.message;
         const url = result.profile?.avatar;
         botAvatarUrls.set(Number(item.id), url || "");
-        document.dispatchEvent(new CustomEvent("qbot-profile-loaded", {detail:{botId:item.id}}));
-        if(url) {
+        document.dispatchEvent(new CustomEvent("qbot-profile-loaded", { detail: { botId: item.id } }));
+        if (url) {
           avatar.hidden = true; placeholder.hidden = false;
           avatar.src = url;
           if (avatar.complete && avatar.naturalWidth > 0) { avatar.hidden = false; placeholder.hidden = true; }
         }
         else { avatar.removeAttribute("src"); avatar.hidden = true; placeholder.hidden = false; }
-      } catch(e) { officialName.textContent = item.name; profileState.textContent = e.message; }
+      } catch (e) { officialName.textContent = item.name; profileState.textContent = e.message; }
     };
     card.append(profileHeading, profileState, element("p", `本地备注：${item.name} #${item.id}`, "muted"), element("p", `AppID：${item.app_id || "未配置"}`),
       element("p", `${item.transport} · ${item.status}`), element("p", `AppSecret：${item.secret_mask}`, "muted"),
@@ -390,11 +401,11 @@ async function loadBots() {
     const actions = element("div", undefined, "actions");
     actions.append(button("编辑配置", () => editBot(item)), button("身份角色", () => openRoleManager(item)), button("刷新官方资料", () => renderProfile(true)));
     actions.append(button(item.running ? "重新连接" : "启动", async () => {
-      const result = await api(`/bots/${item.id}/start`, {method:"POST"});
+      const result = await api(`/bots/${item.id}/start`, { method: "POST" });
       await loadBots(); toast(result.status);
     }));
-    if(item.enabled || item.running) actions.append(button("停止", async () => {
-      const result = await api(`/bots/${item.id}/stop`, {method:"POST"});
+    if (item.enabled || item.running) actions.append(button("停止", async () => {
+      const result = await api(`/bots/${item.id}/stop`, { method: "POST" });
       await loadBots(); toast(result.status);
     }));
     card.append(actions); $("bots-list").append(card);
@@ -414,8 +425,8 @@ async function editBot(item) {
   const data = await api("/providers");
   const form = $("bot-form"); form.reset(); $("bot-error").textContent = "";
   $("bot-provider").replaceChildren(new Option("跟随全局默认供应商", ""));
-  for(const provider of data.items) {
-    if(provider.model_type === "chat" && (provider.enabled || provider.id === item?.provider_id)) {
+  for (const provider of data.items) {
+    if (provider.model_type === "chat" && (provider.enabled || provider.id === item?.provider_id)) {
       $("bot-provider").add(new Option(provider.name + (provider.enabled ? "" : "（已停用）"), provider.id));
     }
   }
@@ -431,8 +442,8 @@ async function editBot(item) {
   }
   form.elements.mm_voice.value = mm.voice || "Bunny";
   for (const key of ["private_reply", "group_reply"]) form.elements["mm_" + key].value = mm[key] || "text";
-  const values = item || {id:"", name:"", app_id:"", transport:"websocket", provider_id:null, system_prompt:"", enabled:false};
-  for(const key of ["id", "name", "app_id", "transport", "provider_id", "system_prompt"]) form.elements[key].value = values[key] ?? "";
+  const values = item || { id: "", name: "", app_id: "", transport: "websocket", provider_id: null, system_prompt: "", enabled: false };
+  for (const key of ["id", "name", "app_id", "transport", "provider_id", "system_prompt"]) form.elements[key].value = values[key] ?? "";
   form.elements.enabled.checked = Boolean(values.enabled);
   $("bot-title").textContent = item ? "编辑机器人" : "添加机器人";
   $("bot-dialog").showModal();
@@ -449,9 +460,9 @@ $("bot-form").onsubmit = async event => {
   data.enabled = form.elements.enabled.checked; data.provider_id = data.provider_id ? Number(data.provider_id) : null;
   submit.disabled = true; $("bot-error").textContent = "";
   try {
-    const result = await api("/bots" + (id ? "/" + id : ""), {method:id ? "PUT" : "POST", body:JSON.stringify(data)});
+    const result = await api("/bots" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
     form.elements.app_secret.value = ""; $("bot-dialog").close(); await loadBots(); toast("已保存：" + result.status);
-  } catch(e) { $("bot-error").textContent = e.message; } finally { submit.disabled = false; }
+  } catch (e) { $("bot-error").textContent = e.message; } finally { submit.disabled = false; }
 };
 $("bot-dialog").addEventListener("close", () => $("bot-form").elements.app_secret.value = "");
 $("new-bot").onclick = () => editBot(null).catch(e => toast(e.message));
@@ -465,7 +476,7 @@ async function saveBinding(remove = false) {
   try {
     const binding = await api(`/bots/${item.bot_id}/records/${item.id}/binding`, {
       method: remove ? "DELETE" : "PUT",
-      ...(remove ? {} : {body: JSON.stringify(Object.fromEntries(new FormData(form)))})
+      ...(remove ? {} : { body: JSON.stringify(Object.fromEntries(new FormData(form))) })
     });
     Object.assign(item, binding);
     if (detailRecord === item) {
@@ -473,22 +484,24 @@ async function saveBinding(remove = false) {
       form.elements.qq_number_note.value = item.qq_number_note || "";
     }
     toast(remove ? "已解除绑定，下次对话生效" : "已保存绑定，下次对话生效");
-  } catch(e) { $("binding-error").textContent = e.message; }
+  } catch (e) { $("binding-error").textContent = e.message; }
   finally { controls.forEach(node => node.disabled = false); $("unbind-member").disabled = !detailRecord?.family_role; }
 }
 $("binding-form").onsubmit = event => { event.preventDefault(); void saveBinding(); };
 $("unbind-member").onclick = () => saveBinding(true);
 
 let greetingTarget = null, greetingItem = null, greetingDirty = false, greetingRunning = false;
-let greetingCatalog = {templates: [], libraries: []};
+let greetingCatalog = { templates: [], libraries: [] };
 const greetingTemplateImages = new Map();
 function greetingWorkflow(slot) {
   const fields = $("greeting-form").elements;
-  return {version:1, content_source:fields[slot + "_content_source"].value,
-    image_source:fields[slot + "_image_source"].value, output:fields[slot + "_output"].value,
-    custom_prompt:fields[slot + "_custom_prompt"].value.trim(),
-    prompt_style:fields[slot + "_prompt_style"].value || null,
-    library_id:fields[slot + "_image_source"].value === "library" ? fields[slot + "_library_id"].value || null : null};
+  return {
+    version: 1, content_source: fields[slot + "_content_source"].value,
+    image_source: fields[slot + "_image_source"].value, output: fields[slot + "_output"].value,
+    custom_prompt: fields[slot + "_custom_prompt"].value.trim(),
+    prompt_style: fields[slot + "_prompt_style"].value || null,
+    library_id: fields[slot + "_image_source"].value === "library" ? fields[slot + "_library_id"].value || null : null
+  };
 }
 function fillGreetingWorkflow(slot, workflow) {
   const fields = $("greeting-form").elements;
@@ -558,13 +571,13 @@ for (const slot of ["morning", "noon", "evening", "other"]) {
     $("greeting-error").textContent = "";
     $("greeting-run-result").textContent = "正在按机器人人设生成文案…";
     try {
-      const result = await api(`/bots/${target.botId}/records/${target.recordId}/greetings/${slot}/generate`, {method:"POST"});
+      const result = await api(`/bots/${target.botId}/records/${target.recordId}/greetings/${slot}/generate`, { method: "POST" });
       if (greetingTarget !== target || !$("greeting-dialog").open) return;
       form.elements[slot + "_content"].value = result.content;
       $(slot + "-preview").textContent = result.content;
       greetingDirty = true;
       $("greeting-run-result").textContent = "文案已生成，可继续修改；点击保存设置后生效。";
-    } catch(e) {
+    } catch (e) {
       $("greeting-error").textContent = e.message;
       $("greeting-run-result").textContent = "生成未完成，原文案已保留。";
     } finally { greetingRunning = false; controls.forEach(node => node.disabled = false); $("greeting-task-slot").disabled = false; }
@@ -574,7 +587,7 @@ for (const slot of ["morning", "noon", "evening", "other"]) {
 }
 $("greeting-dialog").addEventListener("cancel", event => { if (greetingRunning) event.preventDefault(); });
 function greetingTaskQuery(target) {
-  return target.taskKey ? "?" + new URLSearchParams({task_key:target.taskKey}) : "";
+  return target.taskKey ? "?" + new URLSearchParams({ task_key: target.taskKey }) : "";
 }
 function updateGreetingTaskSlot() {
   const independent = Boolean(greetingTarget?.taskKey);
@@ -609,10 +622,10 @@ $("greeting-task-slot").onchange = () => {
 async function openGreetings(item) {
   if (!item) return;
   const taskKey = item.task_key || "";
-  const data = await api(`/bots/${item.bot_id}/records/${item.id}/greetings` + greetingTaskQuery({taskKey}));
+  const data = await api(`/bots/${item.bot_id}/records/${item.id}/greetings` + greetingTaskQuery({ taskKey }));
   const ttsProviders = (await api("/providers")).items.filter(p => p.model_type === "tts" && p.enabled);
-  greetingTarget = {botId:item.bot_id, recordId:item.id, taskKey, savedSlot:data.task_slot};
-  item = {...item, group_remark:data.group_remark, user_remark:data.user_remark};
+  greetingTarget = { botId: item.bot_id, recordId: item.id, taskKey, savedSlot: data.task_slot };
+  item = { ...item, group_remark: data.group_remark, user_remark: data.user_remark };
   greetingItem = item; greetingDirty = Boolean(taskKey && !data.task_slot);
   $("greeting-run-result").textContent = "";
   const form = $("greeting-form"); form.reset(); greetingTemplateImages.clear();
@@ -655,7 +668,7 @@ async function openGreetings(item) {
   $("greeting-history").replaceChildren();
   for (const run of data.history) {
     const state = ["pending", "processing"].includes(run.status) ? "处理中／等待重试" : (labels[run.status] || run.status);
-    $("greeting-history").append(element("p", `${run.local_date} · ${run.manual ? "手动执行" : "自动／历史领取"} · ${({morning:"早间", noon:"午间", evening:"晚间", other:"其他时段"})[run.slot]} · ${state} · 对话 #${run.record_id}${run.attempt_count ? ` · 已尝试${run.attempt_count}次` : ""}`), element("pre", run.content), element("p", run.error_message || "", "error"));
+    $("greeting-history").append(element("p", `${run.local_date} · ${run.manual ? "手动执行" : "自动／历史领取"} · ${({ morning: "早间", noon: "午间", evening: "晚间", other: "其他时段" })[run.slot]} · ${state} · 对话 #${run.record_id}${run.attempt_count ? ` · 已尝试${run.attempt_count}次` : ""}`), element("pre", run.content), element("p", run.error_message || "", "error"));
   }
   if (!data.history.length) $("greeting-history").append(element("p", "暂无记录", "muted"));
   $("greeting-dialog").showModal();
@@ -672,12 +685,12 @@ for (const slot of ["morning", "noon", "evening", "other"]) $(slot + "-run").onc
   greetingRunning = true; controls.forEach(node => node.disabled = true);
   $("greeting-error").textContent = ""; $("greeting-run-result").textContent = "正在执行（失败时按配置重试），请稍候…";
   try {
-    const result = await api(`/bots/${target.botId}/records/${target.recordId}/greetings/${slot}/run` + greetingTaskQuery(target), {method:"POST"});
+    const result = await api(`/bots/${target.botId}/records/${target.recordId}/greetings/${slot}/run` + greetingTaskQuery(target), { method: "POST" });
     const message = `记录 #${result.record_id} · ${result.status === "replied" ? "QQ 已确认发送" : labels[result.status] || result.status}。${result.message || ""}`;
     $("greeting-run-result").textContent = message;
-    try { await openGreetings(item); } catch(e) { $("greeting-error").textContent = "记录刷新失败：" + e.message; }
+    try { await openGreetings(item); } catch (e) { $("greeting-error").textContent = "记录刷新失败：" + e.message; }
     $("greeting-run-result").textContent = message;
-  } catch(e) {
+  } catch (e) {
     $("greeting-run-result").textContent = e.message + "。本次结果未确认时请先查看聊天记录；再次点击会发起新的发送。";
   } finally { greetingRunning = false; controls.forEach(node => node.disabled = false); $("greeting-task-slot").disabled = false; }
 };
@@ -686,16 +699,18 @@ $("greeting-form").onsubmit = async event => {
   const form = event.currentTarget, target = greetingTarget, submit = form.querySelector('[type="submit"]');
   if (!target || greetingRunning) return;
   const slots = target.taskKey ? [$("greeting-task-slot").value] : ["morning", "noon", "evening"];
-  const rules = slots.map(slot => ({slot,
-    enabled:form.elements[slot + "_enabled"].checked,
-    start:form.elements[slot + "_start"].value,
-    content:form.elements[slot + "_content"].value.trim(),
-    delivery_mode:form.elements[slot + "_delivery_mode"].value,
-    workflow:greetingWorkflow(slot),
-    tts_provider_id:Number(form.elements[slot + "_tts_provider_id"].value) || null,
-    voice:form.elements[slot + "_voice"].value.trim(),
-    remove_image:form.elements[slot + "_remove_image"].checked,
-    weekdays:[...form.querySelectorAll(`[name="${slot}_days"]:checked`)].map(node => Number(node.value))
+  const rules = slots.map(slot => ({
+    slot,
+    enabled: form.elements[slot + "_enabled"].checked,
+    start: form.elements[slot + "_start"].value,
+    content: form.elements[slot + "_content"].value.trim(),
+    delivery_mode: form.elements[slot + "_delivery_mode"].value,
+    workflow: greetingWorkflow(slot),
+    tts_provider_id: Number(form.elements[slot + "_tts_provider_id"].value) || null,
+    voice: form.elements[slot + "_voice"].value.trim(),
+    retry_count: Number(form.elements[slot + "_retry_count"].value),
+    remove_image: form.elements[slot + "_remove_image"].checked,
+    weekdays: [...form.querySelectorAll(`[name="${slot}_days"]:checked`)].map(node => Number(node.value))
   }));
   if (rules.some(r => !r.weekdays.length)) {
     $("greeting-error").textContent = "每条任务至少选择一天。"; return;
@@ -717,10 +732,10 @@ $("greeting-form").onsubmit = async event => {
         rule.image_base64 = await greetingImageBase64(file);
       }
     }
-    await api(`/bots/${target.botId}/records/${target.recordId}/greetings`, {method:"PUT", body:JSON.stringify({rules, task_key:target.taskKey, task_name:target.taskKey ? $("greeting-task-name").value.trim() : ""})});
+    await api(`/bots/${target.botId}/records/${target.recordId}/greetings`, { method: "PUT", body: JSON.stringify({ rules, task_key: target.taskKey, task_name: target.taskKey ? $("greeting-task-name").value.trim() : "" }) });
     $("greeting-dialog").close(); toast("定时任务已保存；只在后续设定时间自动执行，错过不补发");
     void loadGreetingTargets();
-  } catch(e) { $("greeting-error").textContent = e.message; }
+  } catch (e) { $("greeting-error").textContent = e.message; }
   finally { greetingRunning = false; controls.forEach(node => node.disabled = false); $("greeting-task-slot").disabled = false; }
 };
 
@@ -790,7 +805,7 @@ $("send-tts-generate").onclick = async () => {
     generatedSpeech = file; generatedSpeech.ttsText = $("send-tts-text").value.trim(); form.elements.media_file.required = false;
     $("send-tts-result").textContent = "生成成功，可试听后点击立即发送。" +
       (target.source === "qq_c2c" ? "私聊发送时自动转成 SILK。" : "") + "修改文本或音色后需重新生成。";
-  } catch(e) { $("send-tts-result").textContent = e.message; }
+  } catch (e) { $("send-tts-result").textContent = e.message; }
   finally { sendPending = false; controls.forEach((node, index) => node.disabled = states[index]); }
 };
 $("send-image-preview").onerror = () => { $("send-file-info").textContent = "图片无法预览，请检查文件格式。"; };
@@ -800,7 +815,7 @@ $("send-audio-preview").onerror = () => {
 $("send-dialog").addEventListener("close", () => { clearMediaPreview(); generatedSpeech = null; $("send-form").elements.media_file.value = ""; sendPayload = null; });
 function composeMessage(item) {
   if (!item || sendPending) return;
-  sendTarget = {botId:item.bot_id, recordId:item.id, source:item.source, requestId:createRequestId()};
+  sendTarget = { botId: item.bot_id, recordId: item.id, source: item.source, requestId: createRequestId() };
   sendPayload = null;
   const form = $("send-form"); form.reset(); form.elements.content.readOnly = false;
   // 每次编写按目标机器人初始化，临时选择仅影响当前消息。
@@ -829,13 +844,13 @@ $("send-form").onsubmit = async event => {
     const kind = form.elements.message_kind.value;
     if (kind === "text") {
       if (!form.elements.content.value.trim()) return;
-      sendPayload = {kind, content:form.elements.content.value.trim()};
+      sendPayload = { kind, content: form.elements.content.value.trim() };
     } else {
       const file = generatedSpeech || form.elements.media_file.files[0];
       if (!file || !file.size || file.size > MAX_MEDIA_BYTES) { $("send-result").textContent = "请选择非空且不超过 3.5 MB 的文件"; return; }
       const allowed = kind === "image" ? /\.(png|jpe?g)$/i : target.source === "qq_group" ? /\.(silk|mp3|wav)$/i : /\.(silk|wav)$/i;
       if (!allowed.test(file.name)) { $("send-result").textContent = "文件格式不适用于此消息类型或会话，请按上方说明选择。"; return; }
-      sendPayload = {kind, file, speechText:generatedSpeech?.ttsText || ""};
+      sendPayload = { kind, file, speechText: generatedSpeech?.ttsText || "" };
     }
   }
   const payload = sendPayload, submit = $("send-submit");
@@ -850,15 +865,15 @@ $("send-form").onsubmit = async event => {
   try {
     const base = `/bots/${target.botId}/records/${target.recordId}`;
     const result = payload.kind === "text" ? await api(base + "/send", {
-      method:"POST", body:JSON.stringify({content:payload.content, request_id:target.requestId})
-    }) : await api(base + "/send-media?" + new URLSearchParams({kind:payload.kind, filename:payload.file.name, request_id:target.requestId}), {
-      method:"POST", headers:{"Content-Type":"application/octet-stream", "X-QBot-Speech-Text":encodeURIComponent(payload.speechText)}, body:payload.file
+      method: "POST", body: JSON.stringify({ content: payload.content, request_id: target.requestId })
+    }) : await api(base + "/send-media?" + new URLSearchParams({ kind: payload.kind, filename: payload.file.name, request_id: target.requestId }), {
+      method: "POST", headers: { "Content-Type": "application/octet-stream", "X-QBot-Speech-Text": encodeURIComponent(payload.speechText) }, body: payload.file
     });
     $("send-result").textContent = `记录 #${result.record_id} · ${result.status === "replied" ? "QQ 已确认发送" : labels[result.status] || result.status}。${result.message || ""}${result.duplicate ? "此请求已记录，未重复发送。" : ""}`;
     if (["pending", "processing", "delivery_unknown"].includes(result.status)) $("send-result").textContent += " 可能已送达或处理中，请先核对 QQ 和聊天记录，不要新建相同消息。";
     void loadRecords().catch(e => toast(e.message));
-    document.dispatchEvent(new CustomEvent("qbot-message-sent", {detail:{botId:target.botId}}));
-  } catch(e) {
+    document.dispatchEvent(new CustomEvent("qbot-message-sent", { detail: { botId: target.botId } }));
+  } catch (e) {
     $("send-result").textContent = e.message + "。请求结果未确认；再次提交沿用同一请求标识和文件。若需更换内容，请关闭后重新打开。";
     submit.textContent = "重新提交同一请求"; submit.disabled = false;
   } finally { sendPending = false; closeButtons.forEach(node => node.disabled = false); }
@@ -872,7 +887,7 @@ async function loadGreetingRecipients() {
   $("greeting-recipient-page").textContent = "";
   if (!botId) { $("greeting-recipient-notice").textContent = "请选择机器人。"; return; }
   $("greeting-recipient-notice").textContent = "正在加载已绑定接收人…";
-  const params = new URLSearchParams({bot_id:botId, page:String(recipientPage), search:$("greeting-recipient-search").value.trim()});
+  const params = new URLSearchParams({ bot_id: botId, page: String(recipientPage), search: $("greeting-recipient-search").value.trim() });
   try {
     const data = await api("/greeting-recipients?" + params);
     if (request !== recipientRequest || !$("greeting-recipient-dialog").open) return;
@@ -884,13 +899,13 @@ async function loadGreetingRecipients() {
       const row = element("tr"), name = element("td", item.contact_name), action = element("td");
       name.append(element("small", item.user_id));
       action.append(button("选择并新建", async () => {
-        await openGreetings({...item, task_key:createRequestId()});
+        await openGreetings({ ...item, task_key: createRequestId() });
         $("greeting-recipient-dialog").close();
       }));
       row.append(name, element("td", item.source === "qq_c2c" ? "私聊 · 仅此用户" : "群聊 · 整个群 " + groupDisplay(item)), action);
       $("greeting-recipient-body").append(row);
     }
-  } catch(e) { if (request === recipientRequest) $("greeting-recipient-notice").textContent = "加载失败：" + e.message; }
+  } catch (e) { if (request === recipientRequest) $("greeting-recipient-notice").textContent = "加载失败：" + e.message; }
 }
 $("new-greeting").onclick = async () => {
   const trigger = $("new-greeting"); trigger.disabled = true;
@@ -901,7 +916,7 @@ $("new-greeting").onclick = async () => {
     $("greeting-recipient-search").value = ""; recipientPage = 1;
     $("greeting-recipient-dialog").showModal();
     await loadGreetingRecipients();
-  } catch(e) { toast(e.message); } finally { trigger.disabled = false; }
+  } catch (e) { toast(e.message); } finally { trigger.disabled = false; }
 };
 $("greeting-recipient-bot").onchange = () => { recipientPage = 1; void loadGreetingRecipients(); };
 $("greeting-recipient-filter").onsubmit = event => { event.preventDefault(); recipientPage = 1; void loadGreetingRecipients(); };
@@ -912,7 +927,7 @@ $("greeting-recipient-dialog").addEventListener("close", () => { recipientReques
 let greetingTargetsPage = 1, greetingTargetsRequest = 0;
 async function loadGreetingTargets() {
   const request = ++greetingTargetsRequest;
-  const params = new URLSearchParams({page:String(greetingTargetsPage)});
+  const params = new URLSearchParams({ page: String(greetingTargetsPage) });
   if ($("greeting-bot").value) params.set("bot_id", $("greeting-bot").value);
   $("greeting-targets-body").replaceChildren();
   $("greeting-targets-empty").hidden = false; $("greeting-targets-empty").textContent = "正在加载…";
@@ -936,7 +951,7 @@ async function loadGreetingTargets() {
         element("td", Number(item.enabled_count) ? `已启用 ${item.enabled_count} 条规则` : "未启用"), action);
       $("greeting-targets-body").append(row);
     }
-  } catch(e) {
+  } catch (e) {
     if (request === greetingTargetsRequest) $("greeting-targets-empty").textContent = "加载失败：" + e.message;
   }
 }
@@ -947,7 +962,7 @@ $("greeting-target-next").onclick = () => { greetingTargetsPage++; void loadGree
 
 let identitiesPage = 1, identitiesRequest = 0;
 async function loadIdentityBindings() {
-  const request = ++identitiesRequest, params = new URLSearchParams({page:String(identitiesPage)});
+  const request = ++identitiesRequest, params = new URLSearchParams({ page: String(identitiesPage) });
   if ($("identity-bot-filter").value) params.set("bot_id", $("identity-bot-filter").value);
   if ($("identity-user-filter").value.trim()) params.set("user_id", $("identity-user-filter").value.trim());
   $("identities-body").replaceChildren(); $("identities-empty").hidden = false;
@@ -968,7 +983,7 @@ async function loadIdentityBindings() {
       const actions = element("td"); actions.append(button(item.family_role ? "编辑身份" : "绑定身份", () => editIdentityBinding(item)));
       if (item.family_role) actions.append(button("解除身份", async () => {
         if (!confirm(`解除 ${botLabel(item.bot_id)} 下 ${item.member_name} 的身份？所有同 OpenID 群聊和私聊都会生效。`)) return;
-        await api(`/bots/${item.bot_id}/records/${item.record_id}/binding`, {method:"DELETE"});
+        await api(`/bots/${item.bot_id}/records/${item.record_id}/binding`, { method: "DELETE" });
         toast("身份已解除，下次对话生效"); await loadIdentityBindings();
       }));
       if (item.role_id) actions.append(button(item.is_owner ? "取消主人" : "设为主人", async () => {
@@ -976,7 +991,7 @@ async function loadIdentityBindings() {
         const message = enabled ? `将 ${item.member_name} 设为 ${botLabel(item.bot_id)} 的唯一主人？原主人会被替换，意见冲突时优先听从新主人。`
           : `取消 ${item.member_name} 的主人身份？`;
         if (!confirm(message)) return;
-        await api(`/bots/${item.bot_id}/records/${item.record_id}/owner`, {method:"PUT", body:JSON.stringify({enabled})});
+        await api(`/bots/${item.bot_id}/records/${item.record_id}/owner`, { method: "PUT", body: JSON.stringify({ enabled }) });
         toast("主人设置已保存，下次对话生效"); await loadIdentityBindings();
       }));
       row.append(bot, element("td", item.user_id), element("td", (item.member_name || "未绑定") + (item.is_owner ? " · 主人" : "")),
@@ -984,11 +999,11 @@ async function loadIdentityBindings() {
         element("td", item.qq_number_note || "—"), actions);
       $("identities-body").append(row);
     }
-  } catch(e) { if (request === identitiesRequest) $("identities-empty").textContent = "加载失败：" + e.message; }
+  } catch (e) { if (request === identitiesRequest) $("identities-empty").textContent = "加载失败：" + e.message; }
 }
 async function editIdentityBinding(item = null, isCurrent = () => true) {
   const form = $("identity-form");
-  const values = item || {bot_id:$("identity-bot-filter").value, user_id:$("identity-user-filter").value.trim(), family_role:"friend"};
+  const values = item || { bot_id: $("identity-bot-filter").value, user_id: $("identity-user-filter").value.trim(), family_role: "friend" };
   if (values.bot_id) await refreshIdentityRoles(values.bot_id);
   if (!isCurrent()) return;
   form.reset(); $("identity-error").textContent = "";
@@ -1004,7 +1019,7 @@ $("identity-bot").onchange = async () => {
   try {
     await refreshIdentityRoles(botId);
     if ($("identity-bot").value === botId) setIdentityOptions(form, botId);
-  } catch(e) { $("identity-error").textContent = e.message; }
+  } catch (e) { $("identity-error").textContent = e.message; }
 };
 $("new-identity-binding").onclick = () => editIdentityBinding().catch(e => toast(e.message));
 $("identity-filter").onsubmit = event => { event.preventDefault(); identitiesPage = 1; void loadIdentityBindings(); };
@@ -1017,17 +1032,17 @@ $("identity-form").onsubmit = async event => {
   const botId = form.elements.bot_id.value; delete values.bot_id;
   submit.disabled = true; $("identity-error").textContent = "";
   try {
-    await api(`/bots/${botId}/identity-bindings`, {method:"PUT", body:JSON.stringify(values)});
+    await api(`/bots/${botId}/identity-bindings`, { method: "PUT", body: JSON.stringify(values) });
     $("identity-dialog").close(); toast("身份已保存，所有同 OpenID 会话下次对话生效");
-    document.dispatchEvent(new CustomEvent("qbot-identity-saved", {detail:{botId,userId:values.user_id}}));
+    document.dispatchEvent(new CustomEvent("qbot-identity-saved", { detail: { botId, userId: values.user_id } }));
     await loadIdentityBindings();
-  } catch(e) { $("identity-error").textContent = e.message; }
+  } catch (e) { $("identity-error").textContent = e.message; }
   finally { submit.disabled = false; }
 };
 
 let userBindingsPage = 1, userBindingsRequest = 0;
 async function loadUserBindings() {
-  const request = ++userBindingsRequest, params = new URLSearchParams({page:String(userBindingsPage)});
+  const request = ++userBindingsRequest, params = new URLSearchParams({ page: String(userBindingsPage) });
   if ($("binding-bot-filter").value) params.set("bot_id", $("binding-bot-filter").value);
   if ($("binding-user-filter").value.trim()) params.set("user_id", $("binding-user-filter").value.trim());
   $("user-bindings-body").replaceChildren(); $("user-bindings-empty").hidden = false;
@@ -1053,12 +1068,12 @@ async function loadUserBindings() {
       const actions = element("td"); actions.append(button(item.contact_name ? "编辑备注" : "添加备注", () => editUserBinding(item)));
       if (item.contact_name && item.record_id) actions.append(button("清除备注", async () => {
         if (!confirm("清除此用户在当前机器人下所有相同 OpenID 会话的备注，并停用这些会话的定时任务？身份角色保持不变。")) return;
-        await api(`/bots/${item.bot_id}/records/${item.record_id}/user-binding`, {method:"DELETE"});
+        await api(`/bots/${item.bot_id}/records/${item.record_id}/user-binding`, { method: "DELETE" });
         toast("已清除共享用户备注，相关定时任务已停用"); await loadUserBindings();
       }));
       row.append(bot, identity, member, element("td", item.contact_qq || "—"), actions); $("user-bindings-body").append(row);
     }
-  } catch(e) { if (request === userBindingsRequest) $("user-bindings-empty").textContent = "加载失败：" + e.message; }
+  } catch (e) { if (request === userBindingsRequest) $("user-bindings-empty").textContent = "加载失败：" + e.message; }
 }
 function updateBindingSource() {
   const form = $("user-binding-form"), group = form.elements.source.value === "qq_group";
@@ -1067,7 +1082,7 @@ function updateBindingSource() {
 }
 function editUserBinding(item = null) {
   const form = $("user-binding-form"); form.reset(); $("user-binding-error").textContent = "";
-  const values = item || {bot_id:$("binding-bot-filter").value, source:"qq_c2c", user_id:$("binding-user-filter").value.trim()};
+  const values = item || { bot_id: $("binding-bot-filter").value, source: "qq_c2c", user_id: $("binding-user-filter").value.trim() };
   for (const key of ["bot_id", "source", "user_id", "group_id", "contact_name", "contact_qq"]) form.elements[key].value = values[key] || "";
   updateBindingSource(); $("user-binding-dialog").showModal();
 }
@@ -1082,9 +1097,9 @@ $("user-binding-form").onsubmit = async event => {
   const values = Object.fromEntries(new FormData(form)), botId = values.bot_id; delete values.bot_id;
   submit.disabled = true; $("user-binding-error").textContent = "";
   try {
-    await api(`/bots/${botId}/user-bindings`, {method:"PUT", body:JSON.stringify(values)});
+    await api(`/bots/${botId}/user-bindings`, { method: "PUT", body: JSON.stringify(values) });
     $("user-binding-dialog").close(); toast("用户备注已保存，同一机器人下相同 OpenID 的会话共用"); await loadUserBindings();
-  } catch(e) { $("user-binding-error").textContent = e.message; }
+  } catch (e) { $("user-binding-error").textContent = e.message; }
   finally { submit.disabled = false; }
 };
 
@@ -1117,7 +1132,7 @@ async function reloadRoleManager() {
       if (roleMutationPending || !confirm(`删除角色“${role.label}”？已有用户绑定此角色时会拒绝删除。`)) return;
       roleMutationPending = true;
       try {
-        await api(`/bots/${botId}/roles/${role.id}`, {method:"DELETE"});
+        await api(`/bots/${botId}/roles/${role.id}`, { method: "DELETE" });
         toast("角色已删除"); editRole(); await reloadRoleManager();
       } finally { roleMutationPending = false; }
     }));
@@ -1140,9 +1155,9 @@ $("role-form").onsubmit = async event => {
   delete data.id; roleMutationPending = true; $("role-error").textContent = "";
   const controls = [...$("roles-dialog").querySelectorAll("button,input")]; controls.forEach(node => node.disabled = true);
   try {
-    await api(`/bots/${botId}/roles` + (id ? `/${id}` : ""), {method:id ? "PUT" : "POST", body:JSON.stringify(data)});
+    await api(`/bots/${botId}/roles` + (id ? `/${id}` : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) });
     toast("角色已保存，下次对话生效"); editRole(); await reloadRoleManager();
-  } catch(e) { $("role-error").textContent = e.message; }
+  } catch (e) { $("role-error").textContent = e.message; }
   finally { roleMutationPending = false; controls.forEach(node => node.disabled = false); }
 };
 
@@ -1150,7 +1165,7 @@ $("role-form").onsubmit = async event => {
 let groupNotePage = 1, groupNoteRequest = 0;
 async function loadGroupNotes() {
   const request = ++groupNoteRequest;
-  const params = new URLSearchParams({page:String(groupNotePage)});
+  const params = new URLSearchParams({ page: String(groupNotePage) });
   if ($("group-note-bot-filter").value) params.set("bot_id", $("group-note-bot-filter").value);
   if ($("group-note-filter-id").value.trim()) params.set("group_id", $("group-note-filter-id").value.trim());
   $("group-note-body").replaceChildren(); $("group-note-notice").textContent = "正在加载…";
@@ -1169,7 +1184,7 @@ async function loadGroupNotes() {
       row.append(element("td", botLabel(item.bot_id)), element("td", item.group_remark || "未备注"), element("td", item.group_id), actions);
       $("group-note-body").append(row);
     }
-  } catch(e) { if (request === groupNoteRequest) $("group-note-notice").textContent = "加载失败：" + e.message; }
+  } catch (e) { if (request === groupNoteRequest) $("group-note-notice").textContent = "加载失败：" + e.message; }
 }
 function editGroupNote(item) {
   const form = $("group-note-form"); form.reset();
@@ -1187,14 +1202,14 @@ $("group-note-form").onsubmit = async event => {
   const botId = Number(form.elements.bot_id.value), groupId = form.elements.group_id.value;
   submit.disabled = true; $("group-note-error").textContent = "";
   try {
-    await api(`/bots/${botId}/group-bindings`, {method:"PUT", body:JSON.stringify({group_id:groupId, name:form.elements.name.value})});
+    await api(`/bots/${botId}/group-bindings`, { method: "PUT", body: JSON.stringify({ group_id: groupId, name: form.elements.name.value }) });
     $("group-note-dialog").close(); toast("群备注已保存");
     await Promise.all([loadGroupNotes(), loadUserBindings(), loadRecords()]);
     if (ui.page === "messages") await loadSendTargets();
     if (detailRecord?.bot_id === botId && detailRecord.group_id === groupId) {
       detailRecord = await api("/records/" + detailRecord.id); renderDetailMeta(detailRecord);
     }
-  } catch(e) { $("group-note-error").textContent = e.message; toast(e.message); }
+  } catch (e) { $("group-note-error").textContent = e.message; toast(e.message); }
   finally { submit.disabled = false; }
 };
 

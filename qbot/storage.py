@@ -276,6 +276,8 @@ class Store(VoiceCallStore, MemoryStore):
         values = dict(values)
         key = values.pop("api_key", "")
         values.setdefault("model_type", "chat")
+        if values.get("enable_thinking") and values["model_type"] != "chat":
+            raise ValueError("思考开关仅用于 chat 模型")
         if values["model_type"] not in ("chat", "image", "asr", "tts", "asr_realtime", "realtime"):
             raise ValueError("无效的模型类型")
         if values["model_type"] in ("asr_realtime", "realtime"):

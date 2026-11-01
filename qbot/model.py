@@ -33,6 +33,10 @@ def provider_model(settings: Settings, provider: dict | None):
                   # 调用方会关闭模型客户端，必须独占连接池，不能使用 LangChain 默认缓存。
                   http_client=DefaultHttpxClient(timeout=settings.model_timeout_seconds),
                   http_async_client=DefaultAsyncHttpxClient(timeout=settings.model_timeout_seconds))
+    # 关闭时省略整个参数，避免不支持显式 false 的接口拒绝请求。
+    if provider.get("enable_thinking"):
+        common["extra_body"] = ({"thinking": {"type": "enabled"}}
+                                if provider["api_type"] == "deepseek" else {"enable_thinking": True})
     if provider["api_type"] == "deepseek":
-        return ChatDeepSeek(**common, api_base=provider["base_url"], extra_body={"thinking": {"type": "disabled"}})
+        return ChatDeepSeek(**common, api_base=provider["base_url"])
     return ChatOpenAI(**common, base_url=provider["base_url"], use_responses_api=False)
