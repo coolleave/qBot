@@ -496,3 +496,7 @@ scheduled_templates 是管理员全局模板表，不保存任何会话身份。
 ## 定时任务重试 JSON 字段（代码已编写，待验证）
 
 `interaction_greetings.delivery.retry_count` 为首次之外的失败重试次数，0～10，默认3；缺失按3处理，不新增表列。`chat_records.media_details` 增加 retry_count、attempt_number、attempts（number/status/error/sent_parts/total_parts），配置变化或取消时可附 retry_stopped。同次领取的多次尝试复用一条chat_records和interaction_greeting_runs；失败后仍占当天额度，仅确认0部分发送且状态安全时可继续，送达未知与部分成功不重试。不恢复进程中断记录。
+
+## 2026-11-01 个人长期记忆跨会话共享（代码已编写，待运行验收）
+
+按用户要求，个人长期条目统一以 `bot_id + subject_id（真实 user_id）` 为归属，在同机器人同用户的私聊和各群会话中共享读取、查询、去重、更正和遗忘。`conversation_id` 保留来源定位，不再作为个人长期记忆的访问边界；已有条目直接按现有 subject_id 使用，无批量搬迁或自动合并历史冲突。自动整理仍按会话收集来源、执行冷却和预算，但旧条目和事实冲突按用户范围检查。个人记忆的编辑/遗忘会清理该用户在本机器人下所有 QQ 会话的摘要、近期恢复边界及在途候选，防止旧内容复活。近期原文、摘要和 `/reset` 仍按当前会话隔离；群共享条目仍按群隔离。仅真实 user_id 完全相同时共享，不通过备注或姓名映射不同 OpenID。复用现有字段，无新增迁移、依赖或环境变量。

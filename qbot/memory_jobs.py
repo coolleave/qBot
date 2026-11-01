@@ -121,8 +121,9 @@ class MemoryJobStore:
                     .values(next_run_at=now + timedelta(seconds=60), reason="等待增量达到整理条件"))
                 return None
             old = [dict(row) for row in conn.execute(select(self.memory_items.c.id, self.memory_items.c.content,
-                self.memory_items.c.fact_key).where(self.memory_items.c.bot_id == bot_id,
-                self.memory_items.c.conversation_id == cid, self.memory_items.c.status == "active",
+                self.memory_items.c.fact_key, self.memory_items.c.scope).where(
+                or_(self._memory_item_scope(bot_id, conversation, "personal"),
+                    self._memory_item_scope(bot_id, conversation, "group")), self.memory_items.c.status == "active",
                 or_(self.memory_items.c.expires_at.is_(None), self.memory_items.c.expires_at > now))
                 .order_by(self.memory_items.c.updated_at.desc()).limit(8)).mappings()]
             payload = {"utc_now": str(now), "subject": conversation["user_id"], "allow_facts": allow_facts,
@@ -286,18 +287,16 @@ class MemoryJobStore:
                 scope = "group" if item.shared else "personal"
                 if item.expires_at and item.expires_at <= utc_now().replace(tzinfo=timezone.utc):
                     continue
-                tombstone = conn.execute(select(m.c.id).where(m.c.bot_id == bot_id,
-                    m.c.conversation_id == conversation["id"], m.c.status == "forgotten",
+                item_scope = self._memory_item_scope(bot_id, conversation, scope)
+                tombstone = conn.execute(select(m.c.id).where(item_scope, m.c.status == "forgotten",
                     or_(m.c.fact_key == item.fact_key, m.c.content_hash == digest(" ".join(item.content.split())))).limit(1)).first()
                 if tombstone:
                     continue
                 status = "active"
-                conflict = conn.execute(select(m).where(m.c.bot_id == bot_id,
-                    m.c.conversation_id == conversation["id"], m.c.fact_key == item.fact_key,
-                    m.c.scope == scope, m.c.status == "active")).mappings().first()
+                conflict = conn.execute(select(m).where(item_scope, m.c.fact_key == item.fact_key,
+                    m.c.status == "active").order_by(m.c.updated_at.desc(), m.c.id.desc())).mappings().first()
                 if item.replace_id:
-                    target = conn.execute(select(m).where(m.c.bot_id == bot_id, m.c.id == item.replace_id,
-                        m.c.conversation_id == conversation["id"], m.c.scope == scope,
+                    target = conn.execute(select(m).where(item_scope, m.c.id == item.replace_id,
                         m.c.fact_key == item.fact_key, m.c.status == "active")).mappings().first()
                     if not target:
                         raise ValueError("候选替换目标不属于当前范围")

@@ -4,6 +4,7 @@ import logging
 from datetime import timedelta, timezone
 
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.sql.elements import ColumnElement
 
 from qbot.memory_config import MemoryConfig, MemoryInput, clip_bytes, digest, json_text, utc_now
 from qbot.memory_jobs import MemoryJobStore
@@ -136,9 +137,18 @@ class MemoryStore(MemoryJobStore):
             generation=state["generation"], config_version=row["version"], owner_version=row["owner_version"],
             is_owner=self._memory_owner(conn, bot_id) == user_id, status="pending", position=0, created_at=utc_now()))
 
+    def _memory_item_scope(self, bot_id: int, conversation: dict, scope: str) -> ColumnElement[bool]:
+        """长期个人条目归用户所有；会话编号仅记录来源，群共享另限当前群。"""
+        m = self.memory_items
+        conditions = [m.c.bot_id == bot_id, m.c.scope == scope,
+                      m.c.subject_id == conversation["user_id"]]
+        if scope == "group":
+            conditions.append(m.c.group_id == conversation["group_id"])
+        return and_(*conditions)
+
     def _memory_available(self, conn, bot_id: int, conversation: dict, *, own_only: bool = False):
         m = self.memory_items
-        scopes = [and_(m.c.conversation_id == conversation["id"], m.c.scope == "personal")]
+        scopes = [self._memory_item_scope(bot_id, conversation, "personal")]
         config = self._memory_settings(conn, bot_id)
         if conversation["source"] == "qq_group":
             shared = and_(m.c.group_id == conversation["group_id"], m.c.scope == "group",
@@ -155,6 +165,7 @@ class MemoryStore(MemoryJobStore):
         conversation = self._memory_conversation(conn, bot_id, values["conversation_id"])
         if values["scope"] == "group" and conversation["source"] != "qq_group":
             raise ValueError("私聊不能创建群共享记忆")
+        item_scope = self._memory_item_scope(bot_id, conversation, values["scope"])
         hashed = digest(" ".join(values["content"].split()))
         expiry = values.get("expires_at")
         if expiry is not None and expiry.tzinfo is not None:
@@ -164,10 +175,9 @@ class MemoryStore(MemoryJobStore):
             matching = m.c.content_hash == hashed
             if values.get("fact_key"):
                 matching = or_(matching, m.c.fact_key == values["fact_key"])
-            conn.execute(m.update().where(m.c.bot_id == bot_id, m.c.conversation_id == conversation["id"],
-                m.c.scope == values["scope"], m.c.status == "forgotten", matching).values(status="superseded"))
-        existing = conn.execute(select(m).where(m.c.bot_id == bot_id, m.c.conversation_id == conversation["id"],
-            m.c.scope == values["scope"], m.c.content_hash == hashed, m.c.status == "active")).mappings().first()
+            conn.execute(m.update().where(item_scope, m.c.status == "forgotten", matching).values(status="superseded"))
+        existing = conn.execute(select(m).where(item_scope,
+            m.c.content_hash == hashed, m.c.status == "active").order_by(m.c.id)).mappings().first()
         if existing and item_id is None:
             merged = sorted(set(json.loads(existing["sources"]) + sources))[-40:]
             conn.execute(m.update().where(m.c.bot_id == bot_id, m.c.id == existing["id"])
@@ -181,10 +191,16 @@ class MemoryStore(MemoryJobStore):
             origin=origin, owner_version=owner_version, status=status, expires_at=expiry, updated_at=utc_now())
         if item_id is not None:
             old = conn.execute(select(m).where(m.c.bot_id == bot_id, m.c.id == item_id,
-                m.c.conversation_id == conversation["id"])).mappings().first()
+                m.c.subject_id == conversation["user_id"])).mappings().first()
             if not old or old["status"] == "forgotten":
                 raise ValueError("记忆不存在或已遗忘")
+            if old["scope"] == "group" and old["group_id"] != conversation["group_id"]:
+                raise ValueError("不能跨群修改共享记忆")
             self._memory_clear_scope(conn, bot_id, dict(old))
+            # 普通编辑保留最初来源会话，不随读取/编辑入口搬迁条目。
+            if old["scope"] == values["scope"]:
+                data["conversation_id"] = old["conversation_id"]
+                data["group_id"] = old["group_id"]
             conn.execute(m.update().where(m.c.bot_id == bot_id, m.c.id == item_id).values(**data))
             return item_id
         return conn.execute(m.insert().values(**data, created_at=utc_now())).inserted_primary_key[0]
@@ -199,7 +215,9 @@ class MemoryStore(MemoryJobStore):
 
     def _memory_clear_scope(self, conn, bot_id: int, item: dict) -> None:
         c = self.conversations
-        ids = [item["conversation_id"]]
+        # 个人条目已跨会话使用，所有同用户会话都必须推进遗忘边界。
+        ids = list(conn.execute(select(c.c.id).where(c.c.bot_id == bot_id,
+            c.c.user_id == item["subject_id"], c.c.source.in_(("qq_c2c", "qq_group")))).scalars())
         if item["scope"] == "group":
             ids = list(conn.execute(select(c.c.id).where(c.c.bot_id == bot_id, c.c.source == "qq_group",
                                                        c.c.group_id == item["group_id"])).scalars())
@@ -219,13 +237,12 @@ class MemoryStore(MemoryJobStore):
             raise ValueError("记忆不存在")
         self._memory_clear_scope(conn, bot_id, dict(item))
         # 保留无正文的事实键/摘要哈希墓碑，防止自动提取再次引入已遗忘属性。
-        same_fact = m.c.id == item_id
+        item_scope = self._memory_item_scope(bot_id,
+            {"user_id": item["subject_id"], "group_id": item["group_id"]}, item["scope"])
+        matching = m.c.content_hash == item["content_hash"]
         if item["fact_key"]:
-            same_fact = or_(same_fact, and_(m.c.conversation_id == item["conversation_id"],
-                m.c.scope == item["scope"], m.c.fact_key == item["fact_key"]))
-        else:
-            same_fact = or_(same_fact, and_(m.c.conversation_id == item["conversation_id"],
-                m.c.scope == item["scope"], m.c.content_hash == item["content_hash"]))
+            matching = or_(matching, m.c.fact_key == item["fact_key"])
+        same_fact = or_(m.c.id == item_id, and_(item_scope, matching))
         conn.execute(m.update().where(m.c.bot_id == bot_id, same_fact)
                      .values(content="", status="forgotten", updated_at=utc_now()))
 
@@ -233,13 +250,17 @@ class MemoryStore(MemoryJobStore):
                           page: int = 1, query: str = "") -> dict:
         m = self.memory_items
         filters = [m.c.bot_id == bot_id]
-        if conversation_id:
-            filters.append(m.c.conversation_id == conversation_id)
         if status:
             filters.append(m.c.status == status)
         if query:
             filters.append(m.c.content.contains(query, autoescape=True))
         with self.engine.connect() as conn:
+            if conversation_id:
+                conversation = self._memory_conversation(conn, bot_id, conversation_id)
+                scopes = [self._memory_item_scope(bot_id, conversation, "personal")]
+                if conversation["source"] == "qq_group":
+                    scopes.append(and_(m.c.scope == "group", m.c.group_id == conversation["group_id"]))
+                filters.append(or_(*scopes))
             total = conn.execute(select(func.count()).select_from(m).where(*filters)).scalar_one()
             rows = conn.execute(select(m).where(*filters).order_by(m.c.updated_at.desc(), m.c.id.desc())
                                 .offset((page - 1) * 20).limit(20)).mappings().all()
@@ -345,12 +366,12 @@ class MemoryStore(MemoryJobStore):
             return "记忆（最近10条）：\n" + "\n".join(f"#{row.id} {row.content[:100]}" for row in rows) if rows else "当前范围没有有效的个人记忆。"
         if kind in ("add", "group"):
             if not value or len(value) > 600:
-                return "请提供1～600字，例如：记住：我喜欢清淡食物。"
+                return "请说出要记住的具体内容（1～600字），例如：记住，我喜欢吃番茄炒蛋。"
             if kind == "group" and (conversation["source"] != "qq_group" or self._memory_owner(conn, bot_id) != conversation["user_id"]):
-                return "当前不能创建群共享记忆；可用 /remember 内容 保存本人记忆。"
+                return "当前不能创建群共享记忆。保存自己的记忆可以说：记住，我喜欢吃番茄炒蛋。"
             values = dict(conversation_id=conversation["id"], content=value, scope="group" if kind == "group" else "personal", category="note")
-            item_id = self._memory_put(conn, bot_id, values, origin="explicit", sources=[record_id], owner_version=config["owner_version"])
-            return f"已记住，编号 #{item_id}。"
+            self._memory_put(conn, bot_id, values, origin="explicit", sources=[record_id], owner_version=config["owner_version"])
+            return f"已保存到{'当前群共享' if kind == 'group' else '你的长期'}记忆：{value}"
         if kind in ("forget", "edit"):
             chunks = value.split(maxsplit=1)
             if not chunks or not chunks[0].lstrip("#").isdigit():
@@ -370,7 +391,7 @@ class MemoryStore(MemoryJobStore):
             self._memory_put(conn, bot_id, values, origin="explicit", sources=[record_id],
                              owner_version=config["owner_version"], item_id=item_id)
             return "已更新记忆，相关近期对话已重新开始。"
-        return "用 /memory 查看；用 /remember 内容 或 记住：内容 保存；用 /memory-edit 编号 新内容 修改；用 /forget 编号 遗忘。主人可用 /remember-group 内容 保存当前群共享记忆。"
+        return "你想让我记住什么？请直接说出具体内容，例如：记住，我喜欢吃番茄炒蛋。想查看已保存的内容，可以问：你记得我什么？"
 
     def memory_version_valid(self, bot_id: int, context: dict) -> bool:
         with self.engine.connect() as conn:

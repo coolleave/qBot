@@ -2,7 +2,7 @@
 
 ## 记忆存储（0024，已编写未执行）
 
-新增 `bot_memory_settings`、`memory_states`、`memory_items`、`memory_sources`、`memory_runs` 五表。Store 继承 MemoryStore，异步入口仍经 Store.call；聊天接收同事务保存记忆来源，批次按来源记录维护 pending/claimed/done/blocked/cancelled/skipped 及分段位置，失败区间不会被最大ID跳过。所有记忆查询和写入限定bot_id及会话/群范围。
+新增 `bot_memory_settings`、`memory_states`、`memory_items`、`memory_sources`、`memory_runs` 五表。Store 继承 MemoryStore，异步入口仍经 Store.call；聊天接收同事务保存记忆来源，批次按来源记录维护 pending/claimed/done/blocked/cancelled/skipped 及分段位置，失败区间不会被最大ID跳过。个人长期条目按bot_id + subject_id共享；摘要、来源和任务按会话处理，群共享条目按群隔离。
 
 调用前用 app_settings 全局行锁与机器人行锁串行预留额度，运行记录单独保存用量、预留和未知状态，不写入聊天token统计。UTC保存时间，预算日按北京时间计算。仅reserved批次在重启时释放预留，calling标记未知不自动重调；已持久化候选只重试数据库提交。遗忘清正文、同事实键历史版本、摘要与候选，推进恢复边界，原始审计记录保留但不再作为旧上下文使用。详见[记忆系统](memory-system.md)；未执行迁移、测试或真实调用。
 
@@ -138,3 +138,7 @@ QQ 被动聊天复用 media_details 保存 timings：队列等待、处理总计
 ## 实时网页通话存储（0025，待联调）
 
 网页记忆单独存入 `voice_memories`，按 bot_id 和服务端管理员账号摘要隔离，显式新增去重、按范围删除；不读写 QQ memory_items/sources。实时模型用量保存在 voice_calls 轮次中，不混入普通聊天 Token 统计。一次用户话语触发工具后可产生多个响应记录，工具续答的 user 为空。播放确认以完整响应为单位，中断响应保留生成文字，但不标为已播放。
+
+## 2026-11-01 个人长期记忆跨会话共享（代码已编写，待运行验收）
+
+按用户要求，个人长期条目统一以 `bot_id + subject_id（真实 user_id）` 为归属，在同机器人同用户的私聊和各群会话中共享读取、查询、去重、更正和遗忘。`conversation_id` 保留来源定位，不再作为个人长期记忆的访问边界；已有条目直接按现有 subject_id 使用，无批量搬迁或自动合并历史冲突。自动整理仍按会话收集来源、执行冷却和预算，但旧条目和事实冲突按用户范围检查。个人记忆的编辑/遗忘会清理该用户在本机器人下所有 QQ 会话的摘要、近期恢复边界及在途候选，防止旧内容复活。近期原文、摘要和 `/reset` 仍按当前会话隔离；群共享条目仍按群隔离。仅真实 user_id 完全相同时共享，不通过备注或姓名映射不同 OpenID。复用现有字段，无新增迁移、依赖或环境变量。

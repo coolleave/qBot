@@ -32,7 +32,7 @@
   const dialog = document.createElement("dialog");
   dialog.id = "memory-item-dialog";
   dialog.innerHTML = `<form id="memory-item-form"><h2>保存记忆</h2><input name="id" type="hidden"><input name="conversation_id" type="hidden">
-    <label>范围<select name="scope"><option value="personal">此会话个人记忆</option><option value="group">当前群共享</option></select></label>
+    <label>范围<select name="scope"><option value="personal">此用户个人记忆</option><option value="group">当前群共享</option></select></label>
     <label>类别<select name="category"><option value="note">笔记</option><option value="preference">偏好</option><option value="fact">事实</option><option value="goal">目标</option><option value="event">事件</option><option value="request">长期要求</option></select></label>
     <label>事实键（可留空）<input name="fact_key" maxlength="80"></label><label>内容<textarea name="content" maxlength="600" rows="5" required></textarea></label>
     <label>到期时间（本地时间，可留空）<input name="expires_at" type="datetime-local"></label><p class="muted">保存待确认条目表示管理员确认其内容。修改会重新开始相关近期对话。</p>
@@ -91,7 +91,7 @@
       tags.append(node("span", statusNames[item.status] || item.status, `memory-tag memory-status-${item.status}`));
       tags.append(node("span", item.scope === "group" ? "群共享" : "个人记忆", "memory-tag"));
       tags.append(node("span", categoryNames[item.category] || item.category || "笔记", "memory-tag"));
-      heading.append(tags, node("span", `#${item.id} · 会话 ${item.conversation_id}`, "memory-meta"));
+      heading.append(tags, node("span", `#${item.id} · 来源会话 ${item.conversation_id}`, "memory-meta"));
       card.append(heading);
       card.append(node("div", `更新于 ${date(item.updated_at)}`, "memory-meta"));
       card.append(node("p", item.content || "正文已清除"));
@@ -100,7 +100,7 @@
       if (item.status !== "forgotten") {
         const edit = node("button", item.status === "pending" ? "确认 / 编辑" : "编辑"); edit.type = "button"; edit.onclick = () => editItem(item); actions.append(edit);
         const remove = node("button", "遗忘", "memory-danger"); remove.type = "button"; remove.onclick = async () => {
-          try { await ElementPlus.ElMessageBox.confirm("将清除记忆正文并重新开始相关近期对话；群共享记忆会影响全群会话。原始审计聊天记录保留。", "遗忘记忆", {type:"warning"}); }
+          try { await ElementPlus.ElMessageBox.confirm("将清除记忆正文；个人记忆会重置该用户的所有相关会话，群共享记忆会重置全群会话。原始聊天记录保留。", "遗忘记忆", {type:"warning"}); }
           catch { return; }
           remove.disabled = true;
           try { await api(base + `/items/${item.id}`, {method:"DELETE"}); await refreshContent(); } catch (error) { fail(error); } finally { remove.disabled = false; }

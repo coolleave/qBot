@@ -87,9 +87,19 @@ def memory_command(text: str) -> tuple[str, str] | None:
     text = text.strip()
     if text in ("/memory", "你记得我什么", "你记得我什么？", "你记得我什么?"):
         return "list", ""
-    for prefix in ("/remember ", "记住：", "记住:"):
+    for prefix in ("/remember ",):
         if text.startswith(prefix):
             return "add", text[len(prefix):].strip()
+    # 只识别句首明确的保存请求，不从“记住这个”等指代中猜测正文。
+    natural_prefix = r"(?:请帮我|帮我|请)?记住"
+    if re.fullmatch(natural_prefix + r"[\s，,:：]*(?:这个|这件事|刚才说的|刚才那件事)?[。！!]*", text):
+        return "help", ""
+    natural = re.match(natural_prefix + r"(?:[\s，,:：]+|(?=我|以后|下次|每次))([\s\S]+)$", text)
+    if natural:
+        content = natural.group(1).strip()
+        if not content or content.rstrip("。！!？?") in ("这个", "这件事", "刚才说的", "刚才那件事"):
+            return "help", ""
+        return "add", content
     for prefix, kind in (("/forget ", "forget"), ("/memory-edit ", "edit"), ("/remember-group ", "group")):
         if text.startswith(prefix):
             return kind, text[len(prefix):].strip()
