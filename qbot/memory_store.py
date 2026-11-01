@@ -374,7 +374,7 @@ class MemoryStore(MemoryJobStore):
             shared = kind == "group" or (kind == "remember" and conversation["source"] == "qq_group")
             values = dict(conversation_id=conversation["id"], content=value, scope="group" if shared else "personal", category="note")
             self._memory_put(conn, bot_id, values, origin="explicit", sources=[record_id], owner_version=config["owner_version"])
-            return f"已保存到{'当前群共享' if shared else '你的长期'}记忆：{value}"
+            return "我记住了"
         if kind in ("forget", "edit"):
             chunks = value.split(maxsplit=1)
             if not chunks or not chunks[0].lstrip("#").isdigit():
