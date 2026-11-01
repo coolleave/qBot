@@ -140,3 +140,5 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 新增 `0026_provider_thinking`，接续0025，为model_providers增加非空布尔enable_thinking，默认0（不发送思考参数）。升级前停止应用、备份并显式执行 `python -m alembic upgrade head`；不自动迁移，不修改已执行版本。
 
 2026-11-01：线上数据库已显式升级至 `0026_provider_thinking`。迁移前供应商表备份位于服务器 `.deploy/backups/thinking-0026/providers-before.json`（私有权限，含加密配置，勿提交）；核对9条供应商原字段完全一致，新增enable_thinking均为0且非空。原生产容器已恢复running healthy。本轮仅升级数据库，新增开关及测速代码尚未提交部署；本地数据库未执行。
+
+2026-11-01 发布记录：功能提交 `555ce6a`（显式记忆范围）及 `eb3f0f6`（供应商思考开关、连接测速、后台说明精简）已推送并部署至实验室服务器。线上数据库已核对为 `0026_provider_thinking (head)`，无需重复迁移。运行镜像10个关键文件SHA-256与仓库一致，容器running healthy、重启次数0，/health和/admin均返回200。Python AST、JavaScript语法及差异静态检查通过；未运行测试、浏览器或本轮真实模型/QQ调用，交互仍待实际验收。

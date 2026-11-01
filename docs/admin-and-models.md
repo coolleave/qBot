@@ -191,3 +191,5 @@ chat 供应商新增 enable_thinking，默认关闭。开启时 DeepSeek 发送 
 本轮Python AST、JavaScript语法与差异静态检查通过。未运行测试、浏览器、真实接口调用或数据库迁移，未提交部署；兼容接口仍需支持Chat Completions流式及用量返回。
 
 2026-11-01：线上数据库已显式升级至 `0026_provider_thinking`。迁移前供应商表备份位于服务器 `.deploy/backups/thinking-0026/providers-before.json`（私有权限，含加密配置，勿提交）；核对9条供应商原字段完全一致，新增enable_thinking均为0且非空。原生产容器已恢复running healthy。本轮仅升级数据库，新增开关及测速代码尚未提交部署；本地数据库未执行。
+
+2026-11-01 发布记录：功能提交 `555ce6a`（显式记忆范围）及 `eb3f0f6`（供应商思考开关、连接测速、后台说明精简）已推送并部署至实验室服务器。线上数据库已核对为 `0026_provider_thinking (head)`，无需重复迁移。运行镜像10个关键文件SHA-256与仓库一致，容器running healthy、重启次数0，/health和/admin均返回200。Python AST、JavaScript语法及差异静态检查通过；未运行测试、浏览器或本轮真实模型/QQ调用，交互仍待实际验收。
