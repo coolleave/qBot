@@ -167,11 +167,13 @@ async function showDetail(id) {
   $("detail-question").textContent = item.question; $("detail-answer").textContent = item.answer || "尚无回复"; $("detail-error").textContent = item.error_message || ""; $("detail-dialog").showModal();
 }
 async function loadProviders() {
+  VoiceCloneRecorder.resetAll();
   const data = await api("/providers"); providers = data.items; defaultProvider = data.default_provider_id;
   $("default-label").textContent = providers.find(p => p.id === defaultProvider)?.name || "尚未选择，请添加并启用默认供应商";
   const fallbackProvider = data.fallback_provider_id;
   $("fallback-label").textContent = providers.find(p => p.id === fallbackProvider)?.name || "未设置备用模型";
   $("providers-list").querySelectorAll("audio").forEach(player => { player.pause(); if (player.dataset.url) URL.revokeObjectURL(player.dataset.url); });
+  VoiceCloneRecorder.disposeAll();
   $("providers-list").replaceChildren(); $("providers-empty").hidden = providers.length > 0;
   for (const item of providers) {
     const card = element("article", undefined, "provider-card"), top = element("div", undefined, "top");
@@ -261,7 +263,7 @@ function addVoiceCloning(card, item, voiceInput) {
   prefix.setAttribute("aria-label", "音色名称");
   upload.type = "file"; upload.accept = ".wav,.mp3"; upload.setAttribute("aria-label", "复刻参考录音");
   select.setAttribute("aria-label", "已创建音色");
-  let records = [], requestId = null, busy = false;
+  let records = [], requestId = null, busy = false, recording = false, recordedFile = null;
   const labels = { unknown: "结果未知", deploying: "处理中", ready: "可试听", failed: "审核未通过" };
   const selected = () => records.find(row => String(row.id) === select.value);
   function useSelected() {
@@ -281,12 +283,14 @@ function addVoiceCloning(card, item, voiceInput) {
     useSelected();
   }
   function setBusy(value) {
-    busy = value; create.disabled = value || !item.has_api_key; upload.disabled = value;
-    prefix.disabled = value; select.disabled = value; refresh.disabled = value || !selected()?.voice_id;
+    busy = value; create.disabled = value || recording || !item.has_api_key; upload.disabled = value || recording;
+    prefix.disabled = value || recording; select.disabled = value || recording;
+    refresh.disabled = value || recording || !selected()?.voice_id;
+    recorder.setDisabled(value);
   }
   const refresh = button("查询状态", async () => {
     const row = selected();
-    if (!row?.voice_id || busy) return;
+    if (!row?.voice_id || busy || recording) return;
     setBusy(true); status.textContent = "正在查询音色…";
     try {
       await api(`/providers/${item.id}/voices/${row.id}/refresh`, { method: "POST" });
@@ -295,10 +299,10 @@ function addVoiceCloning(card, item, voiceInput) {
     finally { setBusy(false); }
   });
   const create = button("创建音色", async () => {
-    if (busy) return;
-    const file = upload.files[0], name = prefix.value.trim();
+    if (busy || recording) return;
+    const file = recordedFile || upload.files[0], name = prefix.value.trim();
     if (!file || file.size > 8000000 || !/\.(wav|mp3)$/i.test(file.name)) {
-      status.textContent = "请选择不超过8 MB的 WAV/MP3 录音"; return;
+      status.textContent = "请先录音，或选择不超过8 MB的 WAV/MP3 文件"; return;
     }
     if (!/^[A-Za-z0-9]{1,10}$/.test(name)) {
       status.textContent = "音色名称需为1～10位英文字母或数字"; return;
@@ -318,12 +322,22 @@ function addVoiceCloning(card, item, voiceInput) {
     } catch (e) { status.textContent = e.message + "；可查询记录，重复点击沿用本次请求。"; }
     finally { setBusy(false); }
   });
-  upload.onchange = prefix.oninput = () => { requestId = null; };
+  const recorder = new VoiceCloneRecorder(file => {
+    recordedFile = file; requestId = null;
+  }, value => {
+    recording = value;
+    if (value) { upload.value = ""; status.textContent = ""; }
+    setBusy(busy);
+  });
+  upload.onchange = () => { recorder.cancel(); recorder.clearSample(); requestId = null; };
+  prefix.oninput = () => { requestId = null; };
   select.onchange = useSelected;
   create.disabled = !item.has_api_key; refresh.disabled = true;
   actions.append(create, refresh);
-  panel.append(element("h3", "音色复刻"), prefix, upload,
-    element("p", "录音5～60秒，建议10～20秒清晰单人声音；创建时上传至百炼。", "muted"), select, actions, status);
+  const alternative = element("details"), summary = element("summary", "或选择已有录音文件");
+  alternative.append(summary, upload);
+  panel.append(element("h3", "音色复刻"), prefix, recorder.node,
+    element("p", "录音5～60秒；点击创建音色后才上传至百炼。", "muted"), alternative, select, actions, status);
   card.append(panel);
   void reload().catch(e => { status.textContent = e.message; });
 }
@@ -395,6 +409,7 @@ function editProvider(item) {
 }
 function switchPage(page) {
   if (!pages.some(item => item[0] === page)) return;
+  if (page !== "providers") VoiceCloneRecorder.resetAll();
   ui.page = page;
   for (const [name] of pages) $(name + "-page").hidden = page !== name;
   if (page === "tokens") void openTokenStats();

@@ -1,5 +1,7 @@
 # 数据库迁移
 
+当前维护偏好（2026-11-02）：按用户要求，后续迁移与部署不执行数据库备份，除非再次明确要求；下文历史备份记录保留，旧流程的备份步骤不再默认执行。
+
 ## 持久化记忆（0024，已编写未执行）
 
 `0024_memory` 接续 `0023_voice_calls`，使用可重复执行的建表语句新增 `bot_memory_settings`、`memory_states`、`memory_items`、`memory_sources`、`memory_runs`，不修改既有表数据或自动回填历史。MySQL 5.6/utf8mb4兼容，JSON采用TEXT，来源去重键包含bot_id。应用启动反射五张新表，因此需先停止服务、备份、显式执行 `python -m alembic upgrade head` 后重启；该命令包含所有尚未执行的前置迁移。降级明确拒绝丢失记忆和账本。本轮未执行迁移、测试或数据库验收，详见[记忆系统](memory-system.md)。

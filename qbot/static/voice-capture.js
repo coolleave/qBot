@@ -8,8 +8,19 @@ class VoiceCapture extends AudioWorkletProcessor {
     this.block = new ArrayBuffer(3200);
     this.view = new DataView(this.block);
     this.offset = 0;
+    this.finished = false;
+    this.port.onmessage = event => {
+      if (event.data?.type !== "flush" || this.finished) return;
+      this.finished = true;
+      if (this.offset) {
+        const tail = this.block.slice(0, this.offset);
+        this.port.postMessage(tail, [tail]);
+      }
+      this.port.postMessage({type: "flushed"});
+    };
   }
   process(inputs) {
+    if (this.finished) return false;
     const channel = inputs[0]?.[0];
     if (!channel) return true;
     for (const sample of channel) {

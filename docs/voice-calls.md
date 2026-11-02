@@ -106,3 +106,5 @@
 新增入口：`qbot/voice_call_realtime.py`、`qbot/prompts/voice_realtime.txt`；记忆管理接口为 GET/POST `/api/admin/voice-calls/memories/{bot_id}` 和 DELETE `/api/admin/voice-calls/memories/{bot_id}/{memory_id}`，沿用管理员身份、同源及写入CSRF校验。全部网页身份范围由后端确定。
 
 本轮静态检查：修改涉及的9个Python文件AST解析、2个JavaScript文件语法检查、通话DOM引用/ID和 `git diff --check` 通过。未运行测试、数据库迁移、浏览器或付费通话；运行效果待验收。
+
+2026-11-02：voice-capture.js增加可选flush消息，将不足100ms的尾部PCM发送后停止处理，供音色复刻网页录音复用；通话不发送flush，原有连续采集与重采样行为保持不变。未进行浏览器或真实通话验证。
