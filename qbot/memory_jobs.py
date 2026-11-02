@@ -190,7 +190,7 @@ class MemoryJobStore:
                 return None
             now = utc_now()
             day = (now + timedelta(hours=8)).date()
-            reserve = batch["input_bound"] + 800
+            reserve = batch["input_bound"] + 4096
             if batch["input_bound"] > 6000:
                 raise ValueError("整理输入超过预算")
             t = self.memory_runs
