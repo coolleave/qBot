@@ -46,3 +46,7 @@ img.brand-mark{display:block;object-fit:contain;flex-shrink:0;background:transpa
   .provider-card { padding: var(--card-padding); }
   .card > .card-title { align-items: flex-start; }
 }
+
+.voice-cloning-panel { display: grid; gap: 10px; padding: 16px; margin-top: 16px; background: var(--bg, #f5f7fb); border: 1px solid var(--border); border-radius: 10px; }
+.voice-cloning-panel h3, .voice-cloning-panel p { margin: 0; }
+.voice-cloning-panel input, .voice-cloning-panel select { min-width: 0; width: 100%; }

@@ -204,3 +204,11 @@ OpenID 依据：[QQ 官方 API 调用指南 · 唯一身份机制](https://bot.q
 官方说明：[百炼深度思考](https://help.aliyun.com/zh/model-studio/deep-thinking)、[DeepSeek 思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)。
 
 本轮 Python AST（5个文件）、JavaScript 语法和 Git 差异静态检查通过；未运行测试、浏览器或真实模型调用，未执行迁移、提交、推送或部署。更新后需刷新后台，旧版表单的 enable_thinking 请求不再接受。
+
+## 2026-11-02 TTS 音色复刻（代码已编写，待联调）
+
+TTS 配置新增默认关闭的 `supports_voice_cloning` 开关，服务端仅允许千问原生接口的 `qwen-audio-3.1-tts-flash/plus` 开启。保存后供应商卡片出现录音上传、创建音色、已创建音色选择和查询状态；音色就绪后点击原有“试听”按钮。使用百炼北京/新加坡域名或对应业务空间域名，API Key 需匹配地域。名称为1～10位英文字母或数字，WAV/MP3最多8 MB、5～60秒。创建会向百炼上传录音，合成试听按供应商计费。
+
+新增管理员接口 GET/POST `/api/admin/providers/{provider_id}/voices`，POST 上传二进制录音并携带 prefix、request_id 查询参数；POST `.../voices/{id}/refresh` 只查询已有音色。写接口沿用CSRF；创建与试听共用并发锁及10秒间隔，音色查询独立串行并限制2秒间隔，不自动循环查询或重试创建。列表返回最近100条，不返回请求指纹或录音。音色ID支持小数点，兼容模型名含3.1的复刻ID。
+
+有复刻记录的供应商不允许改模型、类型或地址，需新建供应商；同账号密钥轮换仍可保存，换账号后旧云端音色可能不可访问。开关关闭只隐藏创建入口和拒绝复刻调用，不删除云端音色或改变已配置的合成音色。首次适配需迁移0028并重启、刷新后台；未执行迁移、测试、浏览器或真实接口。详见[多模态](multimodal.md)。

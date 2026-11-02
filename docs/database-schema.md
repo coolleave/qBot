@@ -510,3 +510,11 @@ scheduled_templates 是管理员全局模板表，不保存任何会话身份。
 ## 三态思考模式（代码已编写，待迁移）
 
 `model_providers.thinking_mode`（0027，待迁移）：非空 VARCHAR(16)，default / enabled / disabled；旧 enable_thinking 列保留并同步为模式是否 enabled，不再作为新代码的配置来源。
+
+## TTS 复刻音色（0028，代码已编写，未迁移）
+
+model_providers 新增 supports_voice_cloning：非空BOOLEAN，默认0，仅受支持的TTS模型可开启。
+
+provider_tts_voices：id BIGINT UNSIGNED自增主键；provider_id同类型外键；request_id CHAR(36)及request_hash CHAR(64)使用ASCII二进制排序；model_name VARCHAR(200)、service_url VARCHAR(2048)、prefix VARCHAR(10)；voice_id可空VARCHAR(100)，ASCII二进制排序；status VARCHAR(16)、error VARCHAR(200)默认空；created_at/updated_at为UTC DATETIME(6)。唯一键uq_provider_voice_request(provider_id, request_id)，外键fk_tts_voice_provider(provider_id)→model_providers(id)。
+
+状态unknown（未确认/中断）、deploying（已返回ID待审核）、ready（审核通过）、failed（审核未通过）。调用前先保存unknown和请求指纹，同一UUID不重新调用；远端成功但响应或本地提交丢失时保留未知状态，需在百炼核对。不含录音/试听音频/Base64/密钥。仅管理员操作，按供应商归属，不绑定QQ bot_id；同供应商可供多个机器人选用。实现入口为storage.py的list/reserve/get/finish_tts_voice与voice_cloning.py。

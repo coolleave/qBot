@@ -21,7 +21,7 @@ class GreetingRule(BaseModel):
     delivery_mode: str = Field(default="text", min_length=1, max_length=80)
     workflow: GreetingWorkflow | None = None
     tts_provider_id: int | None = Field(default=None, gt=0)
-    voice: str = Field(default="Bunny", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_ -]+$")
+    voice: str = Field(default="Bunny", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_. -]+$")
     image_base64: str | None = Field(default=None, max_length=4_666_668)
     image_filename: str = Field(default="", max_length=150)
     remove_image: bool = False

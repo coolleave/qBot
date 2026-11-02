@@ -12,7 +12,8 @@
 | [asr_filetrans.py](../qbot/asr_filetrans.py) | 临时上传、异步转写、轮询、结果读取 |
 | [vision.py](../qbot/vision.py)、[recording.py](../qbot/recording.py) | 独立视觉摘要，再交给聊天模型 |
 | [auto_voice.py](../qbot/auto_voice.py) | 自动语音条件与准备 |
-| [tts.py](../qbot/tts.py)、[audio_codec.py](../qbot/audio_codec.py) | Qwen Realtime WAV 合成及私聊 SILK 转码 |
+| [tts.py](../qbot/tts.py)、[audio_codec.py](../qbot/audio_codec.py) | Qwen Realtime / Qwen-Audio-TTS WAV 合成及私聊 SILK 转码 |
+| [voice_cloning.py](../qbot/voice_cloning.py) | 音色复刻能力校验、录音预处理、创建与状态查询 |
 | [server.py](../qbot/server.py) | 整体期限、最终发送与回退 |
 
 ## 配置与输入链路
@@ -54,7 +55,7 @@ Filetrans 会把音频存到供应商临时空间，本地不持久化不等于�
 
 ## TTS 与自动回复
 
-qwen3-tts-flash-realtime 通过专用 WebSocket 输出 24 kHz 单声道 16 位 PCM WAV，默认 Bunny；支持预设音色，VD/VC 设计与复刻未接入。合成 60 秒预算、不重试，音频最多 3.5 MB。
+qwen3-tts-flash-realtime 通过专用 WebSocket 输出 24 kHz 单声道 16 位 PCM WAV，默认 Bunny；支持预设音色，此旧模型不支持复刻；新版 Qwen-Audio-TTS 复刻接入见文末。合成 60 秒预算、不重试，音频最多 3.5 MB。
 
 自动语音要求不超过 300 字、无代码块/链接/表格、满足策略、无附件警告且剩余至少 80 秒。私聊转 SILK，群聊 WAV。准备预算最多 65 秒；合成、转码或上传失败回退文字，最终发送开始后不补发文字，避免重复。最终媒体发送 10 秒，超时记送达未知。
 
@@ -105,3 +106,17 @@ QQ 被动聊天复用 media_details 保存 timings：队列等待、处理总计
 后台「聊天记录→查看」显示中文耗时表，兼容历史已有模型、视觉及语音汇总字段，缺失显示未记录。计时不改变超时、重试或回复策略，不调用额外模型，无新迁移或依赖。不新增或运行测试，不打开浏览器；本次不自动部署。
 
 2026-10-30：已完成 Python AST、JavaScript 语法及差异静态检查；未运行测试、浏览器或真实模型调用。需部署后重启后端、刷新后台，新消息才会产生完整阶段数据。
+
+## 2026-11-02 TTS 音色复刻（代码已编写，待运行验证）
+
+TTS 供应商增加默认关闭的“支持音色复刻”开关，首批支持 qwen-audio-3.1-tts-flash/plus。保存后在供应商卡片上传 WAV/MP3（最多8 MB，5～60秒，建议10～20秒清晰单人录音），创建音色并查询就绪状态，选择音色后沿用文本试听。原录音经隔离解码转为24kHz单声道WAV，以Base64发送百炼，不保存录音或Base64到数据库/日志；音色保留在供应商云端。
+
+新增 Qwen-Audio-TTS inference WebSocket 合成协议，供后台试听、QQ自动回复、手动发送和定时任务复用；原 qwen3-tts-flash-realtime 保持原协议。网页通话流式TTS暂不扩展。创建不自动重试，以请求UUID防重复；已返回音色ID先持久化，状态查询失败可以再次查询，不重新创建。结果未知明确提示人工核对。音色绑定创建时的供应商、模型及地址，不能跨模型复用。
+
+新增0028_tts_voice_clone迁移，保存开关、音色ID、请求指纹及状态，不含录音和密钥。管理员鉴权、CSRF、并发/频率限制和服务端能力校验覆盖全部接口；已有密钥仍从数据库解密。部署前停止服务、备份并显式迁移，应用不自动迁移。本轮不执行迁移、测试、浏览器或真实模型调用。
+
+协议依据：[声音复刻HTTP API](https://help.aliyun.com/zh/model-studio/voice-clone-design-http-api)、[Qwen-Audio-TTS WebSocket API](https://help.aliyun.com/zh/model-studio/qwen-audio-tts-websocket-api)。
+
+使用复刻声音进行机器人回复、手动发送、定时任务或模板语音时，选择创建音色的同一TTS供应商，并把已就绪音色ID填入音色字段。不会自动覆盖已有机器人音色设置。网页通话仍只支持旧版TTS流式协议，不可选用本轮新增模型。
+
+本轮静态核对：8个Python文件通过AST解析，admin.js通过Node语法检查，git diff --check通过。未新增或运行测试，未打开浏览器，未调用真实复刻/TTS接口，未执行数据库迁移、提交或部署；真实上传、审核状态及试听效果待联调。

@@ -52,7 +52,7 @@ class Store(VoiceCallStore, MemoryStore):
                                            "interaction_greetings", "interaction_greeting_runs", "bot_user_identities",
                                            "admin_sessions", "bot_roles", "bot_contact_notes", "scheduled_templates",
                                            "voice_call_configs", "voice_calls", "voice_memories", "bot_memory_settings", "memory_states",
-                                           "memory_items", "memory_sources", "memory_runs"])
+                                           "memory_items", "memory_sources", "memory_runs", "provider_tts_voices"])
             self.memory_settings = metadata.tables["bot_memory_settings"]
             self.memory_states = metadata.tables["memory_states"]
             self.memory_items = metadata.tables["memory_items"]
@@ -76,6 +76,9 @@ class Store(VoiceCallStore, MemoryStore):
                 raise StorageError("请先执行 python -m alembic upgrade head 升级手动任务执行结构")
             self.bots = metadata.tables["bots"]
             self.providers = metadata.tables["model_providers"]
+            self.tts_voices = metadata.tables["provider_tts_voices"]
+            if "supports_voice_cloning" not in self.providers.c:
+                raise StorageError("请先执行 python -m alembic upgrade head 升级音色复刻配置")
             self.settings = metadata.tables["app_settings"]
             if "fallback_provider_id" not in self.settings.c:
                 raise StorageError("请先执行 python -m alembic upgrade head 升级备用模型配置")
@@ -258,6 +261,64 @@ class Store(VoiceCallStore, MemoryStore):
             raise ValueError("密钥解密失败，请检查加密主密钥") from None
         return result
 
+    def list_tts_voices(self, provider_id: int) -> list[dict]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(self.tts_voices).where(self.tts_voices.c.provider_id == provider_id)
+                                .order_by(self.tts_voices.c.id.desc()).limit(100)).mappings()
+            return [self._public_tts_voice(dict(row)) for row in rows]
+
+    @staticmethod
+    def _public_tts_voice(row: dict) -> dict:
+        return {key: row[key] for key in ("id", "provider_id", "model_name", "prefix", "voice_id",
+                                          "status", "error", "created_at", "updated_at")}
+
+    def reserve_tts_voice(self, provider: dict, request_id: str, request_hash: str, prefix: str) -> tuple[dict, bool]:
+        from qbot.voice_cloning import validate_clone_provider
+        with self.engine.begin() as conn:
+            # 与供应商修改共用锁序；只在短事务内锁行，不跨网络请求。
+            conn.execute(select(self.settings.c.id).where(self.settings.c.id == 1).with_for_update()).one()
+            current = conn.execute(select(self.providers).where(self.providers.c.id == provider["id"])).mappings().one()
+            validate_clone_provider(dict(current))
+            if not current["supports_voice_cloning"]:
+                raise ValueError("该供应商未开启音色复刻")
+            if (any(current[k] != provider[k] for k in ("model_name", "base_url"))
+                    or not current["api_key_encrypted"]
+                    or self.cipher.decrypt(current["api_key_encrypted"].encode()).decode() != provider["api_key"]):
+                raise ValueError("供应商配置已改变，请刷新后再试")
+            old = conn.execute(select(self.tts_voices).where(self.tts_voices.c.provider_id == provider["id"],
+                self.tts_voices.c.request_id == request_id)).mappings().first()
+            if old:
+                if old["request_hash"] != request_hash:
+                    raise ValueError("同一创建请求的录音或名称已变化，请重新选择录音")
+                return self._public_tts_voice(dict(old)), False
+            now = utc_now()
+            # 首先记录未知，进程中断后也不会将同一请求当作未发送而重发。
+            row = dict(provider_id=provider["id"], request_id=request_id, request_hash=request_hash,
+                       model_name=provider["model_name"], service_url=provider["base_url"], prefix=prefix,
+                       voice_id=None, status="unknown", error="创建未确认，请勿重复创建；可在百炼核对", created_at=now, updated_at=now)
+            row["id"] = conn.execute(self.tts_voices.insert().values(**row)).inserted_primary_key[0]
+            return self._public_tts_voice(row), True
+
+    def get_tts_voice(self, provider_id: int, voice_record_id: int) -> dict:
+        with self.engine.connect() as conn:
+            row = conn.execute(select(self.tts_voices).where(self.tts_voices.c.provider_id == provider_id,
+                self.tts_voices.c.id == voice_record_id)).mappings().first()
+        if not row:
+            raise ValueError("音色不存在或不属于当前供应商")
+        return dict(row)
+
+    def finish_tts_voice(self, provider_id: int, voice_record_id: int, *, status: str,
+                         voice_id: str | None = None, error: str = "") -> dict:
+        if status not in {"unknown", "deploying", "ready", "failed"}:
+            raise ValueError("无效音色状态")
+        values = dict(status=status, error=error[:200], updated_at=utc_now())
+        if voice_id is not None:
+            values["voice_id"] = voice_id
+        with self.engine.begin() as conn:
+            conn.execute(self.tts_voices.update().where(self.tts_voices.c.provider_id == provider_id,
+                         self.tts_voices.c.id == voice_record_id).values(**values))
+        return self._public_tts_voice(self.get_tts_voice(provider_id, voice_record_id))
+
     def multimodal_config(self, bot_id: int) -> dict:
         from qbot.multimodal_config import MultimodalConfig
         with self.engine.connect() as conn:
@@ -276,6 +337,10 @@ class Store(VoiceCallStore, MemoryStore):
         values = dict(values)
         key = values.pop("api_key", "")
         values.setdefault("model_type", "chat")
+        values.setdefault("supports_voice_cloning", False)
+        if values["supports_voice_cloning"]:
+            from qbot.voice_cloning import validate_clone_provider
+            validate_clone_provider(values)
         from qbot.model import thinking_parameters
         values.setdefault("thinking_mode", "default")
         thinking_parameters(values)  # 保存和实际调用共用校验，拒绝不能兑现的关闭配置。
@@ -294,6 +359,10 @@ class Store(VoiceCallStore, MemoryStore):
                     old = conn.execute(select(self.providers).where(self.providers.c.id == provider_id)).mappings().first()
                     if old is None:
                         raise ValueError("供应商不存在")
+                if old and any(old[k] != values[k] for k in ("model_type", "model_name", "base_url")):
+                    if conn.execute(select(self.tts_voices.c.id).where(
+                            self.tts_voices.c.provider_id == provider_id).limit(1)).first():
+                        raise ValueError("该供应商已有复刻记录；更换模型或地址请新建供应商，以保留音色归属")
                 if (old and not key and old["api_key_encrypted"]
                         and urlsplit(old["base_url"]).netloc != urlsplit(values["base_url"]).netloc):
                     raise ValueError("更换供应商服务域名时请重新填写 API Key，不能沿用原供应商密钥")

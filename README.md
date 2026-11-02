@@ -1,5 +1,7 @@
 # qBot 对话智能体
 
+新增 TTS 音色复刻（代码已编写，待联调）：在供应商配置中选择 `qwen-audio-3.1-tts-flash/plus` 并开启“支持音色复刻”，保存后可上传录音、创建音色、查询状态和试听。部署前停服务、备份并显式执行 `python -m alembic upgrade head` 至 `0028_tts_voice_clone`，重启并刷新后台；本轮未迁移或部署。详见[多模态](docs/multimodal.md)。
+
 新增实时通话模式（代码已编写，待联调）：供应商选择 `realtime`，推荐 `qwen-audio-3.1-realtime-flash`，在「语音通话」选择实时语音对话和音色 `longanqian_v3.1`，无需独立 ASR/TTS。支持接通时加载网页记忆及通话中按需查询，页面可显式保存。部署前需停服务、备份并显式升级到 `0025_realtime_calls`；本轮未迁移或部署。详见[网页通话](docs/voice-calls.md)。
 
 当前版本：**V0.5**（包版本 `0.5.0`）。本版包含 Vue 3 / Element Plus 后台、独立 Token 统计、语音输出优化及 Docker 部署配置。当前开发主线为 Memory 模块，并持续优化现有功能。

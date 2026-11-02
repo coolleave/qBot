@@ -208,9 +208,12 @@ async function loadProviders() {
     if (item.model_type === "tts") {
       const text = element("textarea"), voice = element("input"), player = element("audio");
       text.maxLength = 500; text.value = "你好，这是语音合成效果测试。"; text.setAttribute("aria-label", "试听文本");
-      voice.value = "Bunny"; voice.setAttribute("aria-label", "音色名称"); voice.setAttribute("list", "tts-voices");
+      voice.value = item.model_name.startsWith("qwen-audio-3.1-tts-") ? "longanhuan_v3.1" : "Bunny"; voice.setAttribute("aria-label", "音色名称"); voice.setAttribute("list", "tts-voices");
+      if (item.model_name.startsWith("qwen-audio-3.1-tts-")) voice.removeAttribute("list");
       player.controls = true; player.hidden = true;
-      card.append(element("p", "填写官方音色 ID；试听可能产生费用。", "muted"), text, voice, player);
+      card.append(element("p", "填写音色 ID；试听可能产生费用。", "muted"), text, voice, player);
+      if (item.supports_voice_cloning) addVoiceCloning(card, item, voice);
+      voice.maxLength = 100;
       probe.onclick = async () => {
         probe.disabled = true; player.pause(); player.hidden = true;
         if (player.dataset.url) { URL.revokeObjectURL(player.dataset.url); delete player.dataset.url; }
@@ -249,6 +252,81 @@ async function loadProviders() {
     card.append(actions, outcome); $("providers-list").append(card);
   }
 }
+// 复刻记录独立保存；刷新状态只查询已有ID，不重新上传或创建。
+function addVoiceCloning(card, item, voiceInput) {
+  const panel = element("div", undefined, "voice-cloning-panel");
+  const prefix = element("input"), upload = element("input"), select = element("select");
+  const status = element("p", "", "muted"), actions = element("div", undefined, "actions");
+  prefix.placeholder = "音色名称（1～10位英文字母或数字）"; prefix.maxLength = 10;
+  prefix.setAttribute("aria-label", "音色名称");
+  upload.type = "file"; upload.accept = ".wav,.mp3"; upload.setAttribute("aria-label", "复刻参考录音");
+  select.setAttribute("aria-label", "已创建音色");
+  let records = [], requestId = null, busy = false;
+  const labels = { unknown: "结果未知", deploying: "处理中", ready: "可试听", failed: "审核未通过" };
+  const selected = () => records.find(row => String(row.id) === select.value);
+  function useSelected() {
+    const row = selected();
+    if (row?.voice_id) voiceInput.value = row.voice_id;
+    status.textContent = row ? (row.error || labels[row.status] || row.status) : "";
+    refresh.disabled = busy || !row?.voice_id;
+  }
+  async function reload(preferred) {
+    const result = await api(`/providers/${item.id}/voices`);
+    if (!card.isConnected) return;
+    const previous = preferred || select.value;
+    records = result.items;
+    select.replaceChildren(new Option("选择已创建音色", ""), ...records.map(row =>
+      new Option(`${row.prefix} #${row.id} · ${labels[row.status] || row.status}`, String(row.id))));
+    select.value = previous && records.some(row => String(row.id) === String(previous)) ? String(previous) : "";
+    useSelected();
+  }
+  function setBusy(value) {
+    busy = value; create.disabled = value || !item.has_api_key; upload.disabled = value;
+    prefix.disabled = value; select.disabled = value; refresh.disabled = value || !selected()?.voice_id;
+  }
+  const refresh = button("查询状态", async () => {
+    const row = selected();
+    if (!row?.voice_id || busy) return;
+    setBusy(true); status.textContent = "正在查询音色…";
+    try {
+      await api(`/providers/${item.id}/voices/${row.id}/refresh`, { method: "POST" });
+      await reload(row.id);
+    } catch (e) { status.textContent = e.message; }
+    finally { setBusy(false); }
+  });
+  const create = button("创建音色", async () => {
+    if (busy) return;
+    const file = upload.files[0], name = prefix.value.trim();
+    if (!file || file.size > 8000000 || !/\.(wav|mp3)$/i.test(file.name)) {
+      status.textContent = "请选择不超过8 MB的 WAV/MP3 录音"; return;
+    }
+    if (!/^[A-Za-z0-9]{1,10}$/.test(name)) {
+      status.textContent = "音色名称需为1～10位英文字母或数字"; return;
+    }
+    requestId ||= createRequestId();
+    setBusy(true); status.textContent = "正在上传并创建音色…";
+    try {
+      const row = await api(`/providers/${item.id}/voices?prefix=${encodeURIComponent(name)}&request_id=${requestId}`,
+        { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
+      await reload(row.id);
+      if (row.voice_id && row.status === "deploying") {
+        try {
+          await api(`/providers/${item.id}/voices/${row.id}/refresh`, { method: "POST" });
+          await reload(row.id);
+        } catch (e) { status.textContent = "音色已创建；" + e.message; }
+      }
+    } catch (e) { status.textContent = e.message + "；可查询记录，重复点击沿用本次请求。"; }
+    finally { setBusy(false); }
+  });
+  upload.onchange = prefix.oninput = () => { requestId = null; };
+  select.onchange = useSelected;
+  create.disabled = !item.has_api_key; refresh.disabled = true;
+  actions.append(create, refresh);
+  panel.append(element("h3", "音色复刻"), prefix, upload,
+    element("p", "录音5～60秒，建议10～20秒清晰单人声音；创建时上传至百炼。", "muted"), select, actions, status);
+  card.append(panel);
+  void reload().catch(e => { status.textContent = e.message; });
+}
 // 预设仅填写表单，不创建数据库记录或替换已有供应商。
 function providerPreset(item) {
   if (item.api_type === "openai_chat") return "custom";
@@ -263,11 +341,13 @@ function showProviderPreset() {
   const form = $("provider-form"), preset = $("provider-preset").value;
   const kind = form.elements.model_type.value;
   $("provider-thinking-field").hidden = kind !== "chat";
+  $("provider-voice-cloning-field").hidden = kind !== "tts";
+  if (kind !== "tts") form.elements.supports_voice_cloning.checked = false;
   if (kind !== "chat") form.elements.thinking_mode.value = "default";
   $("provider-preset-hint").textContent = preset === "qwen"
     ? (kind === "asr" ? "千问 ASR 默认 Filetrans：先上传 WAV，再异步转写。临时文件保留48小时，仅供开发试用；正式部署请使用自有 OSS。" : "千问默认北京地域；切换类型会重新填写推荐模型和地址。其他地域可手动修改，API Key 须匹配地域。")
     : preset === "deepseek" ? "DeepSeek 预设用于聊天，默认 deepseek-flash。填写自己的 API Key 后保存。" : "自行填写 HTTPS 地址、模型和接口。自定义不会自动适配未知的 ASR / TTS 协议。";
-  const names = preset === "qwen" ? ({ chat: ["qwen3.8-flash", "qwen3-vl-plus"], asr: ["qwen-audio-3.0-asr-flash-filetrans", "qwen-audio-3.1-asr-flash-filetrans", "qwen-audio-3.0-asr-flash", "qwen-audio-3.1-asr-flash"], realtime: ["qwen-audio-3.1-realtime-flash"], asr_realtime: ["qwen3-asr-flash-realtime"], tts: ["qwen3-tts-flash-realtime"] }[kind] || []) : preset === "deepseek" ? ["deepseek-flash", "deepseek-v4-pro"] : [];
+  const names = preset === "qwen" ? ({ chat: ["qwen3.8-flash", "qwen3-vl-plus"], asr: ["qwen-audio-3.0-asr-flash-filetrans", "qwen-audio-3.1-asr-flash-filetrans", "qwen-audio-3.0-asr-flash", "qwen-audio-3.1-asr-flash"], realtime: ["qwen-audio-3.1-realtime-flash"], asr_realtime: ["qwen3-asr-flash-realtime"], tts: ["qwen3-tts-flash-realtime", "qwen-audio-3.1-tts-flash", "qwen-audio-3.1-tts-plus"] }[kind] || []) : preset === "deepseek" ? ["deepseek-flash", "deepseek-v4-pro"] : [];
   $("provider-model-suggestions").replaceChildren(...names.map(name => new Option(name, name)));
 }
 function applyProviderPreset() {
@@ -307,6 +387,7 @@ function editProvider(item) {
   const defaults = item || { id: "", name: "", model_type: "chat", api_type: "deepseek", base_url: "https://api.deepseek.com", model_name: "deepseek-flash", enabled: false };
   for (const key of ["id", "name", "model_type", "api_type", "base_url", "model_name"]) form.elements[key].value = defaults[key];
   form.elements.supports_images.checked = Boolean(defaults.supports_images);
+  form.elements.supports_voice_cloning.checked = Boolean(defaults.supports_voice_cloning);
   form.elements.thinking_mode.value = defaults.thinking_mode || (defaults.enable_thinking ? "enabled" : "default");
   form.elements.enabled.checked = Boolean(defaults.enabled); form.elements.api_key.value = "";
   showProviderPreset();
@@ -326,7 +407,7 @@ document.querySelectorAll("[data-close]").forEach(node => node.onclick = () => $
 $("provider-dialog").addEventListener("close", () => $("provider-form").elements.api_key.value = "");
 $("new-provider").onclick = () => editProvider(null);
 $("environment-default").onclick = async () => { try { await api("/default-provider", { method: "PUT", body: JSON.stringify({ provider_id: null }) }); await loadProviders(); toast("已取消默认供应商，选择新默认项后才能聊天"); } catch (e) { toast(e.message); } };
-$("provider-form").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id; data.enabled = form.elements.enabled.checked; data.supports_images = form.elements.supports_images.checked; data.thinking_mode = form.elements.model_type.value === "chat" ? form.elements.thinking_mode.value : "default"; submit.disabled = true; $("provider-error").textContent = ""; try { await api("/providers" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) }); $("provider-dialog").close(); await loadProviders(); toast("配置已保存，下次模型请求生效"); } catch (e) { $("provider-error").textContent = e.message; } finally { submit.disabled = false; } };
+$("provider-form").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id; data.enabled = form.elements.enabled.checked; data.supports_images = form.elements.supports_images.checked; data.supports_voice_cloning = form.elements.model_type.value === "tts" && form.elements.supports_voice_cloning.checked; data.thinking_mode = form.elements.model_type.value === "chat" ? form.elements.thinking_mode.value : "default"; submit.disabled = true; $("provider-error").textContent = ""; try { await api("/providers" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) }); $("provider-dialog").close(); await loadProviders(); toast("配置已保存，下次模型请求生效"); } catch (e) { $("provider-error").textContent = e.message; } finally { submit.disabled = false; } };
 $("filter-form").onsubmit = event => { event.preventDefault(); currentPage = 1; loadRecords().catch(e => toast(e.message)); };
 $("reset-filters").onclick = () => { $("filter-form").reset(); currentPage = 1; loadRecords().catch(e => toast(e.message)); };
 $("refresh-records").onclick = () => loadRecords().catch(e => toast(e.message));

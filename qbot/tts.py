@@ -46,8 +46,11 @@ def smooth_pcm_edges(pcm: bytes | bytearray) -> bytes:
 
 
 async def synthesize(provider: dict, text: str, voice: str) -> bytes:
+    from qbot.voice_cloning import CLONE_MODELS
+    if provider.get("model_type") == "tts" and provider["model_name"] in CLONE_MODELS:
+        return await synthesize_audio_tts(provider, text, voice)
     if provider.get("model_type") != "tts" or not provider["model_name"].startswith("qwen3-tts-flash-realtime"):
-        raise ValueError("当前语音合成支持 qwen3-tts-flash-realtime 及其快照模型，请检查模型类型和名称")
+        raise ValueError("当前语音合成支持 qwen3-tts-flash-realtime 及快照、qwen-audio-3.1-tts-flash/plus，请检查模型类型和名称")
     url = urlsplit(provider["base_url"])
     path = url.path.rstrip("/")
     if path in ("", "/compatible-mode/v1"):
@@ -94,6 +97,64 @@ async def synthesize(provider: dict, text: str, voice: str) -> bytes:
     except Exception as exc:
         logger.warning("语音合成失败：%s", type(exc).__name__)
         raise ValueError("语音合成失败，请检查服务地址、密钥、网络及模型配置") from None
+    output = io.BytesIO()
+    with wave.open(output, "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(SAMPLE_RATE)
+        audio.writeframes(smooth_pcm_edges(pcm))
+    return output.getvalue()
+
+
+async def synthesize_audio_tts(provider: dict, text: str, voice: str) -> bytes:
+    """Qwen-Audio-TTS 任务协议；收齐PCM后复用原有WAV与首尾缓冲。"""
+    from qbot.voice_cloning import audio_tts_endpoint
+    if provider.get("api_type") != "openai_compatible":
+        raise ValueError("请选择千问原生语音接口")
+    endpoint = audio_tts_endpoint(provider, websocket=True)
+    pcm = bytearray()
+    task_id = str(uuid4())
+    finished = False
+    started = False
+    try:
+        async with asyncio.timeout(60):
+            async with connect(endpoint, additional_headers={"Authorization": "Bearer " + provider["api_key"]},
+                               open_timeout=10, close_timeout=2, max_size=MAX_MEDIA_BYTES) as ws:
+                async def send(action: str, payload: dict) -> None:
+                    await ws.send(json.dumps({"header": {"action": action, "task_id": task_id,
+                                                          "streaming": "duplex"}, "payload": payload}))
+                await send("run-task", {"task_group": "audio", "task": "tts", "function": "SpeechSynthesizer",
+                    "model": provider["model_name"], "parameters": {"text_type": "PlainText", "voice": voice,
+                    "format": "pcm", "sample_rate": SAMPLE_RATE}, "input": {}})
+                async for raw in ws:
+                    if isinstance(raw, bytes):
+                        if not started or len(pcm) + len(raw) > MAX_RAW_PCM_BYTES:
+                            raise SpeechError("音频状态无效或超过3.5 MB，请缩短文本")
+                        pcm.extend(raw)
+                        continue
+                    event = json.loads(raw)
+                    header = event.get("header", {})
+                    if header.get("task_id") != task_id:
+                        raise SpeechError("语音服务返回不匹配的任务")
+                    kind = header.get("event")
+                    if kind == "task-failed":
+                        raise SpeechError("语音服务拒绝合成，请检查模型权限、音色就绪状态和额度")
+                    if kind == "task-started" and not started:
+                        started = True
+                        await send("continue-task", {"input": {"text": text}})
+                        await send("finish-task", {"input": {}})
+                    elif kind == "task-finished":
+                        finished = True
+                        break
+                if not finished or not pcm or len(pcm) % 2:
+                    raise SpeechError("语音服务未返回完整音频")
+    except SpeechError:
+        raise
+    except TimeoutError:
+        raise SpeechError("语音合成超时，请缩短文本或检查服务状态") from None
+    except Exception as exc:
+        logger.warning("Qwen-Audio-TTS合成失败 error=%s", type(exc).__name__)
+        raise SpeechError("语音合成失败，请检查服务地址、密钥和模型配置") from None
     output = io.BytesIO()
     with wave.open(output, "wb") as audio:
         audio.setnchannels(1)

@@ -33,6 +33,7 @@ class ProviderInput(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     model_type: Literal["chat", "image", "asr", "tts", "asr_realtime", "realtime"] = "chat"
     supports_images: bool = False
+    supports_voice_cloning: bool = False
     thinking_mode: Literal["default", "enabled", "disabled"] = "default"
     api_type: Literal["deepseek", "openai_compatible", "openai_chat"]
     base_url: str = Field(max_length=2048)
@@ -126,7 +127,7 @@ class ProactiveInput(BaseModel):
 class SpeechInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     text: str = Field(min_length=1, max_length=500)
-    voice: str = Field(default="Bunny", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_ -]+$")
+    voice: str = Field(default="Bunny", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_. -]+$")
 
 
 def admin_router(settings: Settings) -> APIRouter:
@@ -136,6 +137,8 @@ def admin_router(settings: Settings) -> APIRouter:
     probe_lock = asyncio.Lock()
     media_lock = asyncio.Lock()
     last_probe = 0.0
+    voice_query_lock = asyncio.Lock()
+    last_voice_query = 0.0
     greeting_generation_lock = asyncio.Lock()
     last_greeting_generation = 0.0
 
@@ -313,6 +316,70 @@ def admin_router(settings: Settings) -> APIRouter:
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from None
             return Response(audio, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+    @router.get("/api/admin/providers/{provider_id}/voices", dependencies=[Depends(require_admin)])
+    async def provider_voices(provider_id: int, db: Store = Depends(store)) -> dict:
+        return {"items": await db.call("list_tts_voices", provider_id)}
+
+    @router.post("/api/admin/providers/{provider_id}/voices", dependencies=[Depends(require_admin)])
+    async def clone_provider_voice(provider_id: int, request: Request, request_id: UUID,
+                                   prefix: str = Query(min_length=1, max_length=10, pattern=r"^[A-Za-z0-9]+$"),
+                                   db: Store = Depends(store)) -> dict:
+        nonlocal last_probe
+        if probe_lock.locked() or time.monotonic() - last_probe < 10:
+            raise HTTPException(429, "创建或试听正在进行，或操作过于频繁，请稍后再试")
+        from qbot.voice_cloning import MAX_CLONE_BYTES, validate_clone_provider, prepare_clone_audio, create_voice
+        from qbot.multimodal import MEDIA_SLOTS
+        async with probe_lock:
+            last_probe = time.monotonic()
+            try:
+                provider = await db.call("provider_for_probe", provider_id)
+                validate_clone_provider(provider)
+                if not provider.get("supports_voice_cloning"):
+                    raise ValueError("请先开启支持音色复刻并保存模型配置")
+                body = bytearray()
+                async with asyncio.timeout(15):
+                    async for chunk in request.stream():
+                        if len(body) + len(chunk) > MAX_CLONE_BYTES:
+                            raise ValueError("录音不能超过8 MB")
+                        body.extend(chunk)
+                async with asyncio.timeout(15), MEDIA_SLOTS:
+                    wav = await prepare_clone_audio(bytes(body))
+                fingerprint = hashlib.sha256(prefix.encode() + b"\0" + bytes(body)).hexdigest()
+                record, fresh = await db.call("reserve_tts_voice", provider, str(request_id), fingerprint, prefix)
+                if not fresh:
+                    return record
+                try:
+                    voice_id = await create_voice(provider, wav, prefix)
+                except ValueError as exc:
+                    return await db.call("finish_tts_voice", provider_id, record["id"], status="unknown", error="创建结果未确认；" + str(exc))
+                # ID返回后立即落库，后续查询和试听失败不丢失已创建的音色。
+                return await db.call("finish_tts_voice", provider_id, record["id"], status="deploying", voice_id=voice_id)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
+            except TimeoutError:
+                raise HTTPException(408, "录音上传或预处理超时，未创建音色") from None
+
+    @router.post("/api/admin/providers/{provider_id}/voices/{voice_record_id}/refresh", dependencies=[Depends(require_admin)])
+    async def refresh_provider_voice(provider_id: int, voice_record_id: int, db: Store = Depends(store)) -> dict:
+        nonlocal last_voice_query
+        if voice_query_lock.locked() or time.monotonic() - last_voice_query < 2:
+            raise HTTPException(429, "音色查询过于频繁，请稍后再试")
+        from qbot.voice_cloning import query_voice
+        async with voice_query_lock:
+            last_voice_query = time.monotonic()
+            try:
+                provider = await db.call("provider_for_probe", provider_id)
+                record = await db.call("get_tts_voice", provider_id, voice_record_id)
+                if record["model_name"] != provider["model_name"] or record["service_url"] != provider["base_url"]:
+                    raise ValueError("音色与当前供应商模型或地址不匹配")
+                if not record["voice_id"]:
+                    raise ValueError("未取得音色ID，无法查询；请在百炼核对创建结果，不要重复创建")
+                status = await query_voice(provider, record["voice_id"])
+                return await db.call("finish_tts_voice", provider_id, voice_record_id, status=status,
+                                     error="音色审核未通过，请更换清晰录音" if status == "failed" else "")
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
 
     @router.post("/api/admin/providers/{provider_id}/inspect-media", dependencies=[Depends(require_admin)])
     async def inspect_media(provider_id: int, request: Request, kind: Literal["image", "audio"],
