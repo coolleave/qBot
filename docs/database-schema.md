@@ -505,3 +505,8 @@ scheduled_templates 是管理员全局模板表，不保存任何会话身份。
 ## 供应商思考参数（0026，待迁移）
 
 `model_providers.enable_thinking`：非空布尔，默认0。1为chat模型发送启用思考参数；0省略参数，模型默认行为由供应商决定。
+
+
+## 三态思考模式（代码已编写，待迁移）
+
+`model_providers.thinking_mode`（0027，待迁移）：非空 VARCHAR(16)，default / enabled / disabled；旧 enable_thinking 列保留并同步为模式是否 enabled，不再作为新代码的配置来源。

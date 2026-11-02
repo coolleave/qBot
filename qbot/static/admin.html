@@ -452,7 +452,7 @@
         class="checkbox"><input name="supports_images" type="checkbox">支持图片输入（仅兼容接口的 chat 模型）</label><label>API
         Key<input name="api_key" type="password" autocomplete="new-password" maxlength="4096"
           placeholder="编辑时留空保留已有密钥"></label><label class="checkbox"><input name="enabled" type="checkbox">启用此供应商</label>
-      <label id="provider-thinking-field" class="checkbox"><input name="enable_thinking" type="checkbox">启用思考（关闭时不传参数）</label>
+      <label id="provider-thinking-field">思考模式<select name="thinking_mode"><option value="default">跟随模型默认（不传参数）</option><option value="enabled">开启</option><option value="disabled">关闭</option></select><small>兼容接口须支持 enable_thinking 参数；纯思考模型不能关闭。</small></label>
       <p id="provider-error" class="error" role="alert"></p>
       <div class="dialog-actions"><button type="button" data-close="provider-dialog">取消</button><button type="submit"
           class="primary">保存配置</button></div>

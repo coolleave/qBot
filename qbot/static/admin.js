@@ -263,7 +263,7 @@ function showProviderPreset() {
   const form = $("provider-form"), preset = $("provider-preset").value;
   const kind = form.elements.model_type.value;
   $("provider-thinking-field").hidden = kind !== "chat";
-  if (kind !== "chat") form.elements.enable_thinking.checked = false;
+  if (kind !== "chat") form.elements.thinking_mode.value = "default";
   $("provider-preset-hint").textContent = preset === "qwen"
     ? (kind === "asr" ? "千问 ASR 默认 Filetrans：先上传 WAV，再异步转写。临时文件保留48小时，仅供开发试用；正式部署请使用自有 OSS。" : "千问默认北京地域；切换类型会重新填写推荐模型和地址。其他地域可手动修改，API Key 须匹配地域。")
     : preset === "deepseek" ? "DeepSeek 预设用于聊天，默认 deepseek-flash。填写自己的 API Key 后保存。" : "自行填写 HTTPS 地址、模型和接口。自定义不会自动适配未知的 ASR / TTS 协议。";
@@ -307,7 +307,7 @@ function editProvider(item) {
   const defaults = item || { id: "", name: "", model_type: "chat", api_type: "deepseek", base_url: "https://api.deepseek.com", model_name: "deepseek-flash", enabled: false };
   for (const key of ["id", "name", "model_type", "api_type", "base_url", "model_name"]) form.elements[key].value = defaults[key];
   form.elements.supports_images.checked = Boolean(defaults.supports_images);
-  form.elements.enable_thinking.checked = Boolean(defaults.enable_thinking);
+  form.elements.thinking_mode.value = defaults.thinking_mode || (defaults.enable_thinking ? "enabled" : "default");
   form.elements.enabled.checked = Boolean(defaults.enabled); form.elements.api_key.value = "";
   showProviderPreset();
   $("provider-title").textContent = item ? "编辑供应商" : "添加供应商"; $("provider-dialog").showModal();
@@ -326,7 +326,7 @@ document.querySelectorAll("[data-close]").forEach(node => node.onclick = () => $
 $("provider-dialog").addEventListener("close", () => $("provider-form").elements.api_key.value = "");
 $("new-provider").onclick = () => editProvider(null);
 $("environment-default").onclick = async () => { try { await api("/default-provider", { method: "PUT", body: JSON.stringify({ provider_id: null }) }); await loadProviders(); toast("已取消默认供应商，选择新默认项后才能聊天"); } catch (e) { toast(e.message); } };
-$("provider-form").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id; data.enabled = form.elements.enabled.checked; data.supports_images = form.elements.supports_images.checked; data.enable_thinking = form.elements.model_type.value === "chat" && form.elements.enable_thinking.checked; submit.disabled = true; $("provider-error").textContent = ""; try { await api("/providers" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) }); $("provider-dialog").close(); await loadProviders(); toast("配置已保存，下次模型请求生效"); } catch (e) { $("provider-error").textContent = e.message; } finally { submit.disabled = false; } };
+$("provider-form").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id; data.enabled = form.elements.enabled.checked; data.supports_images = form.elements.supports_images.checked; data.thinking_mode = form.elements.model_type.value === "chat" ? form.elements.thinking_mode.value : "default"; submit.disabled = true; $("provider-error").textContent = ""; try { await api("/providers" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) }); $("provider-dialog").close(); await loadProviders(); toast("配置已保存，下次模型请求生效"); } catch (e) { $("provider-error").textContent = e.message; } finally { submit.disabled = false; } };
 $("filter-form").onsubmit = event => { event.preventDefault(); currentPage = 1; loadRecords().catch(e => toast(e.message)); };
 $("reset-filters").onclick = () => { $("filter-form").reset(); currentPage = 1; loadRecords().catch(e => toast(e.message)); };
 $("refresh-records").onclick = () => loadRecords().catch(e => toast(e.message));

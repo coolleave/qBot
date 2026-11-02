@@ -20,6 +20,9 @@ async def probe_provider(settings: Settings, provider: dict, content: str | list
     started = time.perf_counter()
     result = {"success": False, "reply": "", "message": "", "reasoning": "",
               "first_text_ms": None, "reasoning_elapsed_ms": None, "reasoning_tokens": None}
+    mode = provider.get("thinking_mode", "enabled" if provider.get("enable_thinking") else "default")
+    mode_label = {"default": "跟随模型默认", "enabled": "开启", "disabled": "关闭"}.get(mode, "无效")
+    result["thinking_mode"] = mode
     first_reasoning = None
     try:
         async with asyncio.timeout(120):
@@ -77,15 +80,18 @@ async def probe_provider(settings: Settings, provider: dict, content: str | list
     except APIConnectionError:
         result["message"] = "无法连接模型服务，请检查服务地址和网络"
     except APIStatusError as exc:
-        messages = {400: "请求参数不被支持，请检查思考开关、流式能力和模型配置", 401: "认证失败，请检查 API Key", 403: "访问被拒绝，请检查账号权限",
+        messages = {400: "请求参数不被支持，请检查思考模式、流式能力和模型配置", 401: "认证失败，请检查 API Key", 403: "访问被拒绝，请检查账号权限",
                     402: "余额或付费状态异常", 404: "接口或模型不存在，请检查地址和模型名称",
                     429: "请求限流或额度不足"}
         result["message"] = messages.get(exc.status_code, "模型服务返回错误")
         result["http_status"] = exc.status_code
+    except ValueError as exc:
+        result["message"] = str(exc).replace(provider["api_key"], "[已隐藏密钥]")[:500]
     except Exception as exc:
         logger.warning("供应商连接检查失败：%s", type(exc).__name__)
         result["message"] = "调用失败，请检查模型配置或响应格式"
     finally:
+        result["message"] = f"思考模式：{mode_label}；{result['message']}"
         result["latency_ms"] = round((time.perf_counter() - started) * 1000)
         # 输出到页面前统一脱敏；超时也可展示已收到的诊断信息。
         result["reasoning"] = result["reasoning"].replace(provider["api_key"], "[已隐藏密钥]")[:4000]

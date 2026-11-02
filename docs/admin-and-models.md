@@ -182,7 +182,7 @@ OpenID 依据：[QQ 官方 API 调用指南 · 唯一身份机制](https://bot.q
 
 ## 供应商思考开关与连接测速（代码已编写，待联调）
 
-chat 供应商新增 enable_thinking，默认关闭。开启时 DeepSeek 发送 thinking.type=enabled，兼容接口发送 enable_thinking=true；关闭时完全省略思考参数，不保证模型默认不思考。不自动探测或发送 false，不支持参数的模型由测试连接报告错误。共享模型工厂的聊天、定时文案、视觉及记忆调用沿用配置。
+旧版（0026）使用 enable_thinking 复选框，未勾选时省略参数。当前代码已改为三态 thinking_mode，详见下方「三态思考模式」，需升级0027后使用。共享模型工厂的聊天、定时文案、视觉及记忆调用沿用配置。
 
 测试连接采用单次流式调用，最多120秒、4096输出tokens、无自动重试；展示总耗时、首正文等待、供应商返回的思考tokens和思考内容。仅收到思考片段及后续正文时记录两者间的观测间隔，不将首字等待冒充纯思考耗时；未返回的信息显示未提供。测试使用已保存配置，不写聊天记录、不发送QQ消息。
 
@@ -193,3 +193,14 @@ chat 供应商新增 enable_thinking，默认关闭。开启时 DeepSeek 发送 
 2026-11-01：线上数据库已显式升级至 `0026_provider_thinking`。迁移前供应商表备份位于服务器 `.deploy/backups/thinking-0026/providers-before.json`（私有权限，含加密配置，勿提交）；核对9条供应商原字段完全一致，新增enable_thinking均为0且非空。原生产容器已恢复running healthy。本轮仅升级数据库，新增开关及测速代码尚未提交部署；本地数据库未执行。
 
 2026-11-01 发布记录：功能提交 `555ce6a`（显式记忆范围）及 `eb3f0f6`（供应商思考开关、连接测速、后台说明精简）已推送并部署至实验室服务器。线上数据库已核对为 `0026_provider_thinking (head)`，无需重复迁移。运行镜像10个关键文件SHA-256与仓库一致，容器running healthy、重启次数0，/health和/admin均返回200。Python AST、JavaScript语法及差异静态检查通过；未运行测试、浏览器或本轮真实模型/QQ调用，交互仍待实际验收。
+
+
+## 三态思考模式（代码已编写，运行待验证）
+
+供应商表单改为「思考模式」：`default` 跟随模型默认（不发送参数）、`enabled` 开启、`disabled` 关闭。DeepSeek 接口发送 `thinking.type=enabled/disabled`；兼容接口沿用 `enable_thinking=true/false`，这不是所有 OpenAI 兼容服务都支持的标准，需核对服务文档。不支持时明确报错，不自动省略或反转参数。已确认的纯思考模型 `qwen3.8-2.4t-a95b` 禁止显式关闭；其他模型能力以供应商响应为准。不改变 QQ 思考内容的展示策略。
+
+新增手写迁移 `0027_thinking_mode`，保留旧列；旧 false 转 default、true 转 enabled。保存时同步旧列供维护参考，显式关闭无法由旧版本表达，不能直接回退旧应用。上线前停服务、备份并显式迁移，应用不自动升级。连接检查显示请求模式；保存配置不调用付费接口。
+
+官方说明：[百炼深度思考](https://help.aliyun.com/zh/model-studio/deep-thinking)、[DeepSeek 思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)。
+
+本轮 Python AST（5个文件）、JavaScript 语法和 Git 差异静态检查通过；未运行测试、浏览器或真实模型调用，未执行迁移、提交、推送或部署。更新后需刷新后台，旧版表单的 enable_thinking 请求不再接受。
