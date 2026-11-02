@@ -7,7 +7,7 @@
 | 要处理的功能 | 优先阅读 | 主要代码 |
 | --- | --- | --- |
 | Docker 镜像、Compose、部署网络与更新 | [Docker 部署](docker-deployment.md) | Dockerfile、compose.yaml、.env.example |
-| 智能体链路、人设、上下文、回复与 token 提取 | [智能体链路与会话](agent-flow.md) | chat.py、recording.py、model.py |
+| 智能体链路、人设、上下文、回复与 token 提取 | [智能体链路与会话](agent-flow.md) | chat.py、public_reply.py、recording.py、model.py |
 | 持久化记忆、异步整理、成本预算、群聊主人优先 | [记忆系统（待验收）](memory-system.md) | memory.py、memory_store.py、memory_jobs.py、memory_routes.py |
 | 图片/GIF、ASR、Filetrans、TTS、自动语音 | [多模态处理](multimodal.md) | multimodal.py、vision.py、asr_filetrans.py、auto_voice.py |
 | 网页语音通话、实时 ASR、供应商配置、插话和通话记录 | [语音通话](voice-calls.md) | voice_calls.py、voice_call_routes.py、voice_call_store.py、static/voice-calls.js |

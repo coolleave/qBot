@@ -6,12 +6,12 @@ from importlib.resources import files
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.prompt_values import PromptValue
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableConfig, RunnableLambda
 
 from qbot.chat import ChatService, Sender, SessionKey
 from qbot.config import Settings
 from qbot.model import provider_model
+from qbot.public_reply import public_reply_text, UnsafeModelReply
 from qbot.qq import QQDeliveryUnknown
 from qbot.storage import Store, StorageError
 from qbot.vision import VisionError, describe_images
@@ -98,9 +98,13 @@ class RecordedChat:
                             client = provider_model(self.settings.model_copy(update={"model_max_retries": 0}), selected)
                             clients.append(client)
                             output = await client.ainvoke(prompt, config=config)
-                            if fallback_id is not None and selected["id"] == provider["id"] and not StrOutputParser().invoke(output).strip():
-                                raise ValueError("模型返回了空文本")
-                            return output
+                            try:
+                                clean = public_reply_text(output)
+                            except UnsafeModelReply:
+                                if diagnostics is not None:
+                                    diagnostics["reply_guard"] = "blocked_internal_analysis_or_empty"
+                                raise
+                            return output.model_copy(update={"content": clean})
 
                     budget = min(self.settings.model_timeout_seconds, self.settings.chat_timeout_seconds)
                     try:
@@ -180,7 +184,8 @@ class RecordedChat:
             await self.store.call("update_record", record_id, status=status, answer=answer,
                                   error_message={"delivery_unknown": "网络异常，送达状态未知",
                                                  "send_failed": "发送失败，请检查 QQ 权限或接口状态",
-                                                 "model_failed": "模型请求失败，请检查配置、网络及额度"}[status])
+                                                 "model_failed": ("模型未返回合格正文，已阻止发送内部分析" if isinstance(exc, UnsafeModelReply)
+                                                                  else "模型请求失败，请检查配置、网络及额度")}[status])
             raise
         finally:
             # 每次读取最新配置创建客户端，调用结束后释放其连接池。

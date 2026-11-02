@@ -1,6 +1,8 @@
 """持久化整理批次、预算和恢复规则。"""
 import json
 import logging
+
+from qbot.public_reply import history_reply_text
 from datetime import timedelta, timezone
 
 from sqlalchemy import and_, func, or_, select
@@ -155,8 +157,9 @@ class MemoryJobStore:
                 # 摘要可参考已发送回复；预算不足则只总结用户原话。
                 if end == len(row["text"]) and row["record_status"] == "replied" and row["answer"]:
                     reply_budget = 6000 - token_bound(prompt) - token_bound(json_text(payload)) - token_bound(json_text(message)) - 512
-                    if reply_budget >= token_bound(json_text(row["answer"])):
-                        message["delivered_reply"] = row["answer"]
+                    safe_answer = history_reply_text(row["answer"])
+                    if safe_answer and reply_budget >= token_bound(json_text(safe_answer)):
+                        message["delivered_reply"] = safe_answer
                 payload["messages"].append(message)
                 segments.append({"id": row["id"], "record_id": row["record_id"], "end": end, "complete": end == len(row["text"])})
             if not segments:

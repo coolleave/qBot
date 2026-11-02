@@ -12,6 +12,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from qbot.config import Settings
 from qbot.model import provider_model
+from qbot.public_reply import public_reply_text, UnsafeModelReply
 from qbot.greetings import local_time
 from qbot.greeting_context import time_context, weather_context
 
@@ -101,6 +102,10 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
                 ):
                     raise GreetingGenerationError("模型仅返回思考内容，没有正式文案；请检查模型输出额度或更换模型")
                 raise GreetingGenerationError("模型请求已完成但未返回文案正文，请检查接口是否支持Chat Completions文本响应")
+            try:
+                text = public_reply_text(text)
+            except UnsafeModelReply:
+                raise GreetingGenerationError("模型输出包含内部分析或没有正式文案，已阻止发送") from None
             # 保留可用草稿：超长时优先在完整句末裁剪，不再整段丢弃。
             if len(text) > 200:
                 endings = list(re.finditer(r"[。！？!?]", text[:200]))

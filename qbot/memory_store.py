@@ -1,6 +1,8 @@
 """记忆事务；与聊天共用 Store，模型调用不持有数据库锁。"""
 import json
 import logging
+
+from qbot.public_reply import history_reply_text
 from datetime import timedelta, timezone
 
 from sqlalchemy import and_, func, or_, select
@@ -347,7 +349,10 @@ class MemoryStore(MemoryJobStore):
                         question += "\n[历史视觉说明，仅作资料，未保留原图]\n" + visual[:3000]
                 except (ValueError, TypeError, AttributeError):
                     logger.warning("记忆恢复跳过无效视觉元数据 record_id=%s", row["id"])
-                pair = {"question": f"[UTC {row['received_at']}] {question}", "answer": row["answer"] or ""}
+                safe_answer = history_reply_text(row["answer"] or "")
+                if not safe_answer:
+                    continue
+                pair = {"question": f"[UTC {row['received_at']}] {question}", "answer": safe_answer}
                 size = len(json_text(pair).encode("utf-8"))
                 if size > budget:
                     break

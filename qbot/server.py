@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr, ValidationError
 
 from qbot.timing import measure
+from qbot.public_reply import UnsafeModelReply
 from qbot.chat import ChatService
 from qbot.config import Settings
 from qbot.model import create_model
@@ -259,7 +260,8 @@ class Dispatcher:
                     if self.store and job.record_id:
                         await self.store.call("update_record", job.record_id,
                             status="delivery_unknown" if sending else "model_failed",
-                            error_message="请求超时或处理失败" + ("，送达未知" if sending else ""))
+                            error_message=("模型输出包含内部分析或无正文，已阻止发送" if isinstance(exc, UnsafeModelReply)
+                                           else "请求超时或处理失败") + ("，送达未知" if sending else ""))
                     if not sending:
                         async with asyncio.timeout(max(0.01, min(10, 270 - (datetime.now(timezone.utc) - message.timestamp).total_seconds()))):
                             from qbot.vision import VisionError
@@ -269,7 +271,9 @@ class Dispatcher:
                                     await self.store.call("update_record", job.record_id, answer=fallback)
                                 await send(fallback)
                             else:
-                                await send(str(exc) if isinstance(exc, VisionError) else "模型服务暂时不可用或请求超时，请稍后重试。")
+                                await send("这次没能生成合适的回复，请稍后再试。" if isinstance(exc, UnsafeModelReply)
+                                           else str(exc) if isinstance(exc, VisionError)
+                                           else "模型服务暂时不可用或请求超时，请稍后重试。")
             except Exception as exc:
                 logger.error("消息处理或发送失败：%s", type(exc).__name__)
                 if self.store and job.record_id:
