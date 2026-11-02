@@ -136,3 +136,7 @@ TTS 供应商增加默认关闭的“支持音色复刻”开关，首批支持 
 入口：`qbot/static/voice-clone-recorder.js`，由admin.html加载，admin.js将录音传入原有创建接口。朗读文案约20秒；停止时通过Worklet刷新剩余采样后封装16kHz单声道16位WAV，录音超过60秒自动结束。录音失败或不足5秒不会作为有效样本提交。无需数据库迁移。
 
 本轮静态检查：voice-clone-recorder.js、voice-capture.js和admin.js均通过node --check，git diff --check通过。未运行测试、浏览器、真实麦克风或复刻接口；未提交、部署或执行数据库备份。
+
+## 2026-11-02 网页录音复刻发布（已部署）
+
+功能提交 `8bac874` 已推送并由既有加锁部署脚本完成构建和上线，成功基线已登记。容器running healthy、重启次数0，/health、/admin、voice-clone-recorder.js和带版本参数的voice-capture.js均返回200；5个录音相关前端文件SHA-256与仓库一致，数据库保持0028_tts_voice_clone。本轮未执行数据库备份或迁移，未运行测试、浏览器、真实麦克风或复刻/TTS调用。刷新后台即可看到朗读文案与录音入口；麦克风需要HTTPS或localhost，HTTP/IP页面不能录音。

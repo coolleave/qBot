@@ -247,3 +247,7 @@ docker compose up -d qbot
 数据库从0027显式升级至 `0028_tts_voice_clone`；所有原业务字段数据保持一致，其他业务表结构未变，新增复刻开关默认关闭、音色表为空，唯一键及外键已核对。容器running healthy、重启次数0，/health、/admin和/admin-assets/admin.js均返回200，Store初始化正常；115个源码、静态资源和迁移文件SHA-256与发布仓库一致，自动部署成功基线已登记。
 
 未运行测试、浏览器或真实复刻/TTS接口。刷新后台后选择受支持的TTS模型并开启“支持音色复刻”，上传录音、创建音色、查询就绪状态后试听；真实音色效果仍待验收。
+
+## 2026-11-02 网页录音复刻发布（已部署）
+
+功能提交 `8bac874` 已推送并由既有加锁部署脚本完成构建和上线，成功基线已登记。容器running healthy、重启次数0，/health、/admin、voice-clone-recorder.js和带版本参数的voice-capture.js均返回200；5个录音相关前端文件SHA-256与仓库一致，数据库保持0028_tts_voice_clone。本轮未执行数据库备份或迁移，未运行测试、浏览器、真实麦克风或复刻/TTS调用。刷新后台即可看到朗读文案与录音入口；麦克风需要HTTPS或localhost，HTTP/IP页面不能录音。
