@@ -40,6 +40,8 @@ class ProviderInput(BaseModel):
     supports_images: bool = False
     supports_voice_cloning: bool = False
     thinking_mode: Literal["default", "enabled", "disabled"] = "default"
+    web_search_mode: Literal["disabled", "auto", "forced"] = "disabled"
+    enable_web_fetch: bool = False
     api_type: Literal["deepseek", "openai_compatible", "openai_chat"]
     base_url: str = Field(max_length=2048)
     model_name: str = Field(min_length=1, max_length=200)

@@ -65,7 +65,7 @@ class MemoryWorker:
             provider = await self.store.call("capability_provider", batch["provider_id"], "chat")
             config = self.settings.model_copy(update={"model_max_retries": 0, "model_timeout_seconds": 30,
                                                      "model_max_tokens": 4096})
-            client = provider_model(config, provider)
+            client = provider_model(config, provider, allow_web_search=False)
             run_id = await self.store.call("reserve_memory_run", batch, provider["model_name"])
             if run_id is None:
                 return False

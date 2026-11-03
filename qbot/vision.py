@@ -29,7 +29,7 @@ async def describe_images(settings: Settings, provider: dict, text: str,
         async with asyncio.timeout(30), (nullcontext() if slot_acquired else MEDIA_SLOTS):
             config = settings.model_copy(update={"model_max_retries": 0,
                 "model_timeout_seconds": 25, "model_max_tokens": 1800})
-            model = provider_model(config, provider)
+            model = provider_model(config, provider, allow_web_search=False)
             output = await model.ainvoke([
                 SystemMessage(content=files("qbot").joinpath("prompts/vision.txt").read_text("utf-8")),
                 HumanMessage(content=[{"type": "text", "text": text}] + blocks),

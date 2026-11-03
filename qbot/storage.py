@@ -376,7 +376,10 @@ class Store(VoiceCallStore, MemoryStore):
         if values["supports_voice_cloning"]:
             from qbot.voice_cloning import validate_clone_provider
             validate_clone_provider(values)
-        from qbot.model import thinking_parameters
+        from qbot.model import thinking_parameters, web_search_parameters
+        values.setdefault("web_search_mode", "disabled")
+        values.setdefault("enable_web_fetch", False)
+        web_search_parameters(values)
         values.setdefault("thinking_mode", "default")
         thinking_parameters(values)  # 保存和实际调用共用校验，拒绝不能兑现的关闭配置。
         values["enable_thinking"] = values["thinking_mode"] == "enabled"

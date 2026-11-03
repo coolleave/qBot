@@ -454,6 +454,8 @@
         Key<input name="api_key" type="password" autocomplete="new-password" maxlength="4096"
           placeholder="编辑时留空保留已有密钥"></label><label class="checkbox"><input name="enabled" type="checkbox">启用此供应商</label>
       <label id="provider-voice-cloning-field" class="checkbox" hidden><input name="supports_voice_cloning" type="checkbox">支持音色复刻（Qwen-Audio-3.1 TTS Flash / Plus）</label>
+      <label id="provider-search-field">联网搜索<select name="web_search_mode"><option value="disabled">关闭</option><option value="auto">自动</option><option value="forced">强制</option></select><small>仅限支持搜索的百炼聊天模型，按量计费。</small></label>
+      <label id="provider-fetch-field" class="checkbox"><input name="enable_web_fetch" type="checkbox">网页抓取<small>需开启联网搜索和思考，模型须支持 agent_max。</small></label>
       <label id="provider-thinking-field">思考模式<select name="thinking_mode"><option value="default">跟随模型默认（不传参数）</option><option value="enabled">开启</option><option value="disabled">关闭</option></select><small>兼容接口须支持 enable_thinking 参数；纯思考模型不能关闭。</small></label>
       <p id="provider-error" class="error" role="alert"></p>
       <div class="dialog-actions"><button type="button" data-close="provider-dialog">取消</button><button type="submit"

@@ -434,6 +434,13 @@ function showProviderPreset() {
   const form = $("provider-form"), preset = $("provider-preset").value;
   const kind = form.elements.model_type.value;
   $("provider-thinking-field").hidden = kind !== "chat";
+  const searchAvailable = kind === "chat" && form.elements.api_type.value !== "deepseek";
+  $("provider-search-field").hidden = !searchAvailable;
+  $("provider-fetch-field").hidden = !searchAvailable;
+  if (!searchAvailable) {
+    form.elements.web_search_mode.value = "disabled";
+    form.elements.enable_web_fetch.checked = false;
+  }
   $("provider-voice-cloning-field").hidden = kind !== "tts";
   if (kind !== "tts") form.elements.supports_voice_cloning.checked = false;
   if (kind !== "chat") form.elements.thinking_mode.value = "default";
@@ -466,8 +473,8 @@ $("provider-form").elements.api_type.onchange = () => {
   if (form.elements.api_type.value === "openai_chat") {
     form.elements.model_type.value = "chat";
     $("provider-preset").value = "custom";
-    showProviderPreset();
   }
+  showProviderPreset();
 };
 $("provider-form").elements.model_type.onchange = () => {
   if ($("provider-preset").value === "deepseek" && $("provider-form").elements.model_type.value !== "chat") $("provider-preset").value = "custom";
@@ -481,6 +488,8 @@ function editProvider(item) {
   form.elements.supports_images.checked = Boolean(defaults.supports_images);
   form.elements.supports_voice_cloning.checked = Boolean(defaults.supports_voice_cloning);
   form.elements.thinking_mode.value = defaults.thinking_mode || (defaults.enable_thinking ? "enabled" : "default");
+  form.elements.web_search_mode.value = defaults.web_search_mode || "disabled";
+  form.elements.enable_web_fetch.checked = Boolean(defaults.enable_web_fetch);
   form.elements.enabled.checked = Boolean(defaults.enabled); form.elements.api_key.value = "";
   showProviderPreset();
   $("provider-title").textContent = item ? "编辑供应商" : "添加供应商"; $("provider-dialog").showModal();
@@ -500,7 +509,7 @@ document.querySelectorAll("[data-close]").forEach(node => node.onclick = () => $
 $("provider-dialog").addEventListener("close", () => $("provider-form").elements.api_key.value = "");
 $("new-provider").onclick = () => editProvider(null);
 $("environment-default").onclick = async () => { try { await api("/default-provider", { method: "PUT", body: JSON.stringify({ provider_id: null }) }); await loadProviders(); toast("已取消默认供应商，选择新默认项后才能聊天"); } catch (e) { toast(e.message); } };
-$("provider-form").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id; data.enabled = form.elements.enabled.checked; data.supports_images = form.elements.supports_images.checked; data.supports_voice_cloning = form.elements.model_type.value === "tts" && form.elements.supports_voice_cloning.checked; data.thinking_mode = form.elements.model_type.value === "chat" ? form.elements.thinking_mode.value : "default"; submit.disabled = true; $("provider-error").textContent = ""; try { await api("/providers" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) }); $("provider-dialog").close(); await loadProviders(); toast("配置已保存，下次模型请求生效"); } catch (e) { $("provider-error").textContent = e.message; } finally { submit.disabled = false; } };
+$("provider-form").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id; data.enabled = form.elements.enabled.checked; data.supports_images = form.elements.supports_images.checked; data.supports_voice_cloning = form.elements.model_type.value === "tts" && form.elements.supports_voice_cloning.checked; data.enable_web_fetch = form.elements.model_type.value === "chat" && form.elements.api_type.value !== "deepseek" && form.elements.enable_web_fetch.checked; data.web_search_mode = form.elements.model_type.value === "chat" && form.elements.api_type.value !== "deepseek" ? form.elements.web_search_mode.value : "disabled"; data.thinking_mode = form.elements.model_type.value === "chat" ? form.elements.thinking_mode.value : "default"; submit.disabled = true; $("provider-error").textContent = ""; try { await api("/providers" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) }); $("provider-dialog").close(); await loadProviders(); toast("配置已保存，下次模型请求生效"); } catch (e) { $("provider-error").textContent = e.message; } finally { submit.disabled = false; } };
 $("filter-form").onsubmit = event => { event.preventDefault(); currentPage = 1; loadRecords().catch(e => toast(e.message)); };
 $("reset-filters").onclick = () => { $("filter-form").reset(); currentPage = 1; loadRecords().catch(e => toast(e.message)); };
 $("refresh-records").onclick = () => loadRecords().catch(e => toast(e.message));

@@ -164,3 +164,13 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 `0028_tts_voice_clone` 接续 `0027_thinking_mode`，向 model_providers 新增非空布尔字段 supports_voice_cloning，默认0；新增 provider_tts_voices 表保存供应商归属、请求UUID/指纹、模型/地址快照、音色ID、状态和时间，不保存参考音频。唯一键为(provider_id, request_id)，外键指向model_providers；使用MySQL 5.6兼容的InnoDB/utf8mb4。表使用IF NOT EXISTS，新增列与既有迁移一致由Alembic版本控制；失败后核对结构，不能stamp或盲目重跑。
 
 部署前停服务、备份项目库，再执行 `.\.venv\Scripts\python -m alembic upgrade head`（Docker使用既有迁移命令），成功后启动并刷新后台。启动反射新表，不自动迁移；降级拒绝丢弃音色记录。本轮未执行迁移或数据库验证。
+
+
+## 百炼联网搜索（0029，已编写未执行）
+
+`0029_provider_web_search` 接续0028，向 model_providers 添加非空 VARCHAR(16) web_search_mode，默认 disabled。关闭、自动、强制分别为 disabled / auto / forced；不回填启用任何供应商，不更改原有字段。按用户约定不执行备份；停止应用后显式执行 `python -m alembic upgrade head`，再重启并刷新后台。不自动迁移，不使用 stamp；降级拒绝丢弃搜索配置。本次未执行迁移或数据库验证。
+
+
+## 百炼网页抓取（0030，已编写未执行）
+
+`0030_provider_web_fetch` 接续0029，为 model_providers 新增非空布尔 enable_web_fetch，默认0，不更改其他字段。停止应用，显式执行 `python -m alembic upgrade head` 后重启、刷新后台；不自动迁移、不使用stamp、不备份。降级拒绝丢失配置。本次未执行迁移或数据库验证。
