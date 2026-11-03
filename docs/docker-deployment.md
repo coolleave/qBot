@@ -251,3 +251,12 @@ docker compose up -d qbot
 ## 2026-11-02 网页录音复刻发布（已部署）
 
 功能提交 `8bac874` 已推送并由既有加锁部署脚本完成构建和上线，成功基线已登记。容器running healthy、重启次数0，/health、/admin、voice-clone-recorder.js和带版本参数的voice-capture.js均返回200；5个录音相关前端文件SHA-256与仓库一致，数据库保持0028_tts_voice_clone。本轮未执行数据库备份或迁移，未运行测试、浏览器、真实麦克风或复刻/TTS调用。刷新后台即可看到朗读文案与录音入口；麦克风需要HTTPS或localhost，HTTP/IP页面不能录音。
+
+
+## 2026-11-03 定时备用模型与音色管理发布（已部署）
+
+功能提交 `a34abaf`（定时文案备用切换）、`458425e`（模型ID不预填）、`6bc14ab`（复刻音色管理和发送选择）已推送至main，并通过既有加锁部署脚本构建上线，成功基线已登记。无需数据库迁移，本次未执行数据库备份，未修改用户模型配置或重发历史任务。
+
+容器running healthy、重启次数0；/health、/admin、admin.js、scheduled-templates.js均返回200。admin.py、storage.py、proactive.py、greeting_generation.py及上述两个JS文件的SHA-256与发布提交一致。音色删除仅移除本地候选，保留云端音色及已有任务引用。刷新后台后使用新界面。
+
+已完成静态语法与差异检查、部署健康和运行文件一致性核对；未运行测试、浏览器、付费模型/TTS调用或QQ发送验收。各模块中的“未部署”是本轮开发阶段记录，以本节发布结果为准，真实音色与备用切换效果待实际使用验收。
