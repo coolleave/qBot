@@ -263,9 +263,38 @@ class Store(VoiceCallStore, MemoryStore):
 
     def list_tts_voices(self, provider_id: int) -> list[dict]:
         with self.engine.connect() as conn:
-            rows = conn.execute(select(self.tts_voices).where(self.tts_voices.c.provider_id == provider_id)
+            provider = conn.execute(select(self.providers).where(
+                self.providers.c.id == provider_id)).mappings().first()
+            if not provider:
+                raise ValueError("供应商不存在")
+            rows = conn.execute(select(self.tts_voices).where(self.tts_voices.c.provider_id == provider_id,
+                                self.tts_voices.c.status != "removed")
                                 .order_by(self.tts_voices.c.id.desc()).limit(100)).mappings()
-            return [self._public_tts_voice(dict(row)) for row in rows]
+            return [{**self._public_tts_voice(dict(row)), "selectable": bool(
+                provider["supports_voice_cloning"] and provider["model_type"] == "tts"
+                and row["status"] == "ready" and row["voice_id"]
+                and row["model_name"] == provider["model_name"]
+                and row["service_url"] == provider["base_url"])} for row in rows]
+
+    def edit_tts_voice(self, provider_id: int, voice_record_id: int, name: str | None = None) -> dict:
+        """只维护本地名称和可见性；保留创建记录，避免重发同一复刻请求。"""
+        if name is not None:
+            name = name.strip()
+            if not 1 <= len(name) <= 10 or any(ord(c) < 32 for c in name):
+                raise ValueError("音色名称需为1～10字且不能包含控制字符")
+        with self.engine.begin() as conn:
+            row = conn.execute(select(self.tts_voices).where(
+                self.tts_voices.c.provider_id == provider_id,
+                self.tts_voices.c.id == voice_record_id).with_for_update()).mappings().first()
+            if not row or row["status"] == "removed":
+                raise ValueError("音色不存在或已移除")
+            values = {"updated_at": utc_now()}
+            if name is None:
+                values.update(status="removed", error="已从本地音色列表移除")
+            else:
+                values["prefix"] = name
+            conn.execute(self.tts_voices.update().where(self.tts_voices.c.id == voice_record_id).values(**values))
+            return self._public_tts_voice({**dict(row), **values})
 
     @staticmethod
     def _public_tts_voice(row: dict) -> dict:
@@ -316,7 +345,13 @@ class Store(VoiceCallStore, MemoryStore):
             values["voice_id"] = voice_id
         with self.engine.begin() as conn:
             conn.execute(self.tts_voices.update().where(self.tts_voices.c.provider_id == provider_id,
-                         self.tts_voices.c.id == voice_record_id).values(**values))
+                         self.tts_voices.c.id == voice_record_id,
+                         self.tts_voices.c.status != "removed").values(**values))
+            if voice_id is not None:
+                # 另一页面可能在创建返回前移除记录，仍保留云端ID供审计，不恢复可见性。
+                conn.execute(self.tts_voices.update().where(self.tts_voices.c.provider_id == provider_id,
+                             self.tts_voices.c.id == voice_record_id,
+                             self.tts_voices.c.status == "removed").values(voice_id=voice_id, updated_at=utc_now()))
         return self._public_tts_voice(self.get_tts_voice(provider_id, voice_record_id))
 
     def multimodal_config(self, bot_id: int) -> dict:

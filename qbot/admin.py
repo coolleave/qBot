@@ -28,6 +28,11 @@ class Login(BaseModel):
     password: SecretStr = Field(max_length=256)
 
 
+class VoiceNameInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=10)
+
+
 class ProviderInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=100)
@@ -319,7 +324,25 @@ def admin_router(settings: Settings) -> APIRouter:
 
     @router.get("/api/admin/providers/{provider_id}/voices", dependencies=[Depends(require_admin)])
     async def provider_voices(provider_id: int, db: Store = Depends(store)) -> dict:
-        return {"items": await db.call("list_tts_voices", provider_id)}
+        try:
+            return {"items": await db.call("list_tts_voices", provider_id)}
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.put("/api/admin/providers/{provider_id}/voices/{voice_record_id}", dependencies=[Depends(require_admin)])
+    async def rename_provider_voice(provider_id: int, voice_record_id: int, data: VoiceNameInput,
+                                    db: Store = Depends(store)) -> dict:
+        try:
+            return await db.call("edit_tts_voice", provider_id, voice_record_id, data.name)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.delete("/api/admin/providers/{provider_id}/voices/{voice_record_id}", dependencies=[Depends(require_admin)])
+    async def remove_provider_voice(provider_id: int, voice_record_id: int, db: Store = Depends(store)) -> dict:
+        try:
+            return await db.call("edit_tts_voice", provider_id, voice_record_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
 
     @router.post("/api/admin/providers/{provider_id}/voices", dependencies=[Depends(require_admin)])
     async def clone_provider_voice(provider_id: int, request: Request, request_id: UUID,
@@ -371,6 +394,8 @@ def admin_router(settings: Settings) -> APIRouter:
             try:
                 provider = await db.call("provider_for_probe", provider_id)
                 record = await db.call("get_tts_voice", provider_id, voice_record_id)
+                if record["status"] == "removed":
+                    raise ValueError("音色已从本地列表移除")
                 if record["model_name"] != provider["model_name"] or record["service_url"] != provider["base_url"]:
                     raise ValueError("音色与当前供应商模型或地址不匹配")
                 if not record["voice_id"]:

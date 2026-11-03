@@ -87,6 +87,7 @@ async function editScheduledTemplate(id = null) {
     for (const key of ["name","content","voice"]) f[key].value = data[key] || "";
     if (data.tts_provider_id && ![...f.tts_provider_id.options].some(x=>x.value === String(data.tts_provider_id))) f.tts_provider_id.add(new Option("原供应商不可用，请重新选择", data.tts_provider_id));
     f.tts_provider_id.value = data.tts_provider_id || "";
+    void bindTtsVoiceChoices(f.tts_provider_id, f.voice, providerData.items);
     $("template-image-name").textContent = data.image_filename ? "已保存：" + data.image_filename : "尚未上传图片";
     if (data.image_base64) {
       $("template-image-preview").src = "data:" + (/\.png$/i.test(data.image_filename) ? "image/png" : "image/jpeg") + ";base64," + data.image_base64;
@@ -111,6 +112,7 @@ async function applyScheduledTemplate(id) {
     const tts = f[slot + "_tts_provider_id"];
     if (data.tts_provider_id && ![...tts.options].some(x=>x.value === String(data.tts_provider_id))) tts.add(new Option("模板供应商（保存时校验）", data.tts_provider_id));
     tts.value = data.tts_provider_id || "";
+    void refreshTtsVoiceChoices(tts);
     f[slot + "_image_file"].value = "";
     f[slot + "_remove_image"].checked = !data.image_base64 || data.workflow.image_source !== "upload";
     if (data.image_base64 && data.workflow.image_source === "upload") greetingTemplateImages.set(slot, {image_base64:data.image_base64,image_filename:data.image_filename});

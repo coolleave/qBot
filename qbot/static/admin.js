@@ -18,6 +18,51 @@ const botNames = new Map();
 const botAppIds = new Map(), botAvatarUrls = new Map();
 const botIdentityRoles = new Map();
 const botVoices = new Map();
+const ttsVoiceChoices = new WeakMap();
+function bindTtsVoiceChoices(providerSelect, voiceInput, providerItems = providers) {
+  let state = ttsVoiceChoices.get(providerSelect);
+  if (!state) {
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "选择已就绪复刻音色");
+    voiceInput.before(select);
+    state = { select, voiceInput, request: 0, providerItems };
+    ttsVoiceChoices.set(providerSelect, state);
+    select.addEventListener("change", () => {
+      if (!select.value || voiceInput.disabled || providerSelect.disabled) return;
+      voiceInput.value = select.value;
+      voiceInput.dispatchEvent(new Event("input", { bubbles: true }));
+      voiceInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    voiceInput.addEventListener("input", () => { select.value = voiceInput.value; });
+    providerSelect.addEventListener("change", () => { void refreshTtsVoiceChoices(providerSelect); });
+  }
+  state.providerItems = providerItems;
+  return refreshTtsVoiceChoices(providerSelect);
+}
+async function refreshTtsVoiceChoices(providerSelect) {
+  const state = ttsVoiceChoices.get(providerSelect);
+  if (!state) return;
+  const request = ++state.request, providerId = providerSelect.value;
+  const provider = state.providerItems.find(row => String(row.id) === providerId);
+  const clone = Boolean(provider?.supports_voice_cloning);
+  state.select.hidden = !clone;
+  state.select.replaceChildren(new Option("正在加载音色…", ""));
+  if (clone || provider?.model_name.startsWith("qwen-audio-3.1-tts-")) state.voiceInput.removeAttribute("list");
+  else state.voiceInput.setAttribute("list", "tts-voices");
+  if (!clone) return;
+  try {
+    const data = await api(`/providers/${providerId}/voices`);
+    // 快速切换供应商或重开表单时，旧响应不能覆盖新模型的候选。
+    if (request !== state.request || providerSelect.value !== providerId) return;
+    const rows = data.items.filter(row => row.selectable);
+    state.select.replaceChildren(new Option(rows.length ? "选择复刻音色 / 手填ID" : "暂无就绪音色，可手填ID", ""),
+      ...rows.map(row => new Option(`${row.prefix} · ${row.voice_id}`, row.voice_id)));
+    state.select.value = rows.some(row => row.voice_id === state.voiceInput.value) ? state.voiceInput.value : "";
+  } catch (e) {
+    if (request !== state.request || providerSelect.value !== providerId) return;
+    state.select.replaceChildren(new Option("音色加载失败：" + e.message, ""));
+  }
+}
 function setIdentityOptions(form, botId, role = "", name = "", roleId = null) {
   const roles = botIdentityRoles.get(Number(botId)) || [];
   const select = form.elements.family_role;
@@ -271,6 +316,10 @@ function addVoiceCloning(card, item, voiceInput) {
     if (row?.voice_id) voiceInput.value = row.voice_id;
     status.textContent = row ? (row.error || labels[row.status] || row.status) : "";
     refresh.disabled = busy || !row?.voice_id;
+    displayName.value = row?.prefix || "";
+    displayName.disabled = busy || recording || !row;
+    rename.disabled = busy || recording || !row;
+    remove.disabled = busy || recording || !row;
   }
   async function reload(preferred) {
     const result = await api(`/providers/${item.id}/voices`);
@@ -286,6 +335,9 @@ function addVoiceCloning(card, item, voiceInput) {
     busy = value; create.disabled = value || recording || !item.has_api_key; upload.disabled = value || recording;
     prefix.disabled = value || recording; select.disabled = value || recording;
     refresh.disabled = value || recording || !selected()?.voice_id;
+    displayName.disabled = value || recording || !selected();
+    rename.disabled = value || recording || !selected();
+    remove.disabled = value || recording || !selected();
     recorder.setDisabled(value);
   }
   const refresh = button("查询状态", async () => {
@@ -333,11 +385,38 @@ function addVoiceCloning(card, item, voiceInput) {
   prefix.oninput = () => { requestId = null; };
   select.onchange = useSelected;
   create.disabled = !item.has_api_key; refresh.disabled = true;
-  actions.append(create, refresh);
+  const displayName = element("input");
+  displayName.placeholder = "音色显示名（最多10字）"; displayName.maxLength = 10;
+  displayName.setAttribute("aria-label", "音色显示名");
+  const rename = button("保存名称", async () => {
+    const row = selected(), name = displayName.value.trim();
+    if (!row || busy || recording) return;
+    if (!name) { status.textContent = "请填写音色显示名"; return; }
+    setBusy(true);
+    try {
+      await api(`/providers/${item.id}/voices/${row.id}`, { method: "PUT", body: JSON.stringify({ name }) });
+      await reload(row.id);
+    } catch (e) { status.textContent = e.message; }
+    finally { setBusy(false); }
+  });
+  const remove = button("移除本地音色", async () => {
+    const row = selected();
+    if (!row || busy || recording || !confirm("从本项目音色列表移除？云端音色和已保存任务不变。")) return;
+    setBusy(true);
+    try {
+      await api(`/providers/${item.id}/voices/${row.id}`, { method: "DELETE" });
+      if (voiceInput.value === row.voice_id) voiceInput.value = "";
+      await reload();
+      status.textContent = "已移除本地音色，云端音色和已保存任务不变。";
+    } catch (e) { status.textContent = e.message; }
+    finally { setBusy(false); }
+  });
+  displayName.disabled = rename.disabled = remove.disabled = true;
+  actions.append(create, refresh, rename, remove);
   const alternative = element("details"), summary = element("summary", "或选择已有录音文件");
   alternative.append(summary, upload);
   panel.append(element("h3", "音色复刻"), prefix, recorder.node,
-    element("p", "录音5～60秒；点击创建音色后才上传至百炼。", "muted"), alternative, select, actions, status);
+    element("p", "录音5～60秒；点击创建音色后才上传至百炼。", "muted"), alternative, select, displayName, actions, status);
   card.append(panel);
   void reload().catch(e => { status.textContent = e.message; });
 }
@@ -712,6 +791,7 @@ $("greeting-task-slot").onchange = () => {
   if (greetingTemplateImages.has(from)) greetingTemplateImages.set(to, greetingTemplateImages.get(from));
   else greetingTemplateImages.delete(to);
   greetingTarget.activeSlot = to;
+  void refreshTtsVoiceChoices(form.elements[to + "_tts_provider_id"]);
   updateGreetingMedia(to); updateGreetingTaskSlot(); greetingDirty = true;
 };
 async function openGreetings(item) {
@@ -751,6 +831,7 @@ async function openGreetings(item) {
     tts.replaceChildren(new Option("请选择 TTS 供应商", ""), ...ttsProviders.map(p => new Option(p.name, p.id)));
     if (rule.tts_provider_id && !ttsProviders.some(p => p.id === rule.tts_provider_id)) tts.add(new Option("原供应商不可用，请重新选择", rule.tts_provider_id));
     tts.value = rule.tts_provider_id || "";
+    void bindTtsVoiceChoices(tts, form.elements[rule.slot + "_voice"], ttsProviders);
     $(rule.slot + "-image-name").textContent = rule.has_image ? "已保存：" + rule.image_filename + "（不重新选择则保留）" : "尚未上传图片";
     updateGreetingMedia(rule.slot);
     form.elements[rule.slot + "_enabled"].checked = rule.enabled;
@@ -913,6 +994,7 @@ function composeMessage(item) {
   sendTarget = { botId: item.bot_id, recordId: item.id, source: item.source, requestId: createRequestId() };
   sendPayload = null;
   const form = $("send-form"); form.reset(); form.elements.content.readOnly = false;
+  $("send-tts-panel").querySelectorAll("input, select, textarea").forEach(node => { node.disabled = false; });
   // 每次编写按目标机器人初始化，临时选择仅影响当前消息。
   $("send-tts-voice").value = botVoices.get(Number(item.bot_id)) || "Bunny";
   $("send-tts-provider").replaceChildren();
@@ -920,6 +1002,7 @@ function composeMessage(item) {
     const option = element("option", provider.name + " · " + provider.model_name); option.value = provider.id;
     $("send-tts-provider").append(option);
   }
+  void bindTtsVoiceChoices($("send-tts-provider"), $("send-tts-voice"));
   $("send-tts-generate").disabled = false;
   $("send-tts-result").textContent = "";
   form.elements.message_kind.disabled = false; form.elements.media_file.disabled = false;
@@ -953,6 +1036,8 @@ $("send-form").onsubmit = async event => {
   form.elements.message_kind.disabled = true; form.elements.media_file.disabled = true;
   sendPending = true;
   $("send-tts-generate").disabled = true;
+  // 请求结果不明时只能重提同一音频，不允许界面改音色却仍发送旧文件。
+  $("send-tts-panel").querySelectorAll("input, select, textarea").forEach(node => { node.disabled = true; });
   const closeButtons = [...$("send-dialog").querySelectorAll("[data-close]")]; closeButtons.forEach(node => node.disabled = true);
   $("send-result").textContent = payload.kind === "text" ? "正在发送，请稍候…" :
     target.source === "qq_c2c" && /\.wav$/i.test(payload.file.name)
