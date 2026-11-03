@@ -528,3 +528,6 @@ provider_tts_voices：id BIGINT UNSIGNED自增主键；provider_id同类型外�
 ## 百炼网页抓取（0030，待迁移）
 
 `model_providers.enable_web_fetch`：非空 BOOLEAN，默认0；启用时要求同供应商 web_search_mode 非 disabled、thinking_mode 为 enabled，并使用百炼兼容 chat 接口。原供应商不自动开启。迁移入口 `migrations/versions/0030_provider_web_fetch.py`，接续0029。
+
+
+2026-11-03：联网搜索与网页抓取功能 `d585c72` 已部署，线上数据库已升级至0030，11个供应商的新开关均保持关闭。容器健康、HTTP及9个关键文件一致性检查通过；未备份、未运行测试或付费接口验收。发布详情见 [部署记录](docker-deployment.md)。

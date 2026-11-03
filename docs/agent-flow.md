@@ -151,3 +151,6 @@ QQ 私聊、群聊及本地 ChatService 回复统一注入当前北京时间；�
 ## 百炼网页抓取（代码已编写，待运行验收）
 
 provider_model 按供应商 enable_web_fetch 开启 agent_max，并要求搜索和显式思考均开启。ChatOpenAI 使用 streaming=True、stream_usage=True，由 LangChain 聚合普通 ainvoke 的完整回复和用量，继续经过既有正文/推理隔离、记录与QQ发送流程，不把思考片段发给用户。网页 chat 的 astream 和供应商连接检查沿用流式路径。独立视觉与记忆整理通过 allow_web_search=False 排除搜索及抓取；不开启本地URL抓取。超时和备用行为不变，页面访问能力由百炼及目标站点决定。需0030迁移，模型支持范围见[后台与模型](admin-and-models.md)。未运行测试或真实模型验收。
+
+
+2026-11-03：联网搜索与网页抓取功能 `d585c72` 已部署，线上数据库已升级至0030，11个供应商的新开关均保持关闭。容器健康、HTTP及9个关键文件一致性检查通过；未备份、未运行测试或付费接口验收。发布详情见 [部署记录](docker-deployment.md)。

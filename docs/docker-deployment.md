@@ -260,3 +260,12 @@ docker compose up -d qbot
 容器running healthy、重启次数0；/health、/admin、admin.js、scheduled-templates.js均返回200。admin.py、storage.py、proactive.py、greeting_generation.py及上述两个JS文件的SHA-256与发布提交一致。音色删除仅移除本地候选，保留云端音色及已有任务引用。刷新后台后使用新界面。
 
 已完成静态语法与差异检查、部署健康和运行文件一致性核对；未运行测试、浏览器、付费模型/TTS调用或QQ发送验收。各模块中的“未部署”是本轮开发阶段记录，以本节发布结果为准，真实音色与备用切换效果待实际使用验收。
+
+
+## 2026-11-03 联网搜索与网页抓取发布（已迁移、已部署）
+
+功能提交 `d585c72` 已推送main并部署到实验室服务器。持有既有部署锁，复用构建缓存，停服后显式执行0029、0030，数据库已核对为 `0030_provider_web_fetch (head)`；按用户要求未备份，不接代码解释器。11个供应商均保持 web_search_mode=disabled、enable_web_fetch=0，未自动开启或更换模型。
+
+容器running healthy、重启次数0，/health、/admin、/admin-assets/admin.js均返回200；7个关键代码/界面文件与2个迁移文件SHA-256和仓库一致，自动部署成功基线已登记。首次SSH脚本在只读迁移查询后因标准输入被Compose消费而结束，当时仅构建了镜像；改用独立脚本后完成迁移与上线，无重复迁移。
+
+刷新后台，在模型供应商编辑页设置联网搜索；网页抓取需兼容Chat接口支持agent_max的模型，并将搜索设为自动/强制、思考设为开启。未运行测试、浏览器、付费模型或真实网页抓取验收。开发段落中的未部署状态以本发布记录为准。
