@@ -150,6 +150,15 @@ MySQL DDL 会隐式提交，迁移失败可能留下已建表或已修改的结�
 
 新增 `0027_thinking_mode`，接续0026，为 model_providers 增加非空 VARCHAR(16) thinking_mode，默认 default；原 enable_thinking 为1的行回填 enabled，其余 default。保留旧列和其他数据。部署前停服务、备份、显式升级再启动；不支持降级丢失三态语义。尚未执行。
 
+
+## 2026-11-02 三态思考数据库迁移（已执行，应用未部署）
+
+按用户授权，持有服务器部署锁并停止生产 qBot，在共享项目库仅执行 `0026_provider_thinking → 0027_thinking_mode`。迁移前21张表、1023行及表结构备份于服务器 `.deploy/backups/thinking-0027/database-before.json`，目录为私有权限，SHA-256已核对；原镜像及部署基线同时保留。本机未发现运行中的 qBot。
+
+新增字段的类型、非空和默认值已核对；9条供应商配置映射为8条 default、1条 enabled。回填触发MySQL自动更新1条供应商的 updated_at，已在再次持锁停服后按备份恢复，并逐字段确认9条供应商的全部原字段一致。未修改已执行迁移文件。
+
+原生产容器已恢复 running healthy、重启次数0，/health正常、/admin返回200；应用仍为 `53f85f4`，未部署三态表单代码、未更新自动部署基线。自动部署仍会因迁移文件变更暂停，后续需手动部署新应用后登记基线。未运行测试、浏览器或付费模型调用。
+
 ## TTS 音色复刻（0028，已编写未执行）
 
 `0028_tts_voice_clone` 接续 `0027_thinking_mode`，向 model_providers 新增非空布尔字段 supports_voice_cloning，默认0；新增 provider_tts_voices 表保存供应商归属、请求UUID/指纹、模型/地址快照、音色ID、状态和时间，不保存参考音频。唯一键为(provider_id, request_id)，外键指向model_providers；使用MySQL 5.6兼容的InnoDB/utf8mb4。表使用IF NOT EXISTS，新增列与既有迁移一致由Alembic版本控制；失败后核对结构，不能stamp或盲目重跑。
