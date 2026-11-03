@@ -359,8 +359,8 @@ function showProviderPreset() {
   if (kind !== "tts") form.elements.supports_voice_cloning.checked = false;
   if (kind !== "chat") form.elements.thinking_mode.value = "default";
   $("provider-preset-hint").textContent = preset === "qwen"
-    ? (kind === "asr" ? "千问 ASR 默认 Filetrans：先上传 WAV，再异步转写。临时文件保留48小时，仅供开发试用；正式部署请使用自有 OSS。" : "千问默认北京地域；切换类型会重新填写推荐模型和地址。其他地域可手动修改，API Key 须匹配地域。")
-    : preset === "deepseek" ? "DeepSeek 预设用于聊天，默认 deepseek-flash。填写自己的 API Key 后保存。" : "自行填写 HTTPS 地址、模型和接口。自定义不会自动适配未知的 ASR / TTS 协议。";
+    ? (kind === "asr" ? "千问 ASR 默认 Filetrans：先上传 WAV，再异步转写。临时文件保留48小时，仅供开发试用；正式部署请使用自有 OSS。" : "千问默认北京地域；切换类型会更新地址，模型ID请自行填写。其他地域可手动修改，API Key 须匹配地域。")
+    : preset === "deepseek" ? "DeepSeek 预设用于聊天。填写模型ID和自己的 API Key 后保存。" : "自行填写 HTTPS 地址、模型和接口。自定义不会自动适配未知的 ASR / TTS 协议。";
   const names = preset === "qwen" ? ({ chat: ["qwen3.8-flash", "qwen3-vl-plus"], asr: ["qwen-audio-3.0-asr-flash-filetrans", "qwen-audio-3.1-asr-flash-filetrans", "qwen-audio-3.0-asr-flash", "qwen-audio-3.1-asr-flash"], realtime: ["qwen-audio-3.1-realtime-flash"], asr_realtime: ["qwen3-asr-flash-realtime"], tts: ["qwen3-tts-flash-realtime", "qwen-audio-3.1-tts-flash", "qwen-audio-3.1-tts-plus"] }[kind] || []) : preset === "deepseek" ? ["deepseek-flash", "deepseek-v4-pro"] : [];
   $("provider-model-suggestions").replaceChildren(...names.map(name => new Option(name, name)));
 }
@@ -376,7 +376,6 @@ function applyProviderPreset() {
   } catch { form.elements.api_key.value = ""; }
   form.elements.api_type.value = preset === "deepseek" ? "deepseek" : "openai_compatible";
   form.elements.base_url.value = base;
-  form.elements.model_name.value = preset === "deepseek" ? "deepseek-flash" : { chat: "qwen3.8-flash", asr: "qwen-audio-3.0-asr-flash-filetrans", realtime: "qwen-audio-3.1-realtime-flash", asr_realtime: "qwen3-asr-flash-realtime", tts: "qwen3-tts-flash-realtime" }[kind];
   form.elements.supports_images.checked = preset === "qwen" && kind === "chat";
   if (!form.elements.name.value.trim()) form.elements.name.value = (preset === "qwen" ? "千问" : "DeepSeek") + " " + kind;
   showProviderPreset();
@@ -398,7 +397,7 @@ $("provider-form").elements.model_type.onchange = () => {
 function editProvider(item) {
   const form = $("provider-form"); form.reset(); $("provider-error").textContent = "";
   $("provider-preset").value = item ? providerPreset(item) : "deepseek";
-  const defaults = item || { id: "", name: "", model_type: "chat", api_type: "deepseek", base_url: "https://api.deepseek.com", model_name: "deepseek-flash", enabled: false };
+  const defaults = item || { id: "", name: "", model_type: "chat", api_type: "deepseek", base_url: "https://api.deepseek.com", model_name: "", enabled: false };
   for (const key of ["id", "name", "model_type", "api_type", "base_url", "model_name"]) form.elements[key].value = defaults[key];
   form.elements.supports_images.checked = Boolean(defaults.supports_images);
   form.elements.supports_voice_cloning.checked = Boolean(defaults.supports_voice_cloning);
