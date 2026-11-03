@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from qbot.qq import QQAPIError, QQDeliveryUnknown
 from qbot.media import MediaUpload
 from qbot.storage import StorageError
-from qbot.greeting_workflows import resolve_workflow
+from qbot.greeting_workflows import GreetingWorkflow, resolve_workflow
 from qbot.greeting_generation import generate_greeting, GreetingGenerationError
 
 
@@ -70,6 +70,49 @@ class ProactiveSender:
                     media_details=json.dumps(details, ensure_ascii=False))
                 raise
 
+    async def _generate_scheduled_content(self, task: dict, workflow: GreetingWorkflow, provider: dict,
+                                          persona: str, record: dict, description: str | None,
+                                          details: dict) -> str:
+        """仅在文案生成失败时切换一次，存储和后续发送错误不触发模型切换。"""
+        fallback_id = await self.store.call("fallback_provider_id", provider["id"])
+        model_attempts = details["model_attempts"]
+        for index in range(2 if fallback_id is not None else 1):
+            if index:
+                provider = await self.store.call("capability_provider", fallback_id, "chat")
+            attempt = {"provider_id": provider["id"], "provider_name": provider["name"],
+                       "model_name": provider["model_name"], "fallback": bool(index), "status": "processing"}
+            model_attempts.append(attempt)
+            await self.store.call("update_record", task["record_id"],
+                provider_id=provider["id"], provider_name_snapshot=provider["name"],
+                model_name_snapshot=provider["model_name"],
+                media_details=json.dumps(details, ensure_ascii=False))
+            try:
+                # 为备用及媒体准备保留预算；不延长整个任务的190秒准备上限。
+                content = await generate_greeting(self.settings, provider, persona, record,
+                    task["slot"], description,
+                    output="audio" if workflow.output in ("audio", "text_audio") else "text",
+                    prompt_style=workflow.prompt_style, custom_prompt=workflow.custom_prompt,
+                    realtime=True, generation_timeout=60 if fallback_id is not None else 125)
+                if len(content) > self.settings.max_reply_chars:
+                    raise GreetingGenerationError("生成文案超过消息长度上限，未发送")
+            except asyncio.CancelledError:
+                attempt["status"] = "cancelled"
+                raise
+            except Exception as exc:
+                # 非标准供应商错误只留类型，避免原始响应泄露密钥。
+                reason = str(exc) if isinstance(exc, GreetingGenerationError) else f"文案生成异常（{type(exc).__name__}）"
+                attempt.update(status="failed", error=reason)
+                if index or fallback_id is None:
+                    raise GreetingGenerationError(reason) from None
+                details["fallback_provider_id"] = fallback_id
+                logging.getLogger(__name__).warning(
+                    "定时文案主模型失败，切换备用 record=%s primary_id=%s fallback_id=%s type=%s",
+                    task["record_id"], provider["id"], fallback_id, type(exc).__name__)
+            else:
+                attempt["status"] = "succeeded"
+                return content
+        raise GreetingGenerationError("文案生成失败")
+
     async def _scheduled_attempt(self, task: dict, retry_count: int, attempts: list[dict]) -> dict:
         """调用方持有管理锁；一次尝试的全部发送完成后才决定能否重试。"""
         bot_id, source = task["bot_id"], task["source"]
@@ -86,7 +129,7 @@ class ProactiveSender:
         if workflow.image_source != "none":
             parts.append({"kind": "image", "status": "pending"})
         details = {"scheduled_delivery": delivery.get("delivery_mode", "custom"),
-                   "workflow": workflow.model_dump(), "parts": parts,
+                   "workflow": workflow.model_dump(), "parts": parts, "model_attempts": [],
                    "retry_count": retry_count, "attempts": attempts, "attempt_number": len(attempts) + 1}
         sent_count = 0
         current_part = None
@@ -108,7 +151,7 @@ class ProactiveSender:
             qq = runtime.dispatcher.qq
             prepared = {}
             # 先准备全部媒体，再开始发送；准备失败不会发出半组消息。
-            # AI 文案最多等待120秒，另为天气、语音合成及上传保留准备时间。
+            # AI 主备文案共用准备预算，另为语音合成及上传保留时间。
             preparation_timeout = 190 if workflow.content_source == "ai" else 100
             async with asyncio.timeout(preparation_timeout):
                 stage = "读取图片"
@@ -131,11 +174,8 @@ class ProactiveSender:
                     bots = await self.store.call("list_bots")
                     bot = next(item for item in bots if item["id"] == bot_id)
                     record = await self.store.call("record_detail", task["record_id"])
-                    task["content"] = await generate_greeting(self.settings, provider,
-                        bot.get("system_prompt") or "", record, task["slot"], description, output="audio" if workflow.output in ("audio", "text_audio") else "text",
-                        prompt_style=workflow.prompt_style, custom_prompt=workflow.custom_prompt, realtime=True)
-                    if len(task["content"]) > self.settings.max_reply_chars:
-                        raise GreetingGenerationError("生成文案超过消息长度上限，未发送")
+                    task["content"] = await self._generate_scheduled_content(
+                        task, workflow, provider, bot.get("system_prompt") or "", record, description, details)
                     stage = "保存生成文案"
                     await self.store.call("save_scheduled_content", bot_id, task["record_id"], task["content"])
                 if media is not None:
@@ -186,7 +226,8 @@ class ProactiveSender:
             logging.getLogger(__name__).warning("定时媒体准备失败：%s", type(exc).__name__)
         except asyncio.CancelledError:
             attempts.append({"number": len(attempts) + 1, "status": "cancelled",
-                             "error": "任务中断", "sent_parts": sent_count, "total_parts": len(parts)})
+                             "error": "任务中断", "sent_parts": sent_count, "total_parts": len(parts),
+                             "model_attempts": details["model_attempts"]})
             if current_part and current_part["status"] == "sending":
                 current_part["status"] = "delivery_unknown" if sending else "send_failed"
             await self.store.call("update_record", task["record_id"],
@@ -208,7 +249,8 @@ class ProactiveSender:
         should_retry = (retry_allowed and status == "send_failed" and sent_count == 0
                         and not sending and attempt_number <= retry_count)
         attempts.append({"number": attempt_number, "status": status, "error": error,
-                         "sent_parts": sent_count, "total_parts": len(parts)})
+                         "sent_parts": sent_count, "total_parts": len(parts),
+                         "model_attempts": details["model_attempts"]})
         if status != "replied":
             if current_part and current_part["status"] == "sending":
                 current_part["status"] = status

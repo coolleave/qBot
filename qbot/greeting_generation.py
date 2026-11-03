@@ -26,10 +26,11 @@ class GreetingGenerationError(ValueError):
 async def generate_greeting(settings: Settings, provider: dict, persona: str, record: dict, slot: str,
                             image_description: str | None = None, *,
                             output: Literal["text", "audio"] = "text",
-                            prompt_style: str | None = None, custom_prompt: str = "", realtime: bool = False) -> str:
+                            prompt_style: str | None = None, custom_prompt: str = "", realtime: bool = False,
+                            generation_timeout: float = 125) -> str:
     config = settings.model_copy(update={"model_max_retries": 0,
         # 思考过程可能计入输出额度，不能按最终200字文案限制模型预算。
-        "model_timeout_seconds": 120, "model_max_tokens": 4096})
+        "model_timeout_seconds": min(120, generation_timeout), "model_max_tokens": 4096})
     prompts = files("qbot").joinpath("prompts")
     now = local_time(datetime.now(timezone.utc))
     context = {**time_context(now),
@@ -46,7 +47,7 @@ async def generate_greeting(settings: Settings, provider: dict, persona: str, re
         context["配图描述"] = image_description
     model = None
     try:
-        async with asyncio.timeout(125):
+        async with asyncio.timeout(generation_timeout):
             if realtime:
                 context["天气参考"] = await weather_context(now)
                 # 查询期间可能跨时段或跨日，生成时再次校准客观时间。
