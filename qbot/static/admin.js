@@ -707,6 +707,7 @@ async function editBot(item) {
     select.value = mm[key] || "";
   }
   form.elements.mm_voice.value = mm.voice || "Bunny";
+  void bindTtsVoiceChoices(form.elements.mm_tts_provider_id, form.elements.mm_voice, data.items);
   for (const key of ["private_reply", "group_reply"]) form.elements["mm_" + key].value = mm[key] || "text";
   const values = item || { id: "", name: "", app_id: "", transport: "websocket", provider_id: null, system_prompt: "", enabled: false };
   for (const key of ["id", "name", "app_id", "transport", "provider_id", "system_prompt"]) form.elements[key].value = values[key] ?? "";
