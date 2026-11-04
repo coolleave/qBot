@@ -205,6 +205,15 @@ class Dispatcher:
                                 await self.store.call("update_record", job.record_id, status="rejected", error_message=error[:1000])
                                 continue
 
+                            from qbot.agent_tools import ChatTools
+                            from qbot.auto_voice import voice_file
+                            target = message.author.member_openid if message.source == "qq_c2c" else message.group_openid
+
+                            async def prepare_tool_voice(value: str) -> str:
+                                return await voice_file(value, config, self.store, message.source, self.qq, target, diagnostics)
+
+                            chat_tools = None if control else ChatTools(self.settings, self.store, config, diagnostics, prepare_tool_voice)
+
                             async def respond(value: str) -> None:
                                 nonlocal sending
                                 from qbot.auto_voice import voice_file, wants_voice
@@ -213,10 +222,32 @@ class Dispatcher:
                                     notice = notice[:min(500, self.settings.max_reply_chars)]
                                     value = value[:max(0, self.settings.max_reply_chars - len(notice))] + notice
                                     await self.store.call("update_record", job.record_id, answer=value)
+                                if chat_tools and (chat_tools.media is not None or chat_tools.voice_info):
+                                    # 工具只准备媒体；此处存库后统一发送，发送开始后不再切备用或补发。
+                                    info = chat_tools.voice_info
+                                    if chat_tools.media is not None:
+                                        try:
+                                            async with asyncio.timeout(20):
+                                                info = await self.qq.upload_media(message.source, target, chat_tools.media)
+                                        except Exception:
+                                            diagnostics["fallback_reason"] = "生成图片上传失败"
+                                            notice = "图片已生成，但上传失败，本次未发送图片。"
+                                            await self.store.call("update_record", job.record_id, answer=notice)
+                                            await send(notice)
+                                            return
+                                    diagnostics["reply_kind"] = "image" if chat_tools.media is not None else "audio"
+                                    sending = True
+                                    with measure(diagnostics, "send"):
+                                        try:
+                                            async with asyncio.timeout(10):
+                                                await self.qq.send_media(message.source, target, info, message.id)
+                                        except TimeoutError:
+                                            raise QQDeliveryUnknown("媒体回复超时，送达未知") from None
+                                    return
                                 remaining = deadline - time.monotonic()
                                 if (not control and not diagnostics.get("warnings") and remaining >= 80
+                                        and not (chat_tools and "send_voice" in chat_tools.used)
                                         and wants_voice(value, config, message.source, prepared["voice_input"])):
-                                    target = message.author.member_openid if message.source == "qq_c2c" else message.group_openid
                                     try:
                                         # 只包围尚未发送的准备阶段；媒体发送开始后绝不回退。
                                         async with asyncio.timeout(min(65, remaining - 15)):
@@ -245,7 +276,7 @@ class Dispatcher:
                             from qbot.auto_voice import voice_requested
                             await self.chat.reply((message_scope(message), message.author.member_openid),
                                 prepared["text"], respond, record_id=job.record_id, image_blocks=prepared["blocks"],
-                                vision_provider_id=config["vision_provider_id"], diagnostics=diagnostics,
+                                vision_provider_id=config["vision_provider_id"], diagnostics=diagnostics, tools=chat_tools,
                                 audio_unrecognized=bool(diagnostics.get("audio_unrecognized")),
                                 speech_style=(not control and not diagnostics.get("warnings")
                                               and voice_requested(config, message.source, prepared["voice_input"])))

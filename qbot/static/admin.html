@@ -406,7 +406,7 @@
             type="checkbox" name="mm_asr">短语音转写（最多60秒）</label><label>视觉理解模型（单独选择，仅分析图片）<select
             name="mm_vision_provider_id"></select></label><label>语音识别模型<select
             name="mm_asr_provider_id"></select></label><label>自动回复语音模型<select
-            name="mm_tts_provider_id"></select></label><label>音色 ID<input name="mm_voice" value="Bunny"
+            name="mm_tts_provider_id"></select></label><label>图片生成模型<select name="mm_image_provider_id"></select></label><label>联网查询模型<select name="mm_web_provider_id"></select></label><label>音色 ID<input name="mm_voice" value="Bunny"
             list="tts-voices" maxlength="100"></label><label>私聊回复方式<select name="mm_private_reply">
             <option value="text">文字</option>
             <option value="follow">收到语音时用语音回复</option>
@@ -444,7 +444,7 @@
         </select></label>
       <label>接口类型<select name="api_type">
           <option value="deepseek">DeepSeek</option>
-          <option value="openai_compatible">兼容聊天 / 千问原生语音接口</option>
+          <option value="openai_compatible">兼容聊天 / 生图 / 千问原生语音接口</option>
           <option value="openai_chat">OpenAI 兼容 · Chat Completions</option>
         </select></label>
       <p class="muted">填写 API 基础地址，不包含 /chat/completions。</p><label>服务地址<input name="base_url" type="url" required maxlength="2048"

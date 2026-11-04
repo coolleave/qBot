@@ -33,7 +33,7 @@ class RecordedChat:
     async def _reply(self, key: SessionKey, text: str, sender: Sender | None = None,
                     *, record_id: int | None = None, image_blocks: list[dict] | None = None,
                     vision_provider_id: int | None = None, diagnostics: dict | None = None,
-                    speech_style: bool = False, audio_unrecognized: bool = False) -> str:
+                    speech_style: bool = False, audio_unrecognized: bool = False, tools=None) -> str:
         if record_id is None:
             record_id, _ = await self.store.call("receive", "local", "local", key[1], str(uuid.uuid4()), text, bot_id=self.bot_id)
         status, answer, send_started, delivered = "processing", None, False, False
@@ -97,7 +97,8 @@ class RecordedChat:
                         async with asyncio.timeout(timeout):
                             client = provider_model(self.settings.model_copy(update={"model_max_retries": 0}), selected)
                             clients.append(client)
-                            output = await client.ainvoke(prompt, config=config)
+                            output = (await tools.invoke(client, prompt, selected, config, text) if tools is not None
+                                      else await client.ainvoke(prompt, config=config))
                             try:
                                 clean = public_reply_text(output)
                             except UnsafeModelReply:
@@ -108,9 +109,9 @@ class RecordedChat:
 
                     budget = min(self.settings.model_timeout_seconds, self.settings.chat_timeout_seconds)
                     try:
-                        return await invoke(provider, min(budget, self.settings.chat_timeout_seconds / 2) if fallback_id else budget)
+                        return await invoke(provider, min(budget, self.settings.chat_timeout_seconds / 2) if fallback_id and tools is None else budget)
                     except Exception as exc:
-                        if fallback_id is None:
+                        if fallback_id is None or (tools is not None and tools.attempted):
                             raise
                         # 不输出供应商异常原文，避免响应中含密钥等敏感内容。
                         logger.warning("聊天主模型失败，切换备用模型 primary_id=%s fallback_id=%s error=%s",

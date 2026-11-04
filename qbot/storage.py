@@ -191,13 +191,15 @@ class Store(VoiceCallStore, MemoryStore):
                 mm = MultimodalConfig.model_validate(values.get("multimodal", {})).model_dump()
                 if mm["images"] and not mm["vision_provider_id"]:
                     raise ValueError("开启图片理解需单独选择视觉理解模型")
-                for field, kind in (("vision_provider_id", "chat"), ("asr_provider_id", "asr"), ("tts_provider_id", "tts")):
+                for field, kind in (("vision_provider_id", "chat"), ("asr_provider_id", "asr"), ("tts_provider_id", "tts"), ("image_provider_id", "image"), ("web_provider_id", "chat")):
                     pid = mm[field]
                     if pid is None:
                         continue
                     selected = conn.execute(select(self.providers).where(self.providers.c.id == pid)).mappings().first()
                     if not selected or not selected["enabled"] or not selected["api_key_encrypted"] or selected["model_type"] != kind:
                         raise ValueError("多模态供应商类型不匹配或未启用")
+                    if field == "web_provider_id" and selected["web_search_mode"] == "disabled":
+                        raise ValueError("联网模型需先开启联网搜索")
                     if field == "vision_provider_id" and (not selected["supports_images"] or selected["api_type"] not in ("openai_compatible", "openai_chat")):
                         raise ValueError("视觉供应商需要支持图片输入的兼容聊天接口")
                 values["multimodal"] = json.dumps(mm, ensure_ascii=False)
@@ -250,7 +252,7 @@ class Store(VoiceCallStore, MemoryStore):
             row = conn.execute(select(self.providers).where(self.providers.c.id == provider_id)).mappings().first()
         if row is None:
             raise ValueError("供应商不存在")
-        if row["model_type"] not in ("chat", "tts", "asr", "asr_realtime", "realtime"):
+        if row["model_type"] not in ("chat", "image", "tts", "asr", "asr_realtime", "realtime"):
             raise ValueError("该类型未接入调用")
         result = dict(row)
         encrypted = result.pop("api_key_encrypted")
@@ -386,6 +388,8 @@ class Store(VoiceCallStore, MemoryStore):
         values["enable_thinking"] = values["thinking_mode"] == "enabled"
         if values["model_type"] not in ("chat", "image", "asr", "tts", "asr_realtime", "realtime"):
             raise ValueError("无效的模型类型")
+        if values["model_type"] == "image" and values["api_type"] != "openai_compatible":
+            raise ValueError("图片生成请选择兼容接口，需支持 /images/generations 和 b64_json")
         if values["model_type"] in ("asr_realtime", "realtime"):
             from qbot.voice_call_config import validate_voice_provider
             validate_voice_provider(values, values["model_type"])
@@ -435,8 +439,10 @@ class Store(VoiceCallStore, MemoryStore):
                             raise ValueError("供应商已被定时语音任务或模板引用，请先调整配置")
                     for bot in conn.execute(select(self.bots)).mappings():
                         mm = json.loads(bot["multimodal"] or "{}")
-                        for field, kind in (("vision_provider_id", "chat"), ("asr_provider_id", "asr"), ("tts_provider_id", "tts")):
+                        for field, kind in (("vision_provider_id", "chat"), ("asr_provider_id", "asr"), ("tts_provider_id", "tts"), ("image_provider_id", "image"), ("web_provider_id", "chat")):
                             bound_id = mm.get(field)
+                            if bound_id == provider_id and field == "web_provider_id" and values["web_search_mode"] == "disabled":
+                                raise ValueError("该供应商已绑定联网工具，请先调整机器人配置")
                             if bound_id == provider_id and (not values["enabled"] or values["model_type"] != kind
                                     or (field == "vision_provider_id" and (not values.get("supports_images")
                                         or values["api_type"] not in ("openai_compatible", "openai_chat")))):

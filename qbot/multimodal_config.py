@@ -12,6 +12,8 @@ class MultimodalConfig(BaseModel):
     vision_provider_id: int | None = Field(default=None, gt=0)
     asr_provider_id: int | None = Field(default=None, gt=0)
     tts_provider_id: int | None = Field(default=None, gt=0)
+    image_provider_id: int | None = Field(default=None, gt=0)
+    web_provider_id: int | None = Field(default=None, gt=0)
     voice: str = Field(default="Bunny", min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_. -]+$")
     private_reply: Literal["text", "follow", "voice"] = "text"
     group_reply: Literal["text", "follow", "voice"] = "text"
