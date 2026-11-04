@@ -234,7 +234,8 @@ class Store(VoiceCallStore, MemoryStore):
         with self.engine.connect() as conn:
             default_id = conn.execute(select(self.settings.c.default_provider_id)).scalar_one()
             items = []
-            for row in conn.execute(select(self.providers).order_by(self.providers.c.id)).mappings():
+            for row in conn.execute(select(self.providers).order_by(
+                    self.providers.c.updated_at.desc(), self.providers.c.id.desc())).mappings():
                 item = dict(row)
                 encrypted = item.pop("api_key_encrypted")
                 item["has_api_key"] = bool(encrypted)
@@ -448,6 +449,35 @@ class Store(VoiceCallStore, MemoryStore):
                 return provider_id
         except IntegrityError:
             raise ValueError("供应商名称重复或配置不符合数据库约束") from None
+
+    def delete_provider(self, provider_id: int) -> None:
+        """删除无引用配置；与配置保存共用锁，历史及云端音色不级联删除。"""
+        def references_provider(value: object) -> bool:
+            if isinstance(value, dict):
+                return any((key.endswith("provider_id") and item == provider_id)
+                           or references_provider(item) for key, item in value.items())
+            return isinstance(value, list) and any(references_provider(item) for item in value)
+
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(select(self.settings.c.id).where(self.settings.c.id == 1).with_for_update()).one()
+                if conn.execute(select(self.providers.c.id).where(
+                        self.providers.c.id == provider_id).with_for_update()).first() is None:
+                    raise ValueError("供应商不存在或已删除")
+                # 检查反射表中的结构化引用，也覆盖没有外键的历史快照引用。
+                for table in self.providers.metadata.tables.values():
+                    for column in table.c:
+                        if column.name.endswith("provider_id") and conn.execute(
+                                select(column).where(column == provider_id).limit(1)).first():
+                            raise ValueError("供应商仍被配置或历史记录引用，不能删除；请先解除配置引用，历史关联请保留并停用")
+                for table, field in ((self.bots, "multimodal"), (self.memory_settings, "config"),
+                                     (self.greetings, "delivery"), (self.templates, "config")):
+                    for raw in conn.execute(select(table.c[field])).scalars():
+                        if references_provider(json.loads(raw or "{}")):
+                            raise ValueError("供应商仍被多模态、记忆、定时任务或模板引用，请先调整配置")
+                conn.execute(self.providers.delete().where(self.providers.c.id == provider_id))
+        except IntegrityError:
+            raise ValueError("供应商仍有关联记录，不能删除；请保留并停用") from None
 
     def set_default(self, provider_id: int | None) -> None:
         with self.engine.begin() as conn:

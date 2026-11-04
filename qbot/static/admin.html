@@ -170,7 +170,7 @@
             <h2 id="fallback-label">加载中…</h2>
           </div>
         </div>
-        <div id="providers-list" class="provider-grid"></div>
+        <div class="provider-table-wrap"><table class="provider-table"><thead><tr><th>名称</th><th>供应商类型</th><th>模型类型</th><th>操作</th></tr></thead><tbody id="providers-list"></tbody></table></div>
         <div id="providers-empty" class="empty" hidden>尚未添加供应商。点击右上角添加 DeepSeek 或兼容接口。</div>
         <p class="muted">测试连接与试听会调用模型，可能产生费用。</p>
       </section>
@@ -461,6 +461,7 @@
       <div class="dialog-actions"><button type="button" data-close="provider-dialog">取消</button><button type="submit"
           class="primary">保存配置</button></div>
     </form>
+    <div id="provider-tools"></div>
   </dialog>
   <dialog id="detail-dialog">
     <div class="dialog-heading">

@@ -56,3 +56,12 @@ img.brand-mark{display:block;object-fit:contain;flex-shrink:0;background:transpa
 .clone-recorder button { justify-self: start; }
 .clone-recorder audio { width: 100%; }
 .voice-cloning-panel details summary { cursor: pointer; margin-bottom: 8px; color: var(--muted); }
+
+/* 供应商采用紧凑列表，试用与音色输入项位于编辑弹窗。 */
+.provider-table-wrap{overflow-x:auto}
+.provider-table{width:100%;border-collapse:collapse;text-align:left}
+.provider-table th,.provider-table td{padding:12px 14px;border-bottom:1px solid var(--border,#e5e7eb);vertical-align:top}
+.provider-table td:first-child{min-width:140px;overflow-wrap:anywhere}
+.provider-table .actions{display:flex;flex-wrap:wrap;gap:8px;margin:0}
+.provider-tools-panel{border-top:1px solid var(--border,#e5e7eb);padding:16px 24px;display:grid;gap:12px}
+.provider-tools-panel input,.provider-tools-panel textarea,.provider-tools-panel audio{max-width:100%;box-sizing:border-box}

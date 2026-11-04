@@ -293,6 +293,14 @@ def admin_router(settings: Settings) -> APIRouter:
     async def edit(provider_id: int, data: ProviderInput, db: Store = Depends(store)) -> dict:
         return await save(data, db, provider_id)
 
+    @router.delete("/api/admin/providers/{provider_id}", dependencies=[Depends(require_admin)])
+    async def delete_provider(provider_id: int, db: Store = Depends(store)) -> dict:
+        try:
+            await db.call("delete_provider", provider_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return {"ok": True}
+
     @router.post("/api/admin/providers/{provider_id}/test", dependencies=[Depends(require_admin)])
     async def test_provider(provider_id: int, db: Store = Depends(store)) -> dict:
         nonlocal last_probe

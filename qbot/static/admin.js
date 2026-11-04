@@ -211,22 +211,27 @@ async function showDetail(id) {
   renderDetailMeta(item);
   $("detail-question").textContent = item.question; $("detail-answer").textContent = item.answer || "尚无回复"; $("detail-error").textContent = item.error_message || ""; $("detail-dialog").showModal();
 }
+const providerPanels = new Map();
 async function loadProviders() {
   VoiceCloneRecorder.resetAll();
   const data = await api("/providers"); providers = data.items; defaultProvider = data.default_provider_id;
   $("default-label").textContent = providers.find(p => p.id === defaultProvider)?.name || "尚未选择，请添加并启用默认供应商";
   const fallbackProvider = data.fallback_provider_id;
   $("fallback-label").textContent = providers.find(p => p.id === fallbackProvider)?.name || "未设置备用模型";
-  $("providers-list").querySelectorAll("audio").forEach(player => { player.pause(); if (player.dataset.url) URL.revokeObjectURL(player.dataset.url); });
+  for (const panel of providerPanels.values()) panel.querySelectorAll("audio").forEach(player => { player.pause(); if (player.dataset.url) URL.revokeObjectURL(player.dataset.url); });
+  providerPanels.clear();
+  $("provider-tools").replaceChildren();
   VoiceCloneRecorder.disposeAll();
   $("providers-list").replaceChildren(); $("providers-empty").hidden = providers.length > 0;
   for (const item of providers) {
-    const card = element("article", undefined, "provider-card"), top = element("div", undefined, "top");
-    top.append(element("h2", item.name), element("span", item.id === defaultProvider ? "默认使用" : item.enabled ? "已启用" : "已停用", "badge " + (item.enabled ? "replied" : "")));
-    card.append(top, element("p", `${({ chat: "chat · 聊天", image: "图片生成", asr: "asr · 录音识别", realtime: "实时通话 · 语音对话", asr_realtime: "实时语音识别 · 通话", tts: "tts · 语音合成" })[item.model_type]} · ${item.api_type === "deepseek" ? "DeepSeek" : item.api_type === "openai_chat" ? "OpenAI 兼容 · Chat Completions" : "兼容聊天 / 千问原生语音接口"} · ${item.model_name}`), element("p", item.base_url, "muted"), element("p", "API Key  " + item.api_key_mask, "muted"));
+    const row = element("tr"), card = element("div", undefined, "provider-tools-panel");
+    const providerType = item.api_type === "deepseek" ? "DeepSeek" : item.api_type === "openai_chat" ? "OpenAI 兼容" : "兼容聊天 / 生图 / 千问原生语音";
+    const modelType = ({ chat: "聊天", image: "图片生成", asr: "录音识别", realtime: "实时语音对话", asr_realtime: "实时语音识别", tts: "语音合成" })[item.model_type] || item.model_type;
+    row.append(element("td", item.name), element("td", providerType), element("td", modelType));
+    providerPanels.set(item.id, card);
+    const toolActions = element("div", undefined, "actions");
     const actions = element("div", undefined, "actions"); actions.append(button("编辑配置", () => editProvider(item)));
     if (item.model_type === "chat" && item.enabled && item.id !== defaultProvider && item.id !== fallbackProvider) actions.append(button("设为默认", async () => { await api("/default-provider", { method: "PUT", body: JSON.stringify({ provider_id: item.id }) }); await loadProviders(); toast("默认供应商已更新"); }));
-    if (item.id === fallbackProvider) top.append(element("span", "备用模型", "badge replied"));
     if (item.model_type === "chat" && item.enabled && item.has_api_key && item.id !== defaultProvider) {
       actions.append(button(item.id === fallbackProvider ? "取消备用" : "设为备用", async () => {
         try {
@@ -237,6 +242,7 @@ async function loadProviders() {
     }
     const outcome = element("p", "", "muted"); outcome.setAttribute("role", "status");
     const probe = button("测试连接", async () => {
+      if (!card.isConnected) editProvider(item);
       outcome.textContent = "正在发送“你好”，请稍候…";
       try {
         const result = await api(`/providers/${item.id}/test`, { method: "POST" });
@@ -259,9 +265,13 @@ async function loadProviders() {
       if (item.model_name.startsWith("qwen-audio-3.1-tts-")) voice.removeAttribute("list");
       player.controls = true; player.hidden = true;
       card.append(element("p", "填写音色 ID；试听可能产生费用。", "muted"), text, voice, player);
-      if (item.supports_voice_cloning) addVoiceCloning(card, item, voice);
+      if (item.supports_voice_cloning) {
+        addVoiceCloning(card, item, voice);
+        actions.append(button("音色管理", () => editProvider(item)));
+      }
       voice.maxLength = 100;
       probe.onclick = async () => {
+        if (!card.isConnected) { editProvider(item); return; }
         probe.disabled = true; player.pause(); player.hidden = true;
         if (player.dataset.url) { URL.revokeObjectURL(player.dataset.url); delete player.dataset.url; }
         player.removeAttribute("src"); player.load();
@@ -284,6 +294,7 @@ async function loadProviders() {
       upload.setAttribute("aria-label", kind === "audio" ? "短语音文件" : "图片或表情包");
       card.append(upload, element("p", "文件最多8 MB；短语音最多60秒。点击试用会调用付费模型。" + (item.model_name.includes("filetrans") ? "音频会上传至百炼临时存储，48小时后自动删除，仅供开发试用。" : ""), "muted"));
       const inspect = button(kind === "audio" ? "转写语音" : "理解图片 / 表情包", async () => {
+        if (!card.isConnected) { editProvider(item); return; }
         const file = upload.files[0];
         if (!file || file.size > 8000000) throw new Error("请选择不超过8 MB的文件");
         outcome.textContent = item.model_name.includes("filetrans") ? "正在上传并等待异步转写，最长约80秒…" : "正在处理…";
@@ -293,10 +304,21 @@ async function loadProviders() {
         } catch (e) { outcome.textContent = "处理失败：" + e.message; }
       });
       inspect.disabled = !item.has_api_key; actions.append(inspect);
+      const inspectTool = button(inspect.textContent, () => inspect.click());
+      inspectTool.disabled = inspect.disabled; toolActions.append(inspectTool);
       if (kind === "audio") { probe.hidden = true; outcome.textContent = "选择短语音后点击转写。"; }
     }
     actions.append(probe);
-    card.append(actions, outcome); $("providers-list").append(card);
+    const probeTool = button(item.model_type === "tts" ? "试听" : "测试连接", () => probe.click());
+    probeTool.disabled = probe.disabled; probeTool.hidden = probe.hidden; toolActions.append(probeTool);
+    actions.append(button("删除", async () => {
+      if (!confirm(`确定删除供应商“${item.name}”？删除后无法恢复。`)) return;
+      await api(`/providers/${item.id}`, { method: "DELETE" });
+      await loadProviders(); toast("供应商已删除");
+    }));
+    card.append(element("p", "试用使用已保存的配置。", "muted"), toolActions, outcome);
+    const operations = element("td"); operations.append(actions); row.append(operations);
+    $("providers-list").append(row);
   }
 }
 // 复刻记录独立保存；刷新状态只查询已有ID，不重新上传或创建。
@@ -418,7 +440,9 @@ function addVoiceCloning(card, item, voiceInput) {
   panel.append(element("h3", "音色复刻"), prefix, recorder.node,
     element("p", "录音5～60秒；点击创建音色后才上传至百炼。", "muted"), alternative, select, displayName, actions, status);
   card.append(panel);
-  void reload().catch(e => { status.textContent = e.message; });
+  card.addEventListener("provider-open", () => {
+    void reload().catch(e => { status.textContent = e.message; });
+  });
 }
 // 预设仅填写表单，不创建数据库记录或替换已有供应商。
 function providerPreset(item) {
@@ -482,6 +506,9 @@ $("provider-form").elements.model_type.onchange = () => {
 };
 function editProvider(item) {
   const form = $("provider-form"); form.reset(); $("provider-error").textContent = "";
+  const panel = item ? providerPanels.get(item.id) : null;
+  $("provider-tools").replaceChildren(...(panel ? [panel] : []));
+  if (panel) panel.dispatchEvent(new Event("provider-open"));
   $("provider-preset").value = item ? providerPreset(item) : "deepseek";
   const defaults = item || { id: "", name: "", model_type: "chat", api_type: "deepseek", base_url: "https://api.deepseek.com", model_name: "", enabled: false };
   for (const key of ["id", "name", "model_type", "api_type", "base_url", "model_name"]) form.elements[key].value = defaults[key];
@@ -506,7 +533,12 @@ function switchPage(page) {
   if (page === "messages") void loadSendTargets().catch(e => toast(e.message));
 }
 document.querySelectorAll("[data-close]").forEach(node => node.onclick = () => $(node.dataset.close).close());
-$("provider-dialog").addEventListener("close", () => $("provider-form").elements.api_key.value = "");
+$("provider-dialog").addEventListener("close", () => {
+  $("provider-form").elements.api_key.value = "";
+  VoiceCloneRecorder.resetAll();
+  $("provider-tools").querySelectorAll("audio").forEach(player => player.pause());
+  $("provider-tools").replaceChildren();
+});
 $("new-provider").onclick = () => editProvider(null);
 $("environment-default").onclick = async () => { try { await api("/default-provider", { method: "PUT", body: JSON.stringify({ provider_id: null }) }); await loadProviders(); toast("已取消默认供应商，选择新默认项后才能聊天"); } catch (e) { toast(e.message); } };
 $("provider-form").onsubmit = async event => { event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'), data = Object.fromEntries(new FormData(form)), id = data.id; delete data.id; data.enabled = form.elements.enabled.checked; data.supports_images = form.elements.supports_images.checked; data.supports_voice_cloning = form.elements.model_type.value === "tts" && form.elements.supports_voice_cloning.checked; data.enable_web_fetch = form.elements.model_type.value === "chat" && form.elements.api_type.value !== "deepseek" && form.elements.enable_web_fetch.checked; data.web_search_mode = form.elements.model_type.value === "chat" && form.elements.api_type.value !== "deepseek" ? form.elements.web_search_mode.value : "disabled"; data.thinking_mode = form.elements.model_type.value === "chat" ? form.elements.thinking_mode.value : "default"; submit.disabled = true; $("provider-error").textContent = ""; try { await api("/providers" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body: JSON.stringify(data) }); $("provider-dialog").close(); await loadProviders(); toast("配置已保存，下次模型请求生效"); } catch (e) { $("provider-error").textContent = e.message; } finally { submit.disabled = false; } };
