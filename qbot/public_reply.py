@@ -57,6 +57,9 @@ def public_reply_text(message: BaseMessage | str) -> str:
 
 def history_reply_text(text: str) -> str:
     """历史异常回复不再喂给模型；原始数据库记录保留供管理员排查。"""
+    if text.strip() == "这次问题和近期对话太长了，请缩短问题，或发送 /reset 清空近期对话后重试。":
+        return ""
+
     try:
         return public_reply_text(text)
     except UnsafeModelReply:

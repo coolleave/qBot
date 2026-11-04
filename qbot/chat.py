@@ -10,7 +10,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
 
 from qbot.chat_context import chat_context
-from qbot.chat_context_budget import budget_inputs, ContextBudgetExceeded
+from qbot.chat_context_budget import budget_inputs
 from qbot.reply_format import plain_text_reply
 from qbot.public_reply import public_reply_text, history_reply_text
 from qbot.timing import measure
@@ -106,15 +106,9 @@ class ChatService:
                         "memory_rules": [SystemMessage(content=self.memory_prompt)] if memory_context else [],
                         "recognition_notice": [SystemMessage(content=files("qbot").joinpath("prompts/asr_clarification.txt").read_text("utf-8"))] if audio_unrecognized else [],
                         "output_style": [SystemMessage(content=files("qbot").joinpath("prompts/greeting_audio.txt").read_text("utf-8"))] if speech_style else []}
-                    try:
-                        with measure(metrics, "context_prepare"):
-                            inputs = budget_inputs(self.prompt, inputs, text,
-                                self.settings.chat_context_tokens, self.settings.chat_context_extended_tokens, metrics)
-                    except ContextBudgetExceeded:
-                        answer = "这次问题和近期对话太长了，请缩短问题，或发送 /reset 清空近期对话后重试。"
-                        if sender:
-                            await sender(answer)
-                        return answer
+                    with measure(metrics, "context_prepare"):
+                        inputs = budget_inputs(self.prompt, inputs, text,
+                            self.settings.chat_context_tokens, self.settings.chat_context_extended_tokens, metrics)
                     started = time.monotonic()
                     if model is not None:
                         with measure(metrics, "chat"):

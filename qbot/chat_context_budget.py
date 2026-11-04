@@ -5,10 +5,6 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 
 
-class ContextBudgetExceeded(ValueError):
-    pass
-
-
 def estimate_tokens(messages: list[BaseMessage]) -> int:
     """无网络的跨模型粗估：ASCII约3字符/token，非ASCII约1.5 token/字符。"""
     total = 0
@@ -40,7 +36,7 @@ def budget_inputs(prompt: ChatPromptTemplate, inputs: dict, text: str, normal_bu
                   extended_budget: int, metrics: dict | None = None) -> dict:
     """优先固定消息和最近三轮，随后记忆与更早历史；预算不足按完整单元省略。"""
     extended_budget = max(normal_budget, extended_budget)
-    target = extended_budget if needs_extended_context(text) else normal_budget
+    configured_target = extended_budget if needs_extended_context(text) else normal_budget
     before = estimate_tokens(prompt.invoke(inputs).to_messages())
     result = dict(inputs)
     history = inputs.get("history", [])
@@ -49,19 +45,22 @@ def budget_inputs(prompt: ChatPromptTemplate, inputs: dict, text: str, normal_bu
     for index in range(len(history) - 1):
         if isinstance(history[index], HumanMessage) and isinstance(history[index + 1], AIMessage):
             pairs.append(history[index:index + 2])
-    recent = pairs[-3:]
-    result["history"] = [message for pair in recent for message in pair]
+    result["history"] = []
     memory_lines = memory_units(inputs.get("memory", []))
     protected = [line for line in memory_lines if line.startswith("同群主人近期原话（用户资料）：")]
     result["memory"] = [HumanMessage(content="\n".join(protected))] if protected else []
-    # 主人参考属于行为边界，保持完整；摘要和普通长期资料才参与裁剪。
+    result["memory_rules"] = inputs.get("memory_rules", []) if protected else []
     required = estimate_tokens(prompt.invoke(result).to_messages())
-    if required > extended_budget:
-        if metrics is not None:
-            metrics["context_budget"] = {"estimated": True, "status": "exceeded",
-                "before_tokens": before, "required_tokens": required, "target_tokens": extended_budget}
-        raise ContextBudgetExceeded("必要上下文超过预算")
-    target = min(extended_budget, max(target, required))
+    # 这是性能优化目标，不是模型上下文容量；长人设不能让所有后续短消息被拒绝。
+    target = max(configured_target, required + min(2000, normal_budget // 2))
+    recent = []
+    for pair in reversed(pairs[-3:]):
+        candidate = [message for group in [pair] + recent for message in group]
+        trial = {**result, "history": candidate}
+        if estimate_tokens(prompt.invoke(trial).to_messages()) > target:
+            break
+        recent.insert(0, pair)
+        result["history"] = candidate
     seen = set(protected)
     selected_lines = list(protected)
     duplicates = 0
@@ -77,12 +76,16 @@ def budget_inputs(prompt: ChatPromptTemplate, inputs: dict, text: str, normal_bu
             continue
         seen.add(key)
         candidate = selected_lines + [line]
-        trial = {**result, "memory": [HumanMessage(content="\n".join(candidate))]}
+        trial = {**result, "memory": [HumanMessage(content="\n".join(candidate))],
+                 "memory_rules": inputs.get("memory_rules", [])}
         if estimate_tokens(prompt.invoke(trial).to_messages()) <= target:
             selected_lines = candidate
             result["memory"] = trial["memory"]
+            result["memory_rules"] = trial["memory_rules"]
     kept_pairs = list(recent)
-    for pair in reversed(pairs[:-3]):
+    # 最近一轮放不下时，不跳过它改取更旧记录，以免短追问接错上下文。
+    older_pairs = pairs[:-3] if len(recent) == min(3, len(pairs)) else []
+    for pair in reversed(older_pairs):
         candidate = [message for group in [pair] + kept_pairs for message in group]
         trial = {**result, "history": candidate}
         if estimate_tokens(prompt.invoke(trial).to_messages()) > target:
@@ -95,6 +98,8 @@ def budget_inputs(prompt: ChatPromptTemplate, inputs: dict, text: str, normal_bu
         parts["fixed_rules"] = estimate_tokens(prompt.invoke(fixed_inputs).to_messages())
         metrics["context_budget"] = {
             "estimator": "ascii_div3_nonascii_mul1.5_v1", "estimated": True,
+            "configured_target_tokens": configured_target, "required_tokens": required,
+            "target_raised": target > configured_target,
             "target_tokens": target, "before_tokens": before,
             "after_tokens": estimate_tokens(prompt.invoke(result).to_messages()),
             "parts": parts, "history_turns_before": len(pairs),
