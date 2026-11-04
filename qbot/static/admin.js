@@ -211,6 +211,27 @@ async function showDetail(id) {
   renderDetailMeta(item);
   $("detail-question").textContent = item.question; $("detail-answer").textContent = item.answer || "尚无回复"; $("detail-error").textContent = item.error_message || ""; $("detail-dialog").showModal();
 }
+function filterProviders() {
+  const query = $("provider-search").value.trim().toLocaleLowerCase();
+  const kind = $("provider-model-filter").value, apiType = $("provider-api-filter").value, status = $("provider-status-filter").value;
+  let count = 0;
+  for (const row of $("providers-list").children) {
+    const item = providers.find(p => p.id === Number(row.dataset.providerId));
+    const visible = item && (!query || `${item.name} ${item.model_name}`.toLocaleLowerCase().includes(query))
+      && (!kind || item.model_type === kind) && (!apiType || item.api_type === apiType)
+      && (!status || Boolean(item.enabled) === (status === "enabled"));
+    row.hidden = !visible;
+    if (visible) count++;
+  }
+  $("provider-filter-count").textContent = `${count} / ${providers.length}`;
+  $("providers-empty").hidden = count > 0;
+  $("providers-empty").textContent = providers.length ? "没有匹配的模型供应商" : "尚未添加供应商";
+}
+for (const id of ["provider-search", "provider-model-filter", "provider-api-filter", "provider-status-filter"]) $(id).addEventListener("input", filterProviders);
+$("provider-filter-clear").onclick = () => {
+  for (const id of ["provider-search", "provider-model-filter", "provider-api-filter", "provider-status-filter"]) $(id).value = "";
+  filterProviders();
+};
 const providerPanels = new Map();
 async function loadProviders() {
   VoiceCloneRecorder.resetAll();
@@ -219,6 +240,7 @@ async function loadProviders() {
   const fallbackProvider = data.fallback_provider_id;
   $("fallback-label").textContent = providers.find(p => p.id === fallbackProvider)?.name || "未设置备用模型";
   for (const panel of providerPanels.values()) panel.querySelectorAll("audio").forEach(player => { player.pause(); if (player.dataset.url) URL.revokeObjectURL(player.dataset.url); });
+  for (const panel of providerPanels.values()) panel.dispatchEvent(new Event("provider-close"));
   providerPanels.clear();
   $("provider-tools").replaceChildren();
   VoiceCloneRecorder.disposeAll();
@@ -226,6 +248,7 @@ async function loadProviders() {
   for (const item of providers) {
     const row = element("tr"), card = element("div", undefined, "provider-tools-panel");
     const providerType = item.api_type === "deepseek" ? "DeepSeek" : item.api_type === "openai_chat" ? "OpenAI 兼容" : "兼容聊天 / 生图 / 千问原生语音";
+    row.dataset.providerId = item.id;
     const modelType = ({ chat: "聊天", image: "图片生成", asr: "录音识别", realtime: "实时语音对话", asr_realtime: "实时语音识别", tts: "语音合成" })[item.model_type] || item.model_type;
     row.append(element("td", item.name), element("td", providerType), element("td", modelType));
     providerPanels.set(item.id, card);
@@ -287,7 +310,11 @@ async function loadProviders() {
       };
     } else if (item.model_type === "realtime") outcome.textContent = "请在「语音通话」选择实时对话模式并拨号；此模型直接输出语音，无需单独 TTS。";
     else if (item.model_type === "asr_realtime") outcome.textContent = "已接入网页实时识别，请在「语音通话」选择并拨号验证；不使用录音上传试用。";
-    else if (item.model_type === "image") outcome.textContent = "支持兼容 Images 接口及 Base64 PNG/JPEG 输出；请在机器人设置绑定后通过 QQ 请求生图。";
+    else if (item.model_type === "image") {
+      probe.hidden = true;
+      addImageProbe(card, item);
+      actions.append(button("测试生图", () => editProvider(item)));
+    }
     else if (item.model_type !== "chat") outcome.textContent = "已保存模型配置，暂未接入调用及连接测试。";
     if (item.model_type === "asr" || (item.model_type === "chat" && item.supports_images)) {
       const kind = item.model_type === "asr" ? "audio" : "image", upload = element("input");
@@ -321,6 +348,7 @@ async function loadProviders() {
     const operations = element("td"); operations.append(actions); row.append(operations);
     $("providers-list").append(row);
   }
+  filterProviders();
 }
 // 复刻记录独立保存；刷新状态只查询已有ID，不重新上传或创建。
 function addVoiceCloning(card, item, voiceInput) {
@@ -510,7 +538,6 @@ function editProvider(item) {
   const form = $("provider-form"); form.reset(); $("provider-error").textContent = "";
   const panel = item ? providerPanels.get(item.id) : null;
   $("provider-tools").replaceChildren(...(panel ? [panel] : []));
-  if (panel) panel.dispatchEvent(new Event("provider-open"));
   $("provider-preset").value = item ? providerPreset(item) : "deepseek";
   const defaults = item || { id: "", name: "", model_type: "chat", api_type: "deepseek", base_url: "https://api.deepseek.com", model_name: "", enabled: false };
   for (const key of ["id", "name", "model_type", "api_type", "base_url", "model_name"]) form.elements[key].value = defaults[key];
@@ -522,6 +549,7 @@ function editProvider(item) {
   form.elements.enabled.checked = Boolean(defaults.enabled); form.elements.api_key.value = "";
   showProviderPreset();
   $("provider-title").textContent = item ? "编辑供应商" : "添加供应商"; $("provider-dialog").showModal();
+  if (panel) panel.dispatchEvent(new Event("provider-open"));
 }
 function switchPage(page) {
   if (!pages.some(item => item[0] === page)) return;
@@ -539,6 +567,7 @@ $("provider-dialog").addEventListener("close", () => {
   $("provider-form").elements.api_key.value = "";
   VoiceCloneRecorder.resetAll();
   $("provider-tools").querySelectorAll("audio").forEach(player => player.pause());
+  for (const panel of $("provider-tools").children) panel.dispatchEvent(new Event("provider-close"));
   $("provider-tools").replaceChildren();
 });
 $("new-provider").onclick = () => editProvider(null);

@@ -15,6 +15,7 @@
   <script src="/admin-assets/element-plus.full.min.js" defer></script>
   <script src="/admin-assets/admin-ui.js" defer></script>
   <script src="/admin-assets/voice-clone-recorder.js" defer></script>
+  <script src="/admin-assets/image-probe.js" defer></script>
   <script src="/admin-assets/admin.js" defer></script>
   <script src="/admin-assets/conversation.js" defer></script>
   <script src="/admin-assets/scheduled-templates.js" defer></script>
@@ -169,6 +170,13 @@
           <div><span class="eyebrow">备用聊天模型</span>
             <h2 id="fallback-label">加载中…</h2>
           </div>
+        </div>
+        <div class="provider-filters">
+          <label>搜索<input id="provider-search" type="search" placeholder="名称 / 模型 ID" maxlength="200"></label>
+          <label>模型类型<select id="provider-model-filter"><option value="">全部</option><option value="chat">聊天</option><option value="image">图片生成</option><option value="asr">录音识别</option><option value="tts">语音合成</option><option value="asr_realtime">实时识别</option><option value="realtime">实时通话</option></select></label>
+          <label>接口类型<select id="provider-api-filter"><option value="">全部</option><option value="deepseek">DeepSeek</option><option value="openai_compatible">兼容接口</option><option value="openai_chat">Chat Completions</option></select></label>
+          <label>状态<select id="provider-status-filter"><option value="">全部</option><option value="enabled">已启用</option><option value="disabled">已停用</option></select></label>
+          <button id="provider-filter-clear" type="button">重置</button><span id="provider-filter-count" class="muted"></span>
         </div>
         <div class="provider-table-wrap"><table class="provider-table"><thead><tr><th>名称</th><th>供应商类型</th><th>模型类型</th><th>操作</th></tr></thead><tbody id="providers-list"></tbody></table></div>
         <div id="providers-empty" class="empty" hidden>尚未添加供应商。点击右上角添加 DeepSeek 或兼容接口。</div>

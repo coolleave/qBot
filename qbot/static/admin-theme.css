@@ -65,3 +65,9 @@ img.brand-mark{display:block;object-fit:contain;flex-shrink:0;background:transpa
 .provider-table .actions{display:flex;flex-wrap:wrap;gap:8px;margin:0}
 .provider-tools-panel{border-top:1px solid var(--border,#e5e7eb);padding:16px 24px;display:grid;gap:12px}
 .provider-tools-panel input,.provider-tools-panel textarea,.provider-tools-panel audio{max-width:100%;box-sizing:border-box}
+
+.provider-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin-bottom:16px}
+.provider-filters label{display:grid;gap:6px;flex:1;min-width:140px}
+.provider-filters input,.provider-filters select{width:100%;box-sizing:border-box}
+.image-probe-preview{display:block;max-width:100%;max-height:480px;object-fit:contain}
+.image-probe-preview[hidden]{display:none}

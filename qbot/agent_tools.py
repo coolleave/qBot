@@ -1,21 +1,17 @@
 """普通聊天工具：仅准备当前会话的回复，发送由 Dispatcher 统一执行。"""
 import asyncio
-import base64
-import json
 import logging
 import re
 from collections.abc import Awaitable, Callable
 from importlib.resources import files
 from typing import TYPE_CHECKING
 
-import httpx
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompt_values import PromptValue
 from langchain_core.runnables import RunnableConfig
 
 from qbot.config import Settings
-from qbot.media import MAX_MEDIA_BYTES, validate_media
 from qbot.model import provider_model
 from qbot.public_reply import public_reply_text
 from qbot.token_usage import extract_token_usage
@@ -55,32 +51,8 @@ class ChatTools:
         if not provider_id:
             return "未配置生图模型，请在机器人设置中选择图片生成模型。"
         provider = await self.store.call("capability_provider", provider_id, "image")
-        if provider["api_type"] != "openai_compatible":
-            return "生图模型需使用 OpenAI 兼容 Images 接口。"
-        # 有界读取，拒绝 URL 输出，避免把供应商响应变成任意网络下载入口。
-        async with asyncio.timeout(65), httpx.AsyncClient(timeout=60, follow_redirects=False) as client:
-            payload = {"model": provider["model_name"], "prompt": prompt, "n": 1}
-            # GPT Image 固定返回 Base64，不接受旧版 response_format 参数。
-            if not provider["model_name"].lower().startswith("gpt-image"):
-                payload["response_format"] = "b64_json"
-            async with client.stream("POST", provider["base_url"].rstrip("/") + "/images/generations",
-                    headers={"Authorization": "Bearer " + provider["api_key"]},
-                    json=payload) as response:
-                response.raise_for_status()
-                body = bytearray()
-                async for chunk in response.aiter_bytes():
-                    if len(body) + len(chunk) > 5_000_000:
-                        raise ValueError("生图响应超出大小限制")
-                    body.extend(chunk)
-            result = json.loads(body)
-            encoded = result.get("data", [{}])[0].get("b64_json")
-            if not isinstance(encoded, str):
-                return "生图接口未返回 Base64 图片；当前不支持仅返回图片 URL 的接口。"
-            raw = base64.b64decode(encoded, validate=True)
-            if len(raw) > MAX_MEDIA_BYTES:
-                return "生成的图片超过 QQ 发送大小限制（3.5 MB），本次未发送。"
-            extension = "png" if raw.startswith(b"\x89PNG") else "jpg"
-            self.media = validate_media("image", "generated." + extension, raw)
+        from qbot.image_generation import generate_image
+        self.media = await generate_image(provider, prompt)
         self.details["image_generation"] = {"provider_id": provider_id, "model": provider["model_name"],
                                              "status": "prepared"}
         return "图片已准备好，程序将在本轮回复时发送图片；尚未确认送达。"

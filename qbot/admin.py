@@ -186,6 +186,8 @@ def admin_router(settings: Settings) -> APIRouter:
 
     from qbot.voice_call_routes import install_voice_routes
     install_voice_routes(router, settings, require_admin, sign, token_hash, auth_version)
+    from qbot.image_probe import image_probe_router
+    router.include_router(image_probe_router(require_admin))
     from qbot.memory_routes import install_memory_routes
     install_memory_routes(router, require_admin)
 
