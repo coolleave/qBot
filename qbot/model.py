@@ -1,4 +1,5 @@
 from urllib.parse import urlsplit
+from httpx import Limits
 
 from openai import DefaultHttpxClient, DefaultAsyncHttpxClient
 
@@ -66,7 +67,8 @@ def web_search_parameters(provider: dict) -> dict:
         "forced_search": mode == "forced", "search_strategy": "agent_max" if fetch else "turbo"}}
 
 
-def provider_model(settings: Settings, provider: dict | None, *, allow_web_search: bool = True):
+def provider_model(settings: Settings, provider: dict | None, *, allow_web_search: bool = True,
+                   connection_limits: Limits | None = None):
     if provider is None:
         if settings.admin_enabled:
             raise ValueError("请在后台添加、启用并选择默认模型供应商")
@@ -76,12 +78,13 @@ def provider_model(settings: Settings, provider: dict | None, *, allow_web_searc
     extra_body = thinking_parameters(provider)
     if allow_web_search:
         extra_body.update(web_search_parameters(provider))
+    transport_options = {"limits": connection_limits} if connection_limits is not None else {}
     common = dict(model=provider["model_name"], api_key=provider["api_key"],
                   timeout=settings.model_timeout_seconds, max_retries=settings.model_max_retries,
                   max_tokens=settings.model_max_tokens,
                   # 调用方会关闭模型客户端，必须独占连接池，不能使用 LangChain 默认缓存。
-                  http_client=DefaultHttpxClient(timeout=settings.model_timeout_seconds),
-                  http_async_client=DefaultAsyncHttpxClient(timeout=settings.model_timeout_seconds))
+                  http_client=DefaultHttpxClient(timeout=settings.model_timeout_seconds, **transport_options),
+                  http_async_client=DefaultAsyncHttpxClient(timeout=settings.model_timeout_seconds, **transport_options))
     if extra_body:
         common["extra_body"] = extra_body
     if allow_web_search and provider.get("enable_web_fetch", False):

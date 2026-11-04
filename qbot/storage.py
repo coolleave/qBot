@@ -964,7 +964,7 @@ class Store(VoiceCallStore, MemoryStore):
                              .values(owner_slot=None, owner_selected_at=None))
             return {"is_owner": enabled}
 
-    def owner_context(self, bot_id: int, record_id: int) -> dict:
+    def owner_context(self, bot_id: int, record_id: int, *, include_messages: bool = True) -> dict:
         """仅分享同群短期主人原话，绝不跨群或读取主人的私聊。"""
         i, c, r, roles = self.identities, self.conversations, self.records, self.roles
         with self.engine.connect() as conn:
@@ -984,7 +984,8 @@ class Store(VoiceCallStore, MemoryStore):
             result = {"owner": {"user_id": owner["user_id"], "member_name": owner["member_name"],
                                 "selected_at": owner["owner_selected_at"].isoformat()},
                       "is_owner": current["user_id"] == owner["user_id"], "messages": []}
-            if current["source"] == "qq_group":
+            # 持久记忆已按遗忘边界读取主人原话时，不重复读取随后会丢弃的记录。
+            if include_messages and current["source"] == "qq_group":
                 since = max(utc_now() - timedelta(minutes=30), owner["owner_selected_at"])
                 rows = conn.execute(select(r.c.question).select_from(r.join(c, r.c.conversation_id == c.c.id))
                     .where(r.c.bot_id == bot_id, c.c.bot_id == bot_id, c.c.source == "qq_group",

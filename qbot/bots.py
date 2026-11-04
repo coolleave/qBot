@@ -68,6 +68,8 @@ class BotRuntime:
             self.worker.cancel()
             with suppress(asyncio.CancelledError):
                 await self.worker
+        if isinstance(self.dispatcher.chat, RecordedChat):
+            await self.dispatcher.chat.close()
         await self.client.aclose()
 
     def status(self) -> str:

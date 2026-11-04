@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     model_timeout_seconds: float = Field(120, gt=0, le=120)
     model_max_retries: int = Field(1, ge=0, le=2)
     model_max_tokens: int = Field(4096, ge=1, le=8192)
+    chat_context_tokens: int = Field(4000, ge=1000, le=32000)
+    chat_context_extended_tokens: int = Field(8000, ge=1000, le=32000)
     chat_timeout_seconds: float = Field(120, gt=0, le=120)
     qq_transport: Literal["websocket", "webhook"] = "websocket"
     qq_app_id: str = ""

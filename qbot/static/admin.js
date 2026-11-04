@@ -186,7 +186,23 @@ function renderTimingDetails(item) {
     if (attachment.kind === "audio") row(prefix + "ASR 识别", stages.asr);
   }
   if (media.vision) row("视觉理解总计", legacy(media.vision.latency_ms, media.vision.status));
+  row("记忆锁等待", timings.memory_lock_wait);
+  row("记忆读取", timings.memory_read);
+  row("模型配置读取", timings.provider_read);
+  row("身份读取与校验", timings.identity_read);
+  row("上下文组装", timings.context_prepare);
+  row("天气资料", timings.weather_context);
   row("聊天模型（含备用切换）", timings.chat || legacy(media.chat_latency_ms));
+  for (const [index, attempt] of (Array.isArray(media.model_attempts) ? media.model_attempts : []).entries()) {
+    const prefix = `模型请求 ${index + 1} · `, stages = attempt.timings || {};
+    row(prefix + (attempt.client_reused ? "客户端复用" : "客户端创建"), stages.client_prepare);
+    row(prefix + "请求总计", stages.request);
+    if (stages.response_headers) row(prefix + "首个响应头", stages.response_headers);
+    if (stages.first_chunk) row(prefix + "首个内容片段", stages.first_chunk);
+    if (stages.first_text) row(prefix + "首个正文片段", stages.first_text);
+  }
+  row("记录写入", timings.record_write);
+  if (timings.client_cleanup) row("旧连接清理", timings.client_cleanup);
   row("语音准备总计", timings.voice_prepare || legacy(media.voice_latency_ms));
   row("语音准备名额等待", timings.voice_wait);
   row("TTS 语音合成", timings.tts);
@@ -194,6 +210,10 @@ function renderTimingDetails(item) {
   row("语音上传", timings.upload);
   row("QQ 发送", timings.send);
   host.append(table);
+  const context = media.context_budget;
+  if (context && Number.isFinite(context.before_tokens) && Number.isFinite(context.after_tokens)) {
+    host.append(element("p", `输入估算：${context.before_tokens} → ${context.after_tokens} tokens · 历史 ${context.history_turns_after} 轮`));
+  }
 }
 async function showDetail(id) {
   const item = await api("/records/" + id);

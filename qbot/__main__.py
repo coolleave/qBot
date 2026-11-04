@@ -26,6 +26,8 @@ async def local_chat(settings: Settings, bot_id: int = 1) -> None:
     try:
         await chat_loop(chat)
     finally:
+        if settings.admin_enabled:
+            await chat.close()
         if engine:
             await asyncio.to_thread(engine.dispose)
 

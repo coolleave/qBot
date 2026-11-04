@@ -295,17 +295,28 @@ class MemoryStore(MemoryJobStore):
                 return {"command": "当前机器人的记忆功能尚未开启。"} if command else None
             if command:
                 return {"command": self._memory_command(conn, bot_id, conversation, record_id, command, config)}
+            r = self.records
+            history = conn.execute(select(r.c.id, r.c.question, r.c.answer, r.c.received_at, r.c.media_details).where(
+                r.c.bot_id == bot_id, r.c.conversation_id == conversation["id"], r.c.id < record_id,
+                r.c.id > state["boundary_id"], r.c.record_type == "chat", r.c.status == "replied",
+                ~r.c.external_message_id.like("admin-send:%"), ~r.c.external_message_id.like("scheduled:%"),
+                ~r.c.external_message_id.like("scheduled-manual:%"), r.c.received_at >= utc_now() - timedelta(hours=24)
+            ).order_by(r.c.id.desc()).limit(10)).mappings().all()
             rows = [dict(row) for row in conn.execute(select(self.memory_items).where(
                 *self._memory_available(conn, bot_id, conversation)).order_by(self.memory_items.c.updated_at.desc()).limit(150)).mappings()]
-            words = set(text.lower().split())
-            grams = {text[i:i + 2] for i in range(max(0, len(text) - 1)) if text[i:i + 2].strip()}
+            # 最近一轮补充简短追问的关键词，仍受原会话/遗忘边界约束。
+            query = text + (" " + self._memory_record_text(dict(history[0]))[:600] if history else "")
+            words = set(query.lower().split())
+            grams = {query[i:i + 2].lower() for i in range(max(0, len(query) - 1)) if query[i:i + 2].strip()}
+            from qbot.chat_context_budget import needs_extended_context
+            recall = needs_extended_context(text)
             def score(row: dict) -> tuple:
                 content = row["content"].lower()
                 overlap = sum(w in content for w in words if len(w) > 1) + sum(w in content for w in grams)
                 return (overlap, row["origin"] in ("explicit", "admin"), row["category"] in ("preference", "request"), row["updated_at"])
             rows.sort(key=score, reverse=True)
-            selected = [row for row in rows if score(row)[0] or row["origin"] in ("explicit", "admin")
-                        or row["category"] in ("preference", "request")][:8]
+            selected = [row for row in rows if score(row)[0] or row["category"] == "request"
+                        or (recall and row["origin"] in ("explicit", "admin"))][:5]
             parts = ["【当前会话可用的记忆资料】"]
             if state["summary"]:
                 parts.append("会话摘要：" + clip_bytes(state["summary"], 1800))
@@ -332,12 +343,6 @@ class MemoryStore(MemoryJobStore):
                         if budget <= 0:
                             break
                         parts.append("同群主人近期原话（用户资料）：" + clip_bytes(value, min(800, budget)))
-            history = conn.execute(select(r.c.id, r.c.question, r.c.answer, r.c.received_at, r.c.media_details).where(
-                r.c.bot_id == bot_id, r.c.conversation_id == conversation["id"], r.c.id < record_id,
-                r.c.id > state["boundary_id"], r.c.record_type == "chat", r.c.status == "replied",
-                ~r.c.external_message_id.like("admin-send:%"), ~r.c.external_message_id.like("scheduled:%"),
-                ~r.c.external_message_id.like("scheduled-manual:%"), r.c.received_at >= utc_now() - timedelta(hours=24)
-            ).order_by(r.c.id.desc()).limit(10)).mappings().all()
             history_rows, budget = [], 9000
             for row in history:
                 if memory_command(row["question"]):
