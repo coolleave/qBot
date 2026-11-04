@@ -506,6 +506,8 @@ function providerPreset(item) {
 function showProviderPreset() {
   const form = $("provider-form"), preset = $("provider-preset").value;
   const kind = form.elements.model_type.value;
+  form.elements.base_url.placeholder = preset === "qwen" && kind === "image"
+    ? "https://业务空间ID.cn-beijing.maas.aliyuncs.com/compatible-mode/v1" : "https://api.example.com/v1";
   $("provider-thinking-field").hidden = kind !== "chat";
   if (kind !== "chat") form.elements.supports_images.checked = false;
   const searchAvailable = kind === "chat" && form.elements.api_type.value !== "deepseek";
@@ -518,10 +520,13 @@ function showProviderPreset() {
   $("provider-voice-cloning-field").hidden = kind !== "tts";
   if (kind !== "tts") form.elements.supports_voice_cloning.checked = false;
   if (kind !== "chat") form.elements.thinking_mode.value = "default";
-  $("provider-preset-hint").textContent = preset === "qwen"
+  $("provider-preset-hint").textContent = preset === "qwen" && kind === "image"
+    ? "填写真实业务空间地址和同地域 API Key。当前尚未支持百炼返回的图片 URL。"
+    : preset === "qwen"
     ? (kind === "asr" ? "千问 ASR 默认 Filetrans：先上传 WAV，再异步转写。临时文件保留48小时，仅供开发试用；正式部署请使用自有 OSS。" : "千问默认北京地域；切换类型会更新地址，模型ID请自行填写。其他地域可手动修改，API Key 须匹配地域。")
     : preset === "deepseek" ? "DeepSeek 预设用于聊天。填写模型ID和自己的 API Key 后保存。" : kind === "image" ? "生图选择兼容接口，填写 API 基础地址（通常以 /v1 结尾）；需支持 Images API 和 Base64 PNG/JPEG 输出。" : "自行填写 HTTPS 地址、模型和接口。自定义不会自动适配未知的 ASR / TTS 协议。";
   const names = preset === "qwen" ? ({ chat: ["qwen3.8-flash", "qwen3-vl-plus"], asr: ["qwen-audio-3.0-asr-flash-filetrans", "qwen-audio-3.1-asr-flash-filetrans", "qwen-audio-3.0-asr-flash", "qwen-audio-3.1-asr-flash"], realtime: ["qwen-audio-3.1-realtime-flash"], asr_realtime: ["qwen3-asr-flash-realtime"], tts: ["qwen3-tts-flash-realtime", "qwen-audio-3.1-tts-flash", "qwen-audio-3.1-tts-plus"] }[kind] || []) : preset === "deepseek" ? ["deepseek-flash", "deepseek-v4-pro"] : [];
+  if (preset === "qwen" && kind === "image") names.push("qwen-image-2.1-pro", "qwen-image-2.1-turbo");
   $("provider-model-suggestions").replaceChildren(...names.map(name => new Option(name, name)));
 }
 function applyProviderPreset() {
@@ -529,7 +534,24 @@ function applyProviderPreset() {
   if (preset === "custom") { showProviderPreset(); return; }
   if (preset === "deepseek") form.elements.model_type.value = "chat";
   const kind = form.elements.model_type.value;
-  if (kind === "image") { $("provider-preset").value = "custom"; showProviderPreset(); return; }
+  if (kind === "image") {
+    // 真实业务空间ID不能猜测；已有官方业务空间域名可继续复用。
+    let base = "";
+    try {
+      const current = new URL(form.elements.base_url.value);
+      if (current.protocol === "https:" && !current.username && !current.password
+          && /^[a-z0-9-]+\.(cn-beijing|ap-southeast-1|us-east-1|eu-central-1|ap-northeast-1|cn-hongkong)\.maas\.aliyuncs\.com$/.test(current.hostname)) {
+        base = current.origin + "/compatible-mode/v1";
+      }
+    } catch { /* 无可复用地址时要求用户填写真实业务空间地址。 */ }
+    if (!base) form.elements.api_key.value = "";
+    form.elements.base_url.value = base;
+    form.elements.api_type.value = "openai_compatible";
+    form.elements.model_name.value = "qwen-image-2.1-pro";
+    if (!form.elements.name.value.trim()) form.elements.name.value = "千问生图";
+    showProviderPreset();
+    return;
+  }
   const base = preset === "deepseek" ? "https://api.deepseek.com" : "https://dashscope.aliyuncs.com" + (kind === "chat" ? "/compatible-mode/v1" : "");
   try {
     if (form.elements.base_url.value && new URL(form.elements.base_url.value).origin !== new URL(base).origin) form.elements.api_key.value = "";
@@ -551,7 +573,8 @@ $("provider-form").elements.api_type.onchange = () => {
   showProviderPreset();
 };
 $("provider-form").elements.model_type.onchange = () => {
-  if ($("provider-preset").value === "deepseek" && $("provider-form").elements.model_type.value !== "chat") $("provider-preset").value = "custom";
+  if ($("provider-form").elements.model_type.value === "image") $("provider-preset").value = "qwen";
+  else if ($("provider-preset").value === "deepseek" && $("provider-form").elements.model_type.value !== "chat") $("provider-preset").value = "custom";
   applyProviderPreset();
 };
 function editProvider(item) {
