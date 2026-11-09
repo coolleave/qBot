@@ -33,6 +33,7 @@ class RecordedChat:
         self.bot_id = bot_id
         self.chat = ChatService(settings, None, system_prompt)
         self.memory_active = False
+        self.knowledge_version: int | None = None
         # reply由机器人记忆锁串行保护，替换时没有仍使用旧客户端的聊天请求。
         self.model_clients: OrderedDict[int, tuple[str, BaseChatModel]] = OrderedDict()
 
@@ -84,6 +85,7 @@ class RecordedChat:
                     speech_style: bool = False, audio_unrecognized: bool = False, tools=None) -> str:
         async def store_call(name: str, *args, **values):
             stage = ("record_write" if name in {"receive", "update_record"} else
+                     "knowledge_config_read" if name == "knowledge_config" else
                      "memory_read" if name == "memory_context" else
                      "identity_read" if name in {"family_identity", "owner_context", "memory_version_valid"} else
                      "provider_read")
@@ -96,8 +98,13 @@ class RecordedChat:
         model = None
         visual_context = ""
         memory = None
+        knowledge = None
         try:
             await store_call("update_record", record_id, status="processing")
+            knowledge_config = await store_call("knowledge_config", self.bot_id)
+            if self.knowledge_version != knowledge_config["version"]:
+                self.chat.sessions.clear()
+                self.knowledge_version = knowledge_config["version"]
             try:
                 memory = await store_call("memory_context", self.bot_id, record_id, text)
             except StorageError:
@@ -122,6 +129,21 @@ class RecordedChat:
                 await store_call("update_record", record_id, status="replied")
                 return answer
             if text.strip() and text.strip() != "/reset" and len(text.strip()) <= self.settings.max_input_chars:
+                if knowledge_config["enabled"]:
+                    from qbot.knowledge import retrieve
+                    knowledge = await retrieve(self.settings, self.store, self.bot_id, text, knowledge_config, diagnostics)
+                    if knowledge_config["mode"] == "strict":
+                        tools = None
+                        if knowledge["status"] != "ok":
+                            answer = ("资料暂时不可用，请稍后再试。" if knowledge["status"] == "failed"
+                                      else "当前知识库没有找到相关资料，请补充问题或上传资料。")
+                            await store_call("update_record", record_id, answer=answer)
+                            if sender:
+                                send_started = True
+                                await sender(answer)
+                            delivered = True
+                            await store_call("update_record", record_id, status="replied")
+                            return answer
                 provider = await store_call("active_provider", self.bot_id)
                 if image_blocks:
                     vision_details = {}
@@ -150,6 +172,8 @@ class RecordedChat:
                     # 只包围模型调用；记录保存、解析后的发送和上下文更新不重试。
                     async def invoke(selected: dict, timeout: float) -> BaseMessage:
                         async with asyncio.timeout(timeout):
+                            if knowledge and knowledge["mode"] == "strict":
+                                selected = {**selected, "web_search_mode": "disabled", "enable_web_fetch": False}
                             attempt = {"provider_id": selected["id"], "timings": {}}
                             if diagnostics is not None:
                                 diagnostics.setdefault("model_attempts", []).append(attempt)
@@ -260,6 +284,7 @@ class RecordedChat:
             answer = await self.chat.reply(key, text, deliver, model=model,
                                            identity_context=identity_context, owner_context=owner_context, visual_context=visual_context, speech_style=speech_style, audio_unrecognized=audio_unrecognized,
                                            metrics=diagnostics, save_usage=save_usage,
+                                           knowledge=knowledge,
                                            memory_context=memory.get("text", "") if memory else "", restored_history=restored)
             status = "replied" if text.strip() and len(text.strip()) <= self.settings.max_input_chars else "rejected"
             await store_call("update_record", record_id, status=status)

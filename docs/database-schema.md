@@ -531,3 +531,6 @@ provider_tts_voices：id BIGINT UNSIGNED自增主键；provider_id同类型外�
 
 
 2026-11-03：联网搜索与网页抓取功能 `d585c72` 已部署，线上数据库已升级至0030，11个供应商的新开关均保持关闭。容器健康、HTTP及9个关键文件一致性检查通过；未备份、未运行测试或付费接口验收。发布详情见 [部署记录](docker-deployment.md)。
+# 文件知识库新增表（0031，代码已编写，未执行）
+
+`0031_knowledge` 接续 `0030_provider_web_fetch`：`bot_knowledge_settings` 以bot_id为主键，保存开关、回答模式、加密Embedding配置、知识版本及Embedding版本；`knowledge_files` 以(bot_id,id)为主键，唯一键(bot_id,sha256)，保存文件元数据、状态、generation、索引collection、用量与错误；`knowledge_chunks` 主键(bot_id,file_id,generation,ordinal)，复合外键关联knowledge_files，保存正文和位置。字段以手写迁移为准；无真实库核验，不把设计写作已迁移。见[文件知识库](knowledge-base.md)。

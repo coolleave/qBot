@@ -46,6 +46,19 @@ class Settings(BaseSettings):
     admin_session_secret: SecretStr = SecretStr("")
     provider_encryption_key: SecretStr = SecretStr("")
     admin_cookie_secure: bool = False
+    knowledge_storage_dir: str = "data/knowledge"
+    knowledge_qdrant_url: str = "http://127.0.0.1:6333"
+    knowledge_qdrant_api_key: SecretStr = SecretStr("")
+
+    @field_validator("knowledge_qdrant_url")
+    @classmethod
+    def validate_qdrant_url(cls, value: str) -> str:
+        from urllib.parse import urlsplit
+        value = value.strip().rstrip("/")
+        url = urlsplit(value)
+        if url.scheme not in ("http", "https") or not url.hostname or url.username or url.password or url.query or url.fragment:
+            raise ValueError("Qdrant 地址须为 HTTP/HTTPS 服务地址，不包含凭证或查询参数")
+        return value
 
     def require_admin(self) -> None:
         from cryptography.fernet import Fernet

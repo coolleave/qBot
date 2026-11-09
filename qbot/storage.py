@@ -16,6 +16,7 @@ from qbot.config import Settings
 from qbot.identity_roles import IdentityRole
 from qbot.voice_call_store import VoiceCallStore
 from qbot.memory_store import MemoryStore
+from qbot.knowledge_store import KnowledgeStore
 
 
 class StorageError(RuntimeError):
@@ -38,13 +39,14 @@ def mysql_engine(settings: Settings) -> Engine:
     )
 
 
-class Store(VoiceCallStore, MemoryStore):
+class Store(KnowledgeStore, VoiceCallStore, MemoryStore):
     """同步事务集中管理，异步调用方通过 call 在线程池执行。"""
 
     def __init__(self, engine: Engine, encryption_key: str):
         self.engine = engine
         self.memory_locks = defaultdict(asyncio.Lock)
         self.memory_wakeup = asyncio.Event()
+        self.knowledge_wakeup = asyncio.Event()
         self.cipher = Fernet(encryption_key.encode())
         metadata = MetaData()
         try:
@@ -52,7 +54,11 @@ class Store(VoiceCallStore, MemoryStore):
                                            "interaction_greetings", "interaction_greeting_runs", "bot_user_identities",
                                            "admin_sessions", "bot_roles", "bot_contact_notes", "scheduled_templates",
                                            "voice_call_configs", "voice_calls", "voice_memories", "bot_memory_settings", "memory_states",
-                                           "memory_items", "memory_sources", "memory_runs", "provider_tts_voices"])
+                                           "memory_items", "memory_sources", "memory_runs", "provider_tts_voices",
+                                           "bot_knowledge_settings", "knowledge_files", "knowledge_chunks"])
+            self.knowledge_settings = metadata.tables["bot_knowledge_settings"]
+            self.knowledge_files = metadata.tables["knowledge_files"]
+            self.knowledge_chunks = metadata.tables["knowledge_chunks"]
             self.memory_settings = metadata.tables["bot_memory_settings"]
             self.memory_states = metadata.tables["memory_states"]
             self.memory_items = metadata.tables["memory_items"]

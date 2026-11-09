@@ -190,6 +190,8 @@ def admin_router(settings: Settings) -> APIRouter:
     router.include_router(image_probe_router(require_admin))
     from qbot.memory_routes import install_memory_routes
     install_memory_routes(router, require_admin)
+    from qbot.knowledge_routes import install_knowledge_routes
+    install_knowledge_routes(router, settings, require_admin)
 
     @router.get("/admin", response_class=HTMLResponse)
     async def page() -> str:

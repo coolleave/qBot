@@ -367,6 +367,7 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
         app.state.bot_profiles = BotProfiles(settings, db)
         scheduler = None
         memory_task = None
+        knowledge_task = None
         try:
             await manager.start_all()
             if settings.admin_enabled:
@@ -374,8 +375,14 @@ def create_app(settings: Settings | None = None, *, chat: ChatService | None = N
                 from qbot.memory import MemoryWorker
                 app.state.memory = MemoryWorker(settings, db)
                 memory_task = asyncio.create_task(app.state.memory.run(), name="memory-worker")
+                from qbot.knowledge import KnowledgeWorker
+                knowledge_task = asyncio.create_task(KnowledgeWorker(settings, db).run(), name="knowledge-worker")
             yield
         finally:
+            if knowledge_task is not None:
+                knowledge_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await knowledge_task
             if memory_task is not None:
                 memory_task.cancel()
                 with suppress(asyncio.CancelledError):

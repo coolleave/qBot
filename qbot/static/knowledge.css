@@ -1,0 +1,12 @@
+.knowledge-toolbar,.knowledge-actions {display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:16px 0}
+.knowledge-grid {display:grid;grid-template-columns:minmax(250px,320px) minmax(0,1fr);gap:20px;align-items:start}
+.knowledge-panel {background:var(--panel,#fff);border:1px solid var(--border,#e2e8f0);border-radius:16px;padding:22px;margin-bottom:18px;min-width:0}
+.knowledge-panel h2 {margin:0 0 18px;font-size:18px}
+.knowledge-panel label {display:block;margin-bottom:14px}
+.knowledge-panel input:not([type=checkbox]),.knowledge-panel select,.knowledge-panel textarea {width:100%;box-sizing:border-box}
+.knowledge-panel fieldset {border:0;padding:0;margin:0;min-width:0}
+.knowledge-file {padding:16px 0;border-bottom:1px solid #e2e8f0;overflow-wrap:anywhere}
+.knowledge-file:last-child {border-bottom:0}
+.knowledge-meta {color:#64748b;font-size:13px;margin:8px 0}
+.knowledge-result {white-space:pre-wrap;overflow-wrap:anywhere;margin:12px 0;padding:14px;background:#f8fafc;border-radius:10px}
+@media(max-width:900px){.knowledge-grid{grid-template-columns:1fr}.knowledge-panel{padding:16px}}

@@ -13,10 +13,15 @@ services:
     environment:
       HOST: "0.0.0.0"
       PORT: "8092"
+      KNOWLEDGE_STORAGE_DIR: "/app/data/knowledge"
+      KNOWLEDGE_QDRANT_URL: "${KNOWLEDGE_QDRANT_URL:-http://qdrant:6333}"
+    volumes:
+      - "${QBOT_KNOWLEDGE_DIR:-./data/knowledge}:/app/data/knowledge"
     ports:
       - "${QBOT_BIND_IP:-127.0.0.1}:${QBOT_HTTP_PORT:-8092}:8092"
     networks:
       - mysql
+      - knowledge
     healthcheck:
       test:
         - CMD
@@ -33,8 +38,29 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  qdrant:
+    image: qdrant/qdrant:v1.15.1
+    profiles: [knowledge]
+    restart: unless-stopped
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - knowledge
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  qdrant_data:
+
 # 复用现有 MySQL 网络，不创建或管理 MySQL 容器。
 networks:
+  knowledge:
+    internal: true
   mysql:
     external: true
     name: "${QBOT_DOCKER_NETWORK:-qbot-network}"

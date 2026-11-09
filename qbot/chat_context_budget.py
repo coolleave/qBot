@@ -46,6 +46,8 @@ def budget_inputs(prompt: ChatPromptTemplate, inputs: dict, text: str, normal_bu
         if isinstance(history[index], HumanMessage) and isinstance(history[index + 1], AIMessage):
             pairs.append(history[index:index + 2])
     result["history"] = []
+    result["knowledge"] = []
+    result["knowledge_rules"] = []
     memory_lines = memory_units(inputs.get("memory", []))
     protected = [line for line in memory_lines if line.startswith("同群主人近期原话（用户资料）：")]
     result["memory"] = [HumanMessage(content="\n".join(protected))] if protected else []
@@ -53,6 +55,13 @@ def budget_inputs(prompt: ChatPromptTemplate, inputs: dict, text: str, normal_bu
     required = estimate_tokens(prompt.invoke(result).to_messages())
     # 这是性能优化目标，不是模型上下文容量；长人设不能让所有后续短消息被拒绝。
     target = max(configured_target, required + min(2000, normal_budget // 2))
+    # 本轮知识依据优先于旧回答；逐片段选择，引用只能指向真正进入上下文的片段。
+    for message in inputs.get("knowledge", []):
+        trial = {**result, "knowledge": result["knowledge"] + [message],
+                 "knowledge_rules": inputs.get("knowledge_rules", [])}
+        if estimate_tokens(prompt.invoke(trial).to_messages()) <= target:
+            result["knowledge"] = trial["knowledge"]
+            result["knowledge_rules"] = trial["knowledge_rules"]
     recent = []
     for pair in reversed(pairs[-3:]):
         candidate = [message for group in [pair] + recent for message in group]

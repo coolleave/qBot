@@ -6,6 +6,7 @@
 
 | 要处理的功能 | 优先阅读 | 主要代码 |
 | --- | --- | --- |
+| 文件知识库、上传解析、Embedding 与 Qdrant | [文件知识库（待验收）](knowledge-base.md) | knowledge.py、knowledge_store.py、knowledge_routes.py、knowledge_parse.py |
 | Docker 镜像、Compose、部署网络与更新 | [Docker 部署](docker-deployment.md) | Dockerfile、compose.yaml、.env.example |
 | 智能体链路、人设、上下文、回复与 token 提取 | [智能体链路与会话](agent-flow.md) | chat.py、chat_context_budget.py、public_reply.py、recording.py、model.py |
 | 持久化记忆、异步整理、成本预算、群聊主人优先 | [记忆系统（待验收）](memory-system.md) | memory.py、memory_store.py、memory_jobs.py、memory_routes.py |

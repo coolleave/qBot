@@ -41,6 +41,7 @@ class ChatService:
             MessagesPlaceholder("memory_rules", optional=True),
             MessagesPlaceholder("owner_reference", optional=True),
             MessagesPlaceholder("memory", optional=True),
+            MessagesPlaceholder("knowledge_rules", optional=True), MessagesPlaceholder("knowledge", optional=True),
             MessagesPlaceholder("history"), MessagesPlaceholder("live_context", optional=True), MessagesPlaceholder("recognition_notice", optional=True), MessagesPlaceholder("output_style", optional=True), SystemMessage(content=self.output_prompt), MessagesPlaceholder("current"),
         ])
         self.prompt = prompt
@@ -53,6 +54,7 @@ class ChatService:
                     identity_context: str = "", visual_context: str = "", speech_style: bool = False, audio_unrecognized: bool = False,
                     metrics: dict | None = None, owner_context: str = "",
                     memory_context: str = "", restored_history: list[BaseMessage] | None = None,
+                    knowledge: dict | None = None,
                     save_usage: Callable[[dict[str, int]], Awaitable[None]] | None = None,
                     prepare_reply: Callable[[str], Awaitable[str]] | None = None) -> str:
         async with self.lock:
@@ -106,9 +108,20 @@ class ChatService:
                         "memory_rules": [SystemMessage(content=self.memory_prompt)] if memory_context else [],
                         "recognition_notice": [SystemMessage(content=files("qbot").joinpath("prompts/asr_clarification.txt").read_text("utf-8"))] if audio_unrecognized else [],
                         "output_style": [SystemMessage(content=files("qbot").joinpath("prompts/greeting_audio.txt").read_text("utf-8"))] if speech_style else []}
+                    if knowledge and knowledge["items"]:
+                        from qbot.knowledge import knowledge_messages, knowledge_rules
+                        inputs["knowledge"] = [HumanMessage(content=value) for value in knowledge_messages(knowledge)]
+                        inputs["knowledge_rules"] = [SystemMessage(content=knowledge_rules(knowledge["mode"]))]
                     with measure(metrics, "context_prepare"):
                         inputs = budget_inputs(self.prompt, inputs, text,
                             self.settings.chat_context_tokens, self.settings.chat_context_extended_tokens, metrics)
+                    if knowledge and knowledge["mode"] == "strict" and not inputs.get("knowledge"):
+                        answer = "本轮可用上下文不足以容纳知识资料，请缩短问题后重试。"
+                        if sender:
+                            await sender(answer)
+                        return answer
+                    if knowledge and metrics is not None:
+                        metrics.setdefault("knowledge", {})["selected_chunks"] = len(inputs.get("knowledge", []))
                     started = time.monotonic()
                     if model is not None:
                         with measure(metrics, "chat"):
@@ -132,6 +145,11 @@ class ChatService:
                 if prepare_reply:
                     answer = await prepare_reply(answer)
                 answer = plain_text_reply(public_reply_text(answer))
+                if knowledge and knowledge["items"]:
+                    from qbot.knowledge import cite_answer
+                    answer = cite_answer(answer, inputs.get("knowledge", []), self.settings.max_reply_chars, knowledge["mode"])
+                elif knowledge and knowledge["status"] == "failed":
+                    answer = "资料暂时不可用，以下回答未参考知识库。\n" + answer
                 if not answer:
                     raise ValueError("模型未返回可用的纯文本内容")
                 if len(answer) > self.settings.max_reply_chars:

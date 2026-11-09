@@ -188,6 +188,8 @@ function renderTimingDetails(item) {
   if (media.vision) row("视觉理解总计", legacy(media.vision.latency_ms, media.vision.status));
   row("记忆锁等待", timings.memory_lock_wait);
   row("记忆读取", timings.memory_read);
+  if (timings.knowledge_config_read) row("知识库配置", timings.knowledge_config_read);
+  if (timings.knowledge_retrieval) row("知识库检索", timings.knowledge_retrieval);
   row("模型配置读取", timings.provider_read);
   row("身份读取与校验", timings.identity_read);
   row("上下文组装", timings.context_prepare);
@@ -210,6 +212,11 @@ function renderTimingDetails(item) {
   row("语音上传", timings.upload);
   row("QQ 发送", timings.send);
   host.append(table);
+  if (media.knowledge) {
+    const knowledge = media.knowledge;
+    const status = {ok:"已命中", empty:"无命中", failed:"检索失败"}[knowledge.status] || "未完成";
+    host.append(element("p", `知识库：${status} · 采用 ${knowledge.selected_chunks || 0} 个片段 · 向量 token：${knowledge.embedding_tokens ?? "未知或未调用"}`));
+  }
   const context = media.context_budget;
   if (context && Number.isFinite(context.before_tokens) && Number.isFinite(context.after_tokens)) {
     host.append(element("p", `输入估算：${context.before_tokens} → ${context.after_tokens} tokens · 历史 ${context.history_turns_after} 轮`));

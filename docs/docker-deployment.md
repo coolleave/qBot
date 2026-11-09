@@ -283,3 +283,6 @@ docker compose up -d qbot
 功能提交 `689ed9b` 已推送并通过既有加锁部署脚本于21:10（北京时间）部署至实验室服务器，成功基线已登记。切换图片生成类型默认套用 qwen-image-2.1-pro 和兼容接口，业务空间地址由用户填写或复用已有官方域名。未修改真实供应商配置。
 
 容器 running healthy、重启次数0，/health返回ok、/admin返回200；仓库与运行容器的admin.js SHA-256一致。未执行数据库备份或迁移，未运行测试、浏览器或真实生图接口。当前百炼图片URL结果适配仍未实现，此次上线仅提供配置预设。
+## 文件知识库部署补充（2026-11-08，代码已编写，未部署）
+
+Compose新增可选 `knowledge` profile 的Qdrant服务，不创建MySQL。qbot和Qdrant通过独立internal网络通信，Qdrant无宿主机端口；向量使用项目命名卷qdrant_data。原文件挂载 `${QBOT_KNOWLEDGE_DIR:-./data/knowledge}` 到 `/app/data/knowledge`，须预先授予容器UID10001写权限。构建上下文排除上传数据，Git忽略data/。不要执行 `docker compose down -v` 清空向量卷。完整初始化及本地运行步骤见[文件知识库](knowledge-base.md)。按用户要求不执行数据库备份，本轮不迁移、不启动服务或部署。

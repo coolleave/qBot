@@ -18,6 +18,7 @@
 
 | 需求涉及 | 优先阅读 |
 | --- | --- |
+| 文件知识库、上传解析、Embedding、Qdrant、智能体资料隔离 | [docs/knowledge-base.md](docs/knowledge-base.md) |
 | Docker 镜像、Compose、部署网络与更新 | [docs/docker-deployment.md](docs/docker-deployment.md) |
 | 智能体链路、人设、模型调用、上下文预算（chat_context_budget.py）、回复及推理隔离 | [docs/agent-flow.md](docs/agent-flow.md) |
 | 持久化记忆、异步整理、成本预算、群聊主人优先（待验收） | [docs/memory-system.md](docs/memory-system.md) |

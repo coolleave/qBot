@@ -1,5 +1,9 @@
 # 存储、聊天记录与迁移定位
 
+## 文件知识库（0031，代码已编写，未执行）
+
+新增 bot_knowledge_settings、knowledge_files、knowledge_chunks，Store 继承 KnowledgeStore。配置与原文件元数据、片段按 bot_id 隔离，file_id 使用UUID；文件SHA-256唯一键包含bot_id，片段通过复合外键关联文件。文件行兼任持久任务账本，索引 generation 与 Embedding 版本共同控制发布；仅ready文件可检索。原文件放本地挂载目录，Qdrant仅存向量及片段标识，正文从MySQL归属复核后读取。索引费用累计已知token及未知调用次数；查询用量记录在聊天media_details.knowledge，试用只返回当次用量，不并入聊天token。详见[文件知识库](knowledge-base.md)。
+
 ## 记忆存储（0024，已编写未执行）
 
 新增 `bot_memory_settings`、`memory_states`、`memory_items`、`memory_sources`、`memory_runs` 五表。Store 继承 MemoryStore，异步入口仍经 Store.call；聊天接收同事务保存记忆来源，批次按来源记录维护 pending/claimed/done/blocked/cancelled/skipped 及分段位置，失败区间不会被最大ID跳过。个人长期条目按bot_id + subject_id共享；摘要、来源和任务按会话处理，群共享条目按群隔离。
