@@ -292,3 +292,12 @@ Compose新增可选 `knowledge` profile 的Qdrant服务，不创建MySQL。qbot�
 功能提交ac3d970部署到实验室服务器qbot-prod。持有.deploy/deploy.lock，先更新并完成镜像构建，再停止qBot、显式迁移0030→0031，启动qBot及独立Qdrant。保留生产环境配置、既有MySQL和服务器未跟踪旧文件，未备份或运行测试。Qdrant下载使用DAOCloud回退源，不改Docker全局配置；解析依赖随新qBot镜像安装。
 
 qBot镜像sha256:5232f624aaef44ca72af6d9ed1bb3a594a7372e780128dccf774ad26b5c46f65，容器running healthy；Qdrant v1.15.1 running，两者重启次数0。Qdrant /readyz、qBot /health、/admin及知识库静态资源返回200，未登录知识库接口返回401，UID10001可写原文件目录。13个关键文件SHA-256与仓库一致，自动部署基线已登记。知识三表初始为空、启用数量0；不调用付费Embedding或聊天模型，真实上传检索待用户配置后验收。
+
+
+## 2026-11-09 天气指令与供应商余额查询发布（已部署）
+
+发布提交 `62c53a0`，同时包含此前未部署的余额查询提交 `2a04aa2`。持有既有部署锁，快进更新并复用依赖缓存构建；停服后显式升级 `0031_knowledge → 0032_balance_credentials`，新增供应商可空加密凭证列，未配置真实余额凭证。保留现有生产配置、MySQL、Qdrant及服务器未跟踪文件，不备份。
+
+镜像 `sha256:bbaf77790399bb31c7c13996d1d1f43cccde2e2636bad15a5f3275f32d1345d4`，qBot running healthy、重启次数0，/health和/admin均返回200，两条QQ WebSocket连接成功。八个天气、余额及迁移相关运行文件SHA-256与发布仓库一致，成功部署基线登记为62c53a0。
+
+可在QQ发送 `/weather 北京`，或先发送 `/weather` 再补充城市。天气函数只提供资料，回复仍走原有发送链路。未运行测试、浏览器、真实天气/余额/模型接口或QQ发送验收；功能效果待实际使用确认。
