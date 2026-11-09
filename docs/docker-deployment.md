@@ -286,3 +286,9 @@ docker compose up -d qbot
 ## 文件知识库部署补充（2026-11-08，代码已编写，未部署）
 
 Compose新增可选 `knowledge` profile 的Qdrant服务，不创建MySQL。qbot和Qdrant通过独立internal网络通信，Qdrant无宿主机端口；向量使用项目命名卷qdrant_data。原文件挂载 `${QBOT_KNOWLEDGE_DIR:-./data/knowledge}` 到 `/app/data/knowledge`，须预先授予容器UID10001写权限。构建上下文排除上传数据，Git忽略data/。不要执行 `docker compose down -v` 清空向量卷。完整初始化及本地运行步骤见[文件知识库](knowledge-base.md)。按用户要求不执行数据库备份，本轮不迁移、不启动服务或部署。
+
+## 2026-11-09 文件知识库发布（已迁移、已部署）
+
+功能提交ac3d970部署到实验室服务器qbot-prod。持有.deploy/deploy.lock，先更新并完成镜像构建，再停止qBot、显式迁移0030→0031，启动qBot及独立Qdrant。保留生产环境配置、既有MySQL和服务器未跟踪旧文件，未备份或运行测试。Qdrant下载使用DAOCloud回退源，不改Docker全局配置；解析依赖随新qBot镜像安装。
+
+qBot镜像sha256:5232f624aaef44ca72af6d9ed1bb3a594a7372e780128dccf774ad26b5c46f65，容器running healthy；Qdrant v1.15.1 running，两者重启次数0。Qdrant /readyz、qBot /health、/admin及知识库静态资源返回200，未登录知识库接口返回401，UID10001可写原文件目录。13个关键文件SHA-256与仓库一致，自动部署基线已登记。知识三表初始为空、启用数量0；不调用付费Embedding或聊天模型，真实上传检索待用户配置后验收。

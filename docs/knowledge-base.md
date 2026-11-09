@@ -1,6 +1,6 @@
 # 文件知识库
 
-状态：2026-11-08 先完成设计文档，再编写首版代码；尚未安装新增依赖、迁移、部署或运行验收。以下验收项保持未完成，不把静态检查作为功能验收。
+状态：2026-11-08先文档后代码；2026-11-09已在实验室服务器安装依赖、迁移至0031并部署。服务健康与目录、连接检查通过，真实文件解析和Embedding检索尚未验收。以下功能验收项保持未完成。
 
 ## 范围与流程
 
@@ -61,7 +61,7 @@
 
 接口前缀 `/api/admin/knowledge/{bot_id}`：GET/PUT `/config`；GET `/files?page=1`；POST `/files?filename=原文件名`（Content-Type: application/octet-stream）；GET `/files/{file_id}/download`；POST `/files/{file_id}/retry`；DELETE `/files/{file_id}`；POST `/search`（JSON字段query）。所有接口要求管理员，写接口需要X-QBot-Admin和CSRF。文件列表需手动刷新，不轮询调用模型。上传成功返回queued，不声称已经索引完成。
 
-## 安装与部署（命令未执行）
+## 安装与部署
 
 新增依赖为pypdf、python-docx、openpyxl和defusedxml；沿用现有httpx调用Qdrant REST，不新增Qdrant Python SDK。停服务后在项目根目录安装依赖并显式迁移：
 
@@ -105,3 +105,9 @@ Docker的环境文件中设置 `KNOWLEDGE_QDRANT_URL=http://qdrant:6333`，或�
 仅用户明确要求时运行测试；本次不调用付费模型、不打开浏览器、不执行迁移或部署。
 
 2026-11-08 静态核对：14个新增/修改Python文件AST解析、knowledge.js/admin-ui.js/admin.js语法、TOML/YAML解析、存储方法引用、UTF-8读取和Git差异检查通过。未安装新增解析依赖、未运行测试、未连接数据库/Qdrant或真实Embedding服务，未提交或部署；文件解析效果、界面交互和完整调用链仍需运行验收。
+
+## 2026-11-09 部署结果
+
+功能提交ac3d970已推送并部署至实验室服务器qbot-prod。持有现有部署锁构建镜像后停qBot，将项目库从0030显式升级至0031；新增三张知识表核对存在，初始为空，未启用任何智能体知识库。Qdrant v1.15.1使用项目私有网络和持久卷，未开放宿主机端口；原文件目录为项目下data/knowledge，UID10001可写。Docker Hub下载超时后使用已有DAOCloud镜像源取得同版本镜像，未修改Docker全局设置。
+
+qBot running healthy、Qdrant running，两容器重启次数0；容器内Qdrant /readyz返回200，/health、/admin与知识库JS/CSS均返回200，知识库接口未登录返回401。13个关键代码/静态资源/迁移文件SHA-256与提交一致，自动部署成功基线已登记。实际安装pypdf 6.21.4、python-docx 1.2.0、openpyxl 3.1.5、defusedxml 0.7.1。未执行数据库备份、测试、浏览器验证或付费Embedding/聊天调用；上传与检索仍需配置模型后验收。
