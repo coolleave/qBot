@@ -3,6 +3,7 @@ import asyncio
 import logging
 import math
 import time
+from collections import OrderedDict
 from datetime import datetime, timedelta
 
 import httpx
@@ -26,7 +27,8 @@ WEATHER_CODES = {
     80: "小阵雨", 81: "阵雨", 82: "强阵雨", 85: "小阵雪", 86: "强阵雪",
     95: "雷暴", 96: "雷暴伴冰雹", 99: "强雷暴伴冰雹",
 }
-_weather_cache: tuple[float, str, dict] | None = None
+_weather_cache: OrderedDict[str, tuple[float, str, dict]] = OrderedDict()
+GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
 
 def time_context(now: datetime) -> dict:
@@ -46,7 +48,7 @@ def _number(value: object, low: float, high: float) -> float:
     return round(value, 1)
 
 
-def _parse_weather(data: dict, now: datetime) -> dict:
+def _parse_weather(data: dict, now: datetime, city: str = "石家庄") -> dict:
     current, daily = data["current"], data["daily"]
     observed = datetime.fromisoformat(current["time"])
     if observed.tzinfo is None:
@@ -71,7 +73,7 @@ def _parse_weather(data: dict, now: datetime) -> dict:
     code = current["weather_code"]
     if isinstance(code, bool) or not isinstance(code, int):
         raise ValueError("天气代码无效")
-    return {"状态": "可用", "城市": "石家庄", "来源": "Open-Meteo",
+    return {"状态": "可用", "城市": city, "来源": "Open-Meteo",
             "天气时间": observed.astimezone(BEIJING).strftime("%Y-%m-%d %H:%M"),
             "当前气温℃": _number(current["temperature_2m"], -80, 60),
             "当前体感℃": _number(current["apparent_temperature"], -100, 80),
@@ -80,23 +82,59 @@ def _parse_weather(data: dict, now: datetime) -> dict:
                          "最高降水概率%": _number(daily["precipitation_probability_max"][0], 0, 100)}}
 
 
-async def weather_context(now: datetime) -> dict:
-    global _weather_cache
+async def weather_context(now: datetime, city: str = "石家庄") -> dict:
+    """复用天气校验；城市解析和预报共享总期限，不向外部发送聊天历史。"""
+    city = city.strip()
+    if not city or len(city) > 40:
+        return {"状态": "不可用", "说明": "请提供不超过40字的城市名称，例如 /weather 北京"}
+    cache_key = city.casefold()
     today = now.astimezone(BEIJING).date().isoformat()
-    if _weather_cache and time.monotonic() < _weather_cache[0] and _weather_cache[1] == today:
-        return _weather_cache[2].copy()
+    cached = _weather_cache.get(cache_key)
+    if cached and time.monotonic() < cached[0] and cached[1] == today:
+        _weather_cache.move_to_end(cache_key)
+        return cached[2].copy()
+    resolved_city = city
     try:
         async with asyncio.timeout(5):
             async with httpx.AsyncClient(timeout=4, follow_redirects=False) as client:
-                response = await client.get(WEATHER_URL, params=WEATHER_PARAMS)
+                params = WEATHER_PARAMS.copy()
+                if city not in {"石家庄", "石家庄市"}:
+                    response = await client.get(GEOCODING_URL, params={
+                        "name": city, "count": 5, "language": "zh", "format": "json"})
+                    response.raise_for_status()
+                    locations = response.json().get("results", [])
+                    # 优先精确名称，不能直接把同名搜索结果的第一项当作用户位置。
+                    exact = [item for item in locations
+                             if item.get("name", "").removesuffix("市").casefold()
+                             == city.removesuffix("市").casefold()]
+                    locations = exact or locations
+                    if not locations:
+                        return {"状态": "不可用", "城市": city, "说明": "未找到该城市，请检查名称或使用更明确的城市名称"}
+                    if len(locations) != 1:
+                        candidates = [" / ".join(str(item.get(key) or "") for key in
+                                      ("country", "admin1", "name")) for item in locations]
+                        return {"状态": "需确认城市", "城市": city, "候选地点": candidates,
+                                "说明": "存在多个匹配地点，请用户提供更明确的城市名称后重新发送 /weather 城市；尚未查询天气"}
+                    location = locations[0]
+                    # 复用范围校验，但保留坐标精度，避免四舍五入到其他城区。
+                    _number(location["latitude"], -90, 90)
+                    _number(location["longitude"], -180, 180)
+                    params["latitude"] = location["latitude"]
+                    params["longitude"] = location["longitude"]
+                    resolved_city = " / ".join(str(location.get(key) or "") for key in
+                                               ("country", "admin1", "name"))
+                response = await client.get(WEATHER_URL, params=params)
                 response.raise_for_status()
-                result = _parse_weather(response.json(), now)
+                result = _parse_weather(response.json(), datetime.now(BEIJING), resolved_city)
         # 缓存不能让临近过期的气象数据超过45分钟仍被使用。
         observed = datetime.fromisoformat(result["天气时间"]).replace(tzinfo=BEIJING)
         ttl = min(600, max(0, (observed + timedelta(minutes=45) - datetime.now(BEIJING)).total_seconds()))
-    except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError, IndexError) as exc:
-        logger.warning("石家庄天气暂不可用 type=%s；本次文案不引用具体天气", type(exc).__name__)
-        result = {"状态": "不可用", "城市": "石家庄", "说明": "天气查询失败或数据无效；不要描述当前天气、气温或降水预报"}
+    except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError, IndexError, AttributeError) as exc:
+        logger.warning("天气暂不可用 type=%s；本次回复不引用具体天气", type(exc).__name__)
+        result = {"状态": "不可用", "城市": resolved_city, "说明": "天气查询失败或数据无效；不要描述当前天气、气温或降水预报"}
         ttl = 60
-    _weather_cache = (time.monotonic() + ttl, today, result)
+    _weather_cache[cache_key] = (time.monotonic() + ttl, today, result)
+    _weather_cache.move_to_end(cache_key)
+    while len(_weather_cache) > 128:
+        _weather_cache.popitem(last=False)
     return result.copy()
