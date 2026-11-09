@@ -260,6 +260,11 @@ $("provider-filter-clear").onclick = () => {
   filterProviders();
 };
 const providerPanels = new Map();
+let balanceSession = 0;
+document.addEventListener("qbot-logout", () => {
+  balanceSession++;
+  document.querySelectorAll(".provider-balance").forEach(node => { node.textContent = ""; node.hidden = true; });
+});
 async function loadProviders() {
   VoiceCloneRecorder.resetAll();
   const data = await api("/providers"); providers = data.items; defaultProvider = data.default_provider_id;
@@ -372,10 +377,91 @@ async function loadProviders() {
       await loadProviders(); toast("供应商已删除");
     }));
     card.append(element("p", "试用使用已保存的配置。", "muted"), toolActions, outcome);
-    const operations = element("td"); operations.append(actions); row.append(operations);
+    const balanceStatus = element("p", "", "muted provider-balance");
+    balanceStatus.hidden = true;
+    balanceStatus.style.whiteSpace = "pre-wrap";
+    balanceStatus.setAttribute("role", "status");
+    const balanceButton = button("查看余额", async () => {
+      const session = balanceSession;
+      balanceButton.disabled = true;
+      balanceStatus.hidden = false;
+      balanceStatus.textContent = "正在查询账户余额…";
+      try {
+        const result = await api(`/providers/${item.id}/balance`, { method: "POST" });
+        if (!row.isConnected || session !== balanceSession) return;
+        if (!result.supported) {
+          balanceStatus.textContent = result.message;
+          return;
+        }
+        if (result.service === "aliyun") {
+          balanceStatus.textContent = [
+            "阿里云账户余额（余额凭证所属账户）",
+            ...result.items.map(info => `${info.currency} 现金余额：${info.cash_balance} · 可用额度：${info.total_balance}\n信控额度：${info.credit_balance} · 网商银行信用额度：${info.bank_credit_balance}`),
+            `查询时间：${new Date(result.checked_at).toLocaleString()}`,
+          ].join("\n");
+          return;
+        }
+        balanceStatus.textContent = [
+          `账户余额 · ${result.is_available ? "可用于 API 调用" : "暂无可用余额"}`,
+          ...result.items.map(info => `${info.currency} 可用：${info.total_balance}（赠金 ${info.granted_balance} / 充值 ${info.topped_up_balance}）`),
+          `查询时间：${new Date(result.checked_at).toLocaleString()} · 同账户模型共享`,
+        ].join("\n");
+      } catch (e) {
+        if (row.isConnected && session === balanceSession) balanceStatus.textContent = "查询失败：" + e.message;
+      } finally { balanceButton.disabled = false; }
+    });
+    actions.append(balanceButton);
+    if (isBailianProvider(item) || item.has_balance_credentials) {
+      actions.append(button("余额凭证", () => editBalanceCredentials(item)));
+    }
+    const operations = element("td"); operations.append(actions, balanceStatus); row.append(operations);
     $("providers-list").append(row);
   }
   filterProviders();
+}
+function isBailianProvider(item) {
+  try {
+    const url = new URL(item.base_url);
+    return url.protocol === "https:" && ["dashscope.aliyuncs.com", "dashscope-intl.aliyuncs.com", "dashscope-us.aliyuncs.com", "coding.dashscope.aliyuncs.com"].includes(url.hostname);
+  } catch { return false; }
+}
+function editBalanceCredentials(item) {
+  const session = balanceSession;
+  const dialog = element("dialog"), form = element("form");
+  const heading = element("h3", `${item.name} · 阿里云余额凭证`);
+  const status = element("p", item.has_balance_credentials ? "已配置；重新保存将替换整组凭证。" : "尚未配置余额凭证。", "muted");
+  const id = element("input"), secret = element("input"), site = element("select");
+  for (const input of [id, secret]) { input.type = "password"; input.autocomplete = "new-password"; input.required = true; input.maxLength = 256; input.minLength = 8; }
+  site.append(new Option("中国站", "china"), new Option("国际站", "international"));
+  const fields = element("div", undefined, "form-grid");
+  for (const [title, input] of [["AccessKey ID", id], ["AccessKey Secret", secret], ["账户站点", site]]) {
+    const label = element("label", title); label.append(input); fields.append(label);
+  }
+  const error = element("p", "", "error"), actions = element("div", undefined, "actions");
+  const save = element("button", "保存"), clear = button("清除凭证", async () => {
+    if (!confirm("确定清除该供应商的余额查询凭证？")) return;
+    save.disabled = true;
+    try {
+      await api(`/providers/${item.id}/balance-credentials`, { method: "DELETE" });
+      if (session !== balanceSession) return;
+      dialog.close(); await loadProviders(); toast("余额凭证已清除");
+    } catch (e) { error.textContent = e.message; }
+    finally { save.disabled = false; }
+  });
+  save.type = "submit"; clear.disabled = !item.has_balance_credentials;
+  actions.append(save, clear, button("取消", () => dialog.close()));
+  form.append(heading, status, fields, element("p", "请使用百炼所属账户的 RAM AccessKey，授予 bss:DescribeAcccount 权限。", "muted"), error, actions);
+  form.onsubmit = async event => {
+    event.preventDefault(); error.textContent = ""; save.disabled = true; clear.disabled = true;
+    try {
+      await api(`/providers/${item.id}/balance-credentials`, { method: "PUT", body: JSON.stringify({ access_key_id: id.value, access_key_secret: secret.value, site: site.value }) });
+      if (session !== balanceSession) return;
+      dialog.close(); await loadProviders(); toast("余额凭证已加密保存");
+    } catch (e) { error.textContent = e.message; }
+    finally { save.disabled = false; clear.disabled = !item.has_balance_credentials; }
+  };
+  dialog.addEventListener("close", () => { id.value = ""; secret.value = ""; dialog.remove(); }, { once: true });
+  dialog.append(form); document.body.append(dialog); dialog.showModal();
 }
 // 复刻记录独立保存；刷新状态只查询已有ID，不重新上传或创建。
 function addVoiceCloning(card, item, voiceInput) {

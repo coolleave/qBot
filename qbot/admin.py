@@ -67,6 +67,21 @@ class ProviderInput(BaseModel):
         return value.rstrip("/")
 
 
+class BalanceCredentialsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    access_key_id: SecretStr
+    access_key_secret: SecretStr
+    site: Literal["china", "international"] = "china"
+
+    @field_validator("access_key_id", "access_key_secret")
+    @classmethod
+    def check_balance_key(cls, value: SecretStr) -> SecretStr:
+        key = value.get_secret_value()
+        if not 8 <= len(key) <= 256 or any(not 33 <= ord(c) <= 126 for c in key):
+            raise ValueError("AccessKey 格式无效")
+        return value
+
+
 class QQInput(BaseModel):
     transport: Literal["websocket", "webhook"] = "websocket"
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -142,6 +157,8 @@ def admin_router(settings: Settings) -> APIRouter:
     attempts: deque[float] = deque()
     ttl = 3600
     probe_lock = asyncio.Lock()
+    balance_lock = asyncio.Lock()
+    last_balance = 0.0
     media_lock = asyncio.Lock()
     last_probe = 0.0
     voice_query_lock = asyncio.Lock()
@@ -304,6 +321,53 @@ def admin_router(settings: Settings) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
         return {"ok": True}
+
+    @router.put("/api/admin/providers/{provider_id}/balance-credentials", dependencies=[Depends(require_admin)])
+    async def save_balance_credentials(provider_id: int, data: BalanceCredentialsInput,
+                                       db: Store = Depends(store)) -> dict:
+        try:
+            await db.call("save_balance_credentials", provider_id, {
+                "access_key_id": data.access_key_id.get_secret_value(),
+                "access_key_secret": data.access_key_secret.get_secret_value(), "site": data.site,
+            })
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return {"ok": True}
+
+    @router.delete("/api/admin/providers/{provider_id}/balance-credentials", dependencies=[Depends(require_admin)])
+    async def clear_balance_credentials(provider_id: int, db: Store = Depends(store)) -> dict:
+        try:
+            await db.call("save_balance_credentials", provider_id, None)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return {"ok": True}
+
+    @router.post("/api/admin/providers/{provider_id}/balance", dependencies=[Depends(require_admin)])
+    async def provider_balance(provider_id: int, response: Response, db: Store = Depends(store)) -> dict:
+        nonlocal last_balance
+        response.headers["Cache-Control"] = "no-store"
+        if balance_lock.locked() or time.monotonic() - last_balance < 3:
+            raise HTTPException(429, "余额查询过于频繁，请稍后重试")
+        async with balance_lock:
+            last_balance = time.monotonic()
+            from qbot.provider_balance import balance_capability, query_balance
+            # 不支持的供应商无需解密 Key，也能给出正确提示。
+            public = await db.call("list_providers")
+            provider = next((item for item in public["items"] if item["id"] == provider_id), None)
+            if provider is None:
+                raise HTTPException(404, "供应商不存在")
+            capability = balance_capability(provider)
+            if not capability["supported"]:
+                return capability
+            try:
+                if capability.get("service") == "aliyun":
+                    from qbot.provider_balance import query_aliyun_balance
+                    credentials = await db.call("balance_credentials", provider_id)
+                    return await query_aliyun_balance(credentials)
+                provider = await db.call("provider_for_probe", provider_id)
+                return await query_balance(provider)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
 
     @router.post("/api/admin/providers/{provider_id}/test", dependencies=[Depends(require_admin)])
     async def test_provider(provider_id: int, db: Store = Depends(store)) -> dict:

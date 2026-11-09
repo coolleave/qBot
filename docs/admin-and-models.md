@@ -22,6 +22,18 @@ Cookie 签名且启用 HttpOnly / SameSite Strict；HTTPS 配置 ADMIN_COOKIE_SE
 
 ## 模型类型与协议
 
+### 供应商余额（2026-11-09，已编写，真实接口待验收）
+
+供应商列表提供手动“查看余额”，不调用推理、不自动轮询、不保存余额快照。DeepSeek 官方地址（根路径、`/v1`、`/beta`）使用现有模型 Key 查询总可用余额、赠金、充值余额；同账户模型共享资金。
+
+百炼通过阿里云 `QueryAccountBalance` 查询账户现金余额、可用额度、信控额度和网商银行信用额度，不查询免费 tokens。点击“余额凭证”，填写同一阿里云账户的 RAM AccessKey ID/Secret，并明确选择中国站或国际站；最小权限为 `bss:DescribeAcccount`、Resource `*`。显示的是账单凭证所属账户资金，无法通过模型 Key 自动验证账户归属。不同供应商不自动共享凭证。可替换或清除整组凭证；列表仅返回是否已配置，不返回明文或密文。
+
+AccessKey 整组经 Fernet 加密存入 `model_providers.balance_credentials_encrypted`，与模型 Key 分开管理。新增迁移 `0032_balance_credentials`；部署前停服务，显式执行 `python -m alembic upgrade head` 后重启。按用户要求不备份，不自动迁移。无新依赖或环境变量。
+
+接口：`POST /api/admin/providers/{provider_id}/balance` 查询，`PUT/DELETE /api/admin/providers/{provider_id}/balance-credentials` 保存/清除；实现见 [provider_balance.py](../qbot/provider_balance.py)。复用管理员认证和 CSRF，查询独立并发限制及 3 秒冷却，15 秒总超时、无重试、禁止跳转、64 KiB 响应上限，错误不回显上游正文。仅访问固定 DeepSeek 端点或阿里云 `business.aliyuncs.com` / `business.ap-southeast-1.aliyuncs.com`；阿里云 Secret 仅用于本地 RPC 签名，AccessKey ID 和签名放 POST 请求体。退出登录清除结果和输入，刷新列表后忽略旧余额响应。
+
+未运行测试、浏览器、真实余额查询或迁移，未部署。官方依据：[DeepSeek 余额](https://api-docs.deepseek.com/zh-cn/api/get-user-balance/)、[阿里云账户余额](https://help.aliyun.com/zh/user-center/developer-reference/api-bssopenapi-2017-12-14-queryaccountbalance)、[权限](https://help.aliyun.com/zh/user-center/developer-reference/api-calling-authorization)。
+
 ### Token 统计菜单（已编写，待验证）
 
 独立页面提供机器人、对话、模型、日期筛选，用量卡片、每日趋势和分组排行；使用原生 SVG/CSS，无外部图表依赖。对话支持关键词搜索及分页，排行可点击筛选。数据接口均要求管理员登录，加载失败清空旧图表并提示，避免把旧筛选结果当成新结果。用量口径和接口见[存储与记录](storage.md)。

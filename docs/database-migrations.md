@@ -1,5 +1,9 @@
 # 数据库迁移
 
+## 供应商余额凭证（0032，已编写未执行）
+
+`0032_balance_credentials` 接续 `0031_knowledge`，为 `model_providers` 新增可空 TEXT 列 `balance_credentials_encrypted`。整体加密保存阿里云 AccessKey ID、Secret 和账户站点；列表仅返回配置状态，模型调用不使用此凭证。原配置默认为空。部署前停服务、显式执行 `python -m alembic upgrade head` 后重启；不备份、不自动迁移，不支持丢弃凭证的降级。详见[后台与模型](admin-and-models.md)。
+
 当前维护偏好（2026-11-02）：按用户要求，后续迁移与部署不执行数据库备份，除非再次明确要求；下文历史备份记录保留，旧流程的备份步骤不再默认执行。
 
 ## 持久化记忆（0024，已编写未执行）

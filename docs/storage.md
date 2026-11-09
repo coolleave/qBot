@@ -1,5 +1,9 @@
 # 存储、聊天记录与迁移定位
 
+## 供应商余额凭证（0032，已编写未执行）
+
+`0032_balance_credentials` 接续 `0031_knowledge`，为 `model_providers` 新增可空 TEXT 列 `balance_credentials_encrypted`。整体加密保存阿里云 AccessKey ID、Secret 和账户站点；列表仅返回配置状态，模型调用不使用此凭证。原配置默认为空。部署前停服务、显式执行 `python -m alembic upgrade head` 后重启；不备份、不自动迁移，不支持丢弃凭证的降级。详见[后台与模型](admin-and-models.md)。
+
 ## 文件知识库（0031，代码已编写，未执行）
 
 新增 bot_knowledge_settings、knowledge_files、knowledge_chunks，Store 继承 KnowledgeStore。配置与原文件元数据、片段按 bot_id 隔离，file_id 使用UUID；文件SHA-256唯一键包含bot_id，片段通过复合外键关联文件。文件行兼任持久任务账本，索引 generation 与 Embedding 版本共同控制发布；仅ready文件可检索。原文件放本地挂载目录，Qdrant仅存向量及片段标识，正文从MySQL归属复核后读取。索引费用累计已知token及未知调用次数；查询用量记录在聊天media_details.knowledge，试用只返回当次用量，不并入聊天token。详见[文件知识库](knowledge-base.md)。

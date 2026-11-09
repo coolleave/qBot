@@ -1,5 +1,7 @@
 # qBot 对话智能体
 
+供应商账户余额（已编写，待验收）：支持 DeepSeek 官方余额和百炼所属阿里云账户资金查询；百炼需在供应商列表单独配置加密保存的 AccessKey。部署前显式迁移至 `0032_balance_credentials` 并重启，详见[后台与模型](docs/admin-and-models.md)。本轮未迁移、未部署。
+
 文件知识库（2026-11-09已部署，真实文件检索待验收）：后台按智能体上传 PDF、DOCX、XLSX、TXT、Markdown、CSV，原文件使用本地持久目录，Qdrant 保存向量，独立 OpenAI 兼容 Embedding 配置负责索引和检索。实验室服务器已升级至 `0031_knowledge`、安装解析依赖并启动 Qdrant；刷新后台后在「知识库」选择智能体、配置Embedding并上传文件。配置与部署命令见[文件知识库](docs/knowledge-base.md)。默认关闭，未替用户选择模型；本次未备份、未运行测试或付费调用。
 
 聊天延迟优化（已编写，待运行验收）：后台聊天复用模型连接，记录分段耗时；基础上下文按 `CHAT_CONTEXT_TOKENS=4000`、`CHAT_CONTEXT_EXTENDED_TOKENS=8000` 粗估预算选择历史和记忆。配置可在环境变量覆盖，无新依赖或迁移，更新后重启后端并刷新后台；本轮未部署。详情见[智能体链路](docs/agent-flow.md)。

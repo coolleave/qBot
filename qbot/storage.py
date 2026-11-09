@@ -246,14 +246,39 @@ class Store(KnowledgeStore, VoiceCallStore, MemoryStore):
                     self.providers.c.updated_at.desc(), self.providers.c.id.desc())).mappings():
                 item = dict(row)
                 encrypted = item.pop("api_key_encrypted")
+                item["has_balance_credentials"] = bool(item.pop("balance_credentials_encrypted", None))
                 item["has_api_key"] = bool(encrypted)
                 item["api_key_mask"] = "••••••••" if encrypted else "未配置"
                 items.append(item)
             fallback_id = conn.execute(select(self.settings.c.fallback_provider_id)).scalar_one()
             return {"items": items, "default_provider_id": default_id, "fallback_provider_id": fallback_id}
 
+    def save_balance_credentials(self, provider_id: int, credentials: dict | None) -> None:
+        from qbot.provider_balance import balance_capability
+        with self.engine.begin() as conn:
+            row = conn.execute(select(self.providers).where(
+                self.providers.c.id == provider_id).with_for_update()).mappings().first()
+            if row is None:
+                raise ValueError("供应商不存在")
+            if credentials and balance_capability(dict(row)).get("service") != "aliyun":
+                raise ValueError("仅百炼官方供应商可配置阿里云余额凭证")
+            encrypted = self.cipher.encrypt(json.dumps(credentials).encode()).decode() if credentials else None
+            conn.execute(self.providers.update().where(self.providers.c.id == provider_id).values(
+                balance_credentials_encrypted=encrypted, updated_at=utc_now()))
+
+    def balance_credentials(self, provider_id: int) -> dict:
+        with self.engine.connect() as conn:
+            encrypted = conn.execute(select(self.providers.c.balance_credentials_encrypted).where(
+                self.providers.c.id == provider_id)).scalar_one_or_none()
+        if not encrypted:
+            raise ValueError("请先配置阿里云余额凭证（AccessKey ID 和 Secret）")
+        try:
+            return json.loads(self.cipher.decrypt(encrypted.encode()).decode())
+        except (InvalidToken, ValueError, UnicodeDecodeError):
+            raise ValueError("余额凭证解密失败，请重新配置") from None
+
     def provider_for_probe(self, provider_id: int) -> dict:
-        """仅供服务端显式连通性检查使用，允许检查尚未启用的供应商。"""
+        """仅供服务端显式检查或余额查询使用，允许读取尚未启用的供应商。"""
         with self.engine.connect() as conn:
             row = conn.execute(select(self.providers).where(self.providers.c.id == provider_id)).mappings().first()
         if row is None:
@@ -262,6 +287,7 @@ class Store(KnowledgeStore, VoiceCallStore, MemoryStore):
             raise ValueError("该类型未接入调用")
         result = dict(row)
         encrypted = result.pop("api_key_encrypted")
+        result.pop("balance_credentials_encrypted", None)
         if not encrypted:
             raise ValueError("请先保存 API Key")
         try:
@@ -546,6 +572,7 @@ class Store(KnowledgeStore, VoiceCallStore, MemoryStore):
                 raise ValueError("聊天供应商必须是 chat 类型，请在后台修复配置")
             result = dict(row)
             try:
+                result.pop("balance_credentials_encrypted", None)
                 result["api_key"] = self.cipher.decrypt(result.pop("api_key_encrypted").encode()).decode()
             except InvalidToken:
                 raise ValueError("供应商密钥解密失败，请检查加密主密钥") from None

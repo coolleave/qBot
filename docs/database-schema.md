@@ -1,5 +1,9 @@
 # 数据库表结构与 Agent 开发指南
 
+## 供应商余额凭证（0032，已编写未执行）
+
+`0032_balance_credentials` 接续 `0031_knowledge`，为 `model_providers` 新增可空 TEXT 列 `balance_credentials_encrypted`。整体加密保存阿里云 AccessKey ID、Secret 和账户站点；列表仅返回配置状态，模型调用不使用此凭证。原配置默认为空。部署前停服务、显式执行 `python -m alembic upgrade head` 后重启；不备份、不自动迁移，不支持丢弃凭证的降级。详见[后台与模型](admin-and-models.md)。
+
 ## 记忆表扩展（0024，代码已编写，实际结构未验证）
 
 迁移 `0024_memory` 接续0023，新增五张表，不代表目标库已执行。精确DDL见 `migrations/versions/0024_memory.py`，业务入口为 `memory_store.py` 和 `memory_jobs.py`。
