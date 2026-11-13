@@ -16,7 +16,7 @@
     </fieldset></form><div>
       <div class="knowledge-panel"><h2>文件</h2>
         <form id="knowledge-upload"><label>选择文件<input id="knowledge-file" type="file" accept=".pdf,.docx,.xlsx,.txt,.md,.csv" required></label>
-          <p class="muted">单文件最多30 MB；文件可供此智能体的全部聊天对象检索。解析索引会产生模型费用。</p>
+          <p class="muted">单文件最多50 MB；文件可供此智能体的全部聊天对象检索。解析索引会产生模型费用。</p>
           <button id="knowledge-upload-button" class="primary" type="submit">上传并处理</button></form>
         <div id="knowledge-files" aria-live="polite"></div>
         <div class="knowledge-actions"><button id="knowledge-prev" type="button">上一页</button><span id="knowledge-page-info"></span><button id="knowledge-next" type="button">下一页</button></div>
@@ -102,7 +102,7 @@
   $("knowledge-upload").onsubmit = async event => {
     event.preventDefault(); if (busy) return;
     const file = $("knowledge-file").files[0];
-    if (!file || file.size === 0 || file.size > 30 * 1024 * 1024) {fail(new Error("请选择不超过30 MB的非空文件")); return;}
+    if (!file || file.size === 0 || file.size > 50 * 1024 * 1024) {fail(new Error("请选择不超过50 MB的非空文件")); return;}
     const seq = generation, path = base(); lock(true); $("knowledge-error").textContent = "";
     try {await api(path + "/files?" + new URLSearchParams({filename:file.name}), {method:"POST", headers:{"Content-Type":"application/octet-stream"}, body:file});
       if (visible(seq)) {$("knowledge-file").value = ""; page = 1; toast("已上传并加入处理队列"); await list(seq);}}

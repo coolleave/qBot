@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 EXTENSIONS = {".pdf", ".docx", ".xlsx", ".txt", ".md", ".csv"}
-MAX_FILE_BYTES = 30 * 1024 * 1024
+MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_CHUNKS = 1000
 MAX_TEXT_BYTES = 2 * 1024 * 1024
 

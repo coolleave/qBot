@@ -75,7 +75,7 @@ def install_knowledge_routes(router, settings, require_admin) -> None:
             raise HTTPException(415, "请使用二进制文件上传")
         length = request.headers.get("content-length")
         if length and (not length.isdecimal() or int(length) > MAX_FILE_BYTES):
-            raise HTTPException(413, "单文件最多30 MB")
+            raise HTTPException(413, "单文件最多50 MB")
         await invoke(request, "knowledge_config", bot_id)
         if upload_lock.locked():
             raise HTTPException(429, "有文件正在上传，请稍后重试")
@@ -91,7 +91,7 @@ def install_knowledge_routes(router, settings, require_admin) -> None:
                         async for chunk in request.stream():
                             size += len(chunk)
                             if size > MAX_FILE_BYTES:
-                                raise HTTPException(413, "单文件最多30 MB")
+                                raise HTTPException(413, "单文件最多50 MB")
                             digest.update(chunk)
                             await disk_call(stream.write, chunk)
                     if not size:

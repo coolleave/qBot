@@ -27,7 +27,7 @@ def check_office(path: Path, expected: str) -> None:
 def extract(path: Path) -> list[dict]:
     """保留位置，超限整份失败，避免将不完整索引标为可用。"""
     if path.stat().st_size > MAX_FILE_BYTES:
-        raise ParseError("文件超过30 MB")
+        raise ParseError("文件超过50 MB")
     chunks: list[dict] = []
     total = 0
 
